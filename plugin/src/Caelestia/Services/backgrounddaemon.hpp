@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QFutureWatcher>
 #include <QVariantList>
+#include <QTimer>
 #include <qqmlintegration.h>
 
 namespace caelestia::services {
@@ -28,6 +29,7 @@ signals:
 private slots:
     void onDirectoryChanged(const QString& path);
     void onScanFinished();
+    void triggerScan();
 
 private:
     void scanDirectoryAsync(const QString& path);
@@ -37,5 +39,7 @@ private:
     QVariantList m_wallpapers;
     QFutureWatcher<QVariantList>* m_scanWatcher;
     QString m_currentPath;
+    QTimer* m_debounceTimer;
+    bool m_scanPending;
 };
 }

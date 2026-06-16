@@ -6,22 +6,26 @@ QtObject {
     id: root
     property bool enabled: true
     property bool active: false
+    property bool autoDetect: false
     
     // Globally accessible property to control expensive effects based on lite mode
     property real blurMultiplier: active ? 0.0 : 1.0
     property bool effectsEnabled: !active
 
-    Connections {
-        target: Cpu
+    property QtObject _cpuRef: autoDetect ? Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Cpu }', root) : null
+    property QtObject _memRef: autoDetect ? Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Memory }', root) : null
+
+    property Connections _cpuConn: Connections {
+        target: autoDetect ? Cpu : null
         function onPercentageChanged() {
-            evaluateConstraints(Cpu.percentage, Memory.percentage);
+            if (autoDetect) evaluateConstraints(Cpu.percentage, Memory.percentage);
         }
     }
     
-    Connections {
-        target: Memory
+    property Connections _memConn: Connections {
+        target: autoDetect ? Memory : null
         function onChanged() {
-            evaluateConstraints(Cpu.percentage, Memory.percentage);
+            if (autoDetect) evaluateConstraints(Cpu.percentage, Memory.percentage);
         }
     }
 
