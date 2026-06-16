@@ -161,13 +161,13 @@ WlSessionLockSurface {
         captureSource: root.screen
         opacity: 0
 
-        layer.enabled: true
+        layer.enabled: TrueLite.effectsEnabled
         layer.effect: MultiEffect {
             autoPaddingEnabled: false
             blurEnabled: true
             blur: 1
             blurMax: 64
-            blurMultiplier: 1
+            blurMultiplier: TrueLite.blurMultiplier
         }
     }
 

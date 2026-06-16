@@ -17,7 +17,9 @@ qml_module(caelestia-services
         storage.cpp
         lyriccandidate.cpp
         lyrics.cpp
+        backgrounddaemon.cpp
     LIBRARIES
+        Qt::Concurrent
         PkgConfig::Pipewire
         PkgConfig::Aubio
         PkgConfig::Cava

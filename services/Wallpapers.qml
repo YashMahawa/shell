@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Caelestia.Config
 import Caelestia.Models
+import Caelestia.Services
 import qs.services
 import qs.utils
 
@@ -59,7 +60,11 @@ Searcher {
             Colours.showPreview = false;
     }
 
-    list: wallpapers.entries
+    Component.onCompleted: {
+        BackgroundDaemon.startDaemon(Paths.wallsdir);
+    }
+
+    list: BackgroundDaemon.wallpapers
     key: "relativePath"
     useFuzzy: GlobalConfig.launcher.useFuzzy.wallpapers
     extraOpts: useFuzzy ? ({}) : ({
@@ -101,14 +106,6 @@ Searcher {
             root.previewColourLock = false;
             Quickshell.execDetached(["caelestia", "wallpaper", "-f", root.fallback, ...root.smartArg]);
         }
-    }
-
-    FileSystemModel {
-        id: wallpapers
-
-        recursive: true
-        path: Paths.wallsdir
-        filter: FileSystemModel.Images
     }
 
     Process {
