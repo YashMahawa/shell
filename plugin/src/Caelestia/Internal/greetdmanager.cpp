@@ -84,6 +84,18 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
         m_socket->disconnectFromServer();
         return;
     }
+    
+    if (createRes["type"].toString() == "success") {
+        setCurrentUser(user);
+        emit authSuccess();
+        return;
+    }
+
+    if (createRes["type"].toString() != "auth_message") {
+        emit authFailed("Unexpected create_session response");
+        m_socket->disconnectFromServer();
+        return;
+    }
 
     // 2. Post auth response (password)
     QJsonObject authReq;

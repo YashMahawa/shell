@@ -16,16 +16,66 @@ if [ "$1" = "rollback" ] || [ "$1" = "uninstall" ]; then
     echo "No backup found, removing generated config..."
     rm -f /etc/greetd/config.toml
   fi
+  
   systemctl disable greetd.service
+
+  if [ -f /etc/greetd/prev_dm.bak ]; then
+    PREV_DM=$(cat /etc/greetd/prev_dm.bak)
+    if [ -n "$PREV_DM" ]; then
+      systemctl enable "$PREV_DM"
+      echo "Restored previous display manager: $PREV_DM"
+    fi
+    rm -f /etc/greetd/prev_dm.bak
+  fi
+
+  if [ -f /etc/greetd/prev_default_target.bak ]; then
+    PREV_TARGET=$(cat /etc/greetd/prev_default_target.bak)
+    if [ -n "$PREV_TARGET" ]; then
+      systemctl set-default "$PREV_TARGET"
+      echo "Restored previous default target: $PREV_TARGET"
+    fi
+    rm -f /etc/greetd/prev_default_target.bak
+  fi
+
   echo "Rollback complete."
   exit 0
 fi
 
 echo "Installing greeter configuration..."
+
+# Create/validate greeter user
+if ! getent passwd greeter >/dev/null; then
+  echo "Creating greeter user..."
+  useradd -M -r -s /sbin/nologin greeter || echo "Failed to create greeter user, it may already exist."
+fi
+
 mkdir -p /etc/greetd
 if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
   cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
   echo "Backed up existing config to /etc/greetd/config.toml.bak"
+fi
+
+# Preserve previous default target
+systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
+
+# Preserve previous display manager
+PREV_DM=""
+if [ -L /etc/systemd/system/display-manager.service ]; then
+  PREV_DM=$(basename "$(readlink /etc/systemd/system/display-manager.service)")
+else
+  for dm in gdm lightdm sddm lxdm xdm; do
+    if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
+      PREV_DM="$dm.service"
+      break
+    fi
+  done
+fi
+
+if [ -n "$PREV_DM" ] && [ "$PREV_DM" != "greetd.service" ]; then
+  echo "$PREV_DM" > /etc/greetd/prev_dm.bak
+  systemctl disable "$PREV_DM" || true
+else
+  > /etc/greetd/prev_dm.bak
 fi
 
 cat <<CONF > /etc/greetd/config.toml

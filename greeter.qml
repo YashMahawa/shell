@@ -59,6 +59,12 @@ Scope {
                     }
                 }
 
+                StyledTextField {
+                    id: sessionCommandField
+                    placeholderText: "Session Command"
+                    text: "caelestia-shell"
+                }
+
                 StyledText {
                     id: statusMsg
                     color: Colours.palette.m3error
@@ -103,7 +109,7 @@ Scope {
         onAuthSuccess: {
             statusMsg.text = "Success!";
             // Start the default session
-            greetd.startSession(["caelestia-shell"]); // Example
+            greetd.startSession(sessionCommandField.text.split(" ")); // Example
         }
         onAuthFailed: reason => {
             statusMsg.text = "Login Failed: " + reason;
