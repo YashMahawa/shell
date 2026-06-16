@@ -12,6 +12,7 @@ import qs.utils
 
 StyledRect {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     property color colour: Colours.palette.m3secondary
     readonly property alias items: iconColumn
@@ -20,26 +21,32 @@ StyledRect {
     radius: Tokens.rounding.full
 
     clip: true
-    implicitWidth: Tokens.sizes.bar.innerWidth
-    implicitHeight: iconColumn.implicitHeight + Tokens.padding.medium * 2 - (Config.bar.status.showLockStatus && !Hypr.capsLock && !Hypr.numLock ? iconColumn.spacing : 0)
+    implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth : iconColumn.implicitWidth + Tokens.padding.medium * 2 - (Config.bar.status.showLockStatus && !Hypr.capsLock && !Hypr.numLock ? (isVertical ? iconColumn.rowSpacing : iconColumn.columnSpacing) : 0)
+    implicitHeight: isVertical ? iconColumn.implicitHeight + Tokens.padding.medium * 2 - (Config.bar.status.showLockStatus && !Hypr.capsLock && !Hypr.numLock ? (isVertical ? iconColumn.rowSpacing : iconColumn.columnSpacing) : 0) : Tokens.sizes.bar.innerWidth
 
-    ColumnLayout {
+    GridLayout {
         id: iconColumn
+        flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Tokens.padding.medium
+        anchors.verticalCenter: !root.isVertical ? parent.verticalCenter : undefined
+        anchors.horizontalCenter: root.isVertical ? parent.horizontalCenter : undefined
+        anchors.bottom: root.isVertical ? parent.bottom : undefined
+        anchors.right: !root.isVertical ? parent.right : undefined
+        anchors.bottomMargin: root.isVertical ? Tokens.padding.medium : 0
+        anchors.rightMargin: !root.isVertical ? Tokens.padding.medium : 0
 
-        spacing: Tokens.spacing.medium / 2
+        rowSpacing: Tokens.spacing.medium / 2
+        columnSpacing: Tokens.spacing.medium / 2
 
         // Lock keys status
         WrappedLoader {
             name: "lockstatus"
             active: Config.bar.status.showLockStatus
 
-            sourceComponent: ColumnLayout {
-                spacing: 0
+            sourceComponent: GridLayout {
+                flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Item {
                     implicitWidth: capslockIcon.implicitWidth
@@ -73,7 +80,8 @@ StyledRect {
                 }
 
                 Item {
-                    Layout.topMargin: Hypr.capsLock && Hypr.numLock ? iconColumn.spacing : 0
+                    Layout.topMargin: root.isVertical && Hypr.capsLock && Hypr.numLock ? iconColumn.rowSpacing : 0
+                    Layout.leftMargin: !root.isVertical && Hypr.capsLock && Hypr.numLock ? iconColumn.columnSpacing : 0
 
                     implicitWidth: numlockIcon.implicitWidth
                     implicitHeight: Hypr.numLock ? numlockIcon.implicitHeight : 0
@@ -170,13 +178,16 @@ StyledRect {
 
         // Bluetooth section
         WrappedLoader {
-            Layout.preferredHeight: implicitHeight
+            Layout.preferredHeight: root.isVertical ? implicitHeight : -1
+            Layout.preferredWidth: root.isVertical ? -1 : implicitWidth
 
             name: "bluetooth"
             active: Config.bar.status.showBluetooth
 
-            sourceComponent: ColumnLayout {
-                spacing: Tokens.spacing.medium / 2
+            sourceComponent: GridLayout {
+                flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                rowSpacing: Tokens.spacing.medium / 2
+                columnSpacing: Tokens.spacing.medium / 2
 
                 // Bluetooth icon
                 MaterialIcon {
@@ -232,6 +243,9 @@ StyledRect {
             Behavior on Layout.preferredHeight {
                 Anim {}
             }
+            Behavior on Layout.preferredWidth {
+                Anim {}
+            }
         }
 
         // Battery icon
@@ -261,7 +275,7 @@ StyledRect {
         required property string name
 
         asynchronous: true
-        Layout.alignment: Qt.AlignHCenter
+        Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
         visible: active
     }
 }

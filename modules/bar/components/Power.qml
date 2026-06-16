@@ -5,18 +5,19 @@ import qs.services
 
 Item {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     required property DrawerVisibilities visibilities
 
-    implicitWidth: icon.implicitHeight + Tokens.padding.small
-    implicitHeight: icon.implicitHeight
+    implicitWidth: isVertical ? icon.implicitHeight + Tokens.padding.small : icon.implicitHeight
+    implicitHeight: isVertical ? icon.implicitHeight : icon.implicitHeight + Tokens.padding.small
 
     StateLayer {
         // Cursed workaround to make the height larger than the parent
         anchors.fill: undefined
         anchors.centerIn: parent
-        implicitWidth: implicitHeight
-        implicitHeight: icon.implicitHeight + Tokens.padding.small
+        implicitWidth: isVertical ? implicitHeight : icon.implicitHeight + Tokens.padding.small
+        implicitHeight: isVertical ? icon.implicitHeight + Tokens.padding.small : implicitWidth
         radius: Tokens.rounding.full
         onClicked: root.visibilities.session = !root.visibilities.session
     }
@@ -25,7 +26,8 @@ Item {
         id: icon
 
         anchors.centerIn: parent
-        anchors.horizontalCenterOffset: -1
+        anchors.horizontalCenterOffset: isVertical ? -1 : 0
+        anchors.verticalCenterOffset: isVertical ? 0 : -1
 
         text: "power_settings_new"
         color: Colours.palette.m3error

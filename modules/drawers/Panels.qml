@@ -35,8 +35,10 @@ Item {
     readonly property alias sidebar: sidebar
 
     anchors.fill: parent
-    anchors.margins: borderThickness
-    anchors.leftMargin: bar.implicitWidth
+    anchors.leftMargin: bar.isVertical && Config.bar.edge === "left" ? bar.implicitWidth : borderThickness
+    anchors.rightMargin: bar.isVertical && Config.bar.edge === "right" ? bar.implicitWidth : borderThickness
+    anchors.topMargin: !bar.isVertical && Config.bar.edge === "top" ? bar.implicitHeight : borderThickness
+    anchors.bottomMargin: !bar.isVertical && Config.bar.edge === "bottom" ? bar.implicitHeight : borderThickness
 
     Item {
         id: osdWrapper
