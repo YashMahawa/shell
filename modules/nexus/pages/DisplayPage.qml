@@ -17,29 +17,10 @@ PageBase {
     title: qsTr("Display")
 
     property var monitorList: Hypr.monitors.values
-
-    function saveMonitors() {
-        let conf = "";
-        for (let i = 0; i < monitorList.length; i++) {
-            const m = monitorList[i];
-            let res = `${m.width}x${m.height}@${m.refreshRate}`;
-            conf += `monitor=${m.name},${res},${m.x}x${m.y},${m.scale}\n`;
-        }
-        
-        let shCmd = `
-mkdir -p ~/.config/hypr
-printf '%s\n' "$1" > ~/.config/hypr/monitors.conf
-if [ -f ~/.config/hypr/hyprland.conf ]; then
-    if ! grep -q "^[[:space:]]*source[[:space:]]*=[[:space:]]*~/.config/hypr/monitors.conf" ~/.config/hypr/hyprland.conf; then
-        echo "source = ~/.config/hypr/monitors.conf" >> ~/.config/hypr/hyprland.conf
-    fi
-fi
-`;
-        saveProc.exec(["sh", "-c", shCmd, "--", conf]);
-    }
+    property bool showConfirmSave: false
 
     Process {
-        id: saveProc
+        id: monitorProc
     }
 
     ColumnLayout {
@@ -146,17 +127,20 @@ fi
                                 newPx = Math.round(newPx / 10) * 10;
                                 newPy = Math.round(newPy / 10) * 10;
                                 
-                                let res = `${monRect.modelData.width}x${monRect.modelData.height}@${monRect.modelData.refreshRate}`;
-                                let cmd = `keyword monitor ${monRect.modelData.name},${res},${newPx}x${newPy},${monRect.modelData.scale}`;
-                                let oldCmd = `keyword monitor ${monRect.modelData.name},${res},${monRect.modelData.x}x${monRect.modelData.y},${monRect.modelData.scale}`;
+                                let m = monRect.modelData;
+                                let res = `${m.width}x${m.height}@${m.refreshRate}`;
                                 
-                                let result = String(Hypr.dispatch(cmd) || "");
-                                if (result.toLowerCase().includes("invalid") || result.toLowerCase().includes("error") || result.toLowerCase().includes("fail")) {
-                                    console.error("Monitor change failed, reverting:", result);
-                                    Hypr.dispatch(oldCmd);
-                                } else {
-                                    root.saveMonitors();
-                                }
+                                monitorProc.exec([
+                                    "/app/modules/nexus/scripts/manage_monitors.py",
+                                    "--apply",
+                                    "--name", m.name,
+                                    "--res", res,
+                                    "--pos", `${newPx}x${newPy}`,
+                                    "--scale", String(m.scale),
+                                    "--old-res", res,
+                                    "--old-pos", `${m.x}x${m.y}`,
+                                    "--old-scale", String(m.scale)
+                                ]);
                                 
                                 Qt.callLater(() => { canvas.updateBounds(); });
                             }
@@ -172,7 +156,7 @@ fi
                 id: monitorRect
                 Layout.fillWidth: true
                 first: false
-                last: index === root.monitorList.length - 1
+                last: false
                 implicitHeight: col.implicitHeight + col.anchors.margins * 2
 
                 required property var modelData
@@ -207,17 +191,72 @@ fi
                                 onClicked: {
                                     let m = monitorRect.modelData;
                                     let res = `${m.width}x${m.height}@${m.refreshRate}`;
-                                    let cmd = `keyword monitor ${m.name},${res},${m.x}x${m.y},${modelData}`;
-                                    let oldCmd = `keyword monitor ${m.name},${res},${m.x}x${m.y},${m.scale}`;
                                     
-                                    let result = String(Hypr.dispatch(cmd) || "");
-                                    if (result.toLowerCase().includes("invalid") || result.toLowerCase().includes("error") || result.toLowerCase().includes("fail")) {
-                                        console.error("Scale change failed, reverting:", result);
-                                        Hypr.dispatch(oldCmd);
-                                    } else {
-                                        root.saveMonitors();
-                                    }
+                                    monitorProc.exec([
+                                        "/app/modules/nexus/scripts/manage_monitors.py",
+                                        "--apply",
+                                        "--name", m.name,
+                                        "--res", res,
+                                        "--pos", `${m.x}x${m.y}`,
+                                        "--scale", String(modelData),
+                                        "--old-res", res,
+                                        "--old-pos", `${m.x}x${m.y}`,
+                                        "--old-scale", String(m.scale)
+                                    ]);
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ConnectedRect {
+            Layout.fillWidth: true
+            first: false
+            last: true
+            implicitHeight: saveCol.implicitHeight + saveCol.anchors.margins * 2
+
+            ColumnLayout {
+                id: saveCol
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.medium
+                anchors.leftMargin: Tokens.padding.largeIncreased
+                anchors.rightMargin: Tokens.padding.largeIncreased
+                spacing: Tokens.spacing.medium
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Tokens.spacing.medium
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: root.showConfirmSave ? qsTr("Apply to hyprland.conf and persist changes?") : qsTr("Save Display Settings")
+                        font: Tokens.font.body.small
+                    }
+
+                    TextButton {
+                        text: root.showConfirmSave ? qsTr("Cancel") : ""
+                        visible: root.showConfirmSave
+                        onClicked: {
+                            root.showConfirmSave = false;
+                        }
+                    }
+
+                    TextButton {
+                        text: root.showConfirmSave ? qsTr("Yes") : qsTr("Save")
+                        onClicked: {
+                            if (!root.showConfirmSave) {
+                                root.showConfirmSave = true;
+                            } else {
+                                let monitorsData = root.monitorList.map(m => ({
+                                    name: m.name,
+                                    res: `${m.width}x${m.height}@${m.refreshRate}`,
+                                    pos: `${m.x}x${m.y}`,
+                                    scale: m.scale
+                                }));
+                                monitorProc.exec(["/app/modules/nexus/scripts/manage_monitors.py", "--save", "--monitors-json", JSON.stringify(monitorsData)]);
+                                root.showConfirmSave = false;
                             }
                         }
                     }
