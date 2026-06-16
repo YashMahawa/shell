@@ -19,6 +19,8 @@ Singleton {
     readonly property bool scanning: rescanProc.running
     readonly property list<AccessPoint> networks: []
     readonly property AccessPoint active: networks.find(n => n.active) ?? null
+    property list<var> vpnConnections: []
+    readonly property var activeVpnConnection: vpnConnections.find(v => v.active) ?? null
     property list<string> savedConnections: []
     property list<string> savedConnectionSsids: []
 
@@ -43,7 +45,7 @@ Singleton {
     readonly property string nmcliCommandWifi: "wifi"
     readonly property string nmcliCommandRadio: "radio"
     readonly property string deviceStatusFields: "DEVICE,TYPE,STATE,CONNECTION"
-    readonly property string connectionListFields: "NAME,TYPE"
+    readonly property string connectionListFields: "NAME,TYPE,ACTIVE"
     readonly property string wirelessSsidField: "802-11-wireless.ssid"
     readonly property string networkListFields: "SSID,SIGNAL,SECURITY"
     readonly property string networkDetailFields: "ACTIVE,SIGNAL,FREQ,SSID,BSSID,SECURITY"
@@ -305,6 +307,22 @@ Singleton {
         });
     }
 
+    function connectVpn(connectionName: string, callback: var): void {
+        if (!connectionName || connectionName.length === 0) return;
+        executeCommand([root.nmcliCommandConnection, "up", connectionName], result => {
+            Qt.callLater(() => { loadSavedConnections(() => {}); }, 500);
+            if (callback) callback(result.success);
+        });
+    }
+
+    function disconnectVpn(connectionName: string, callback: var): void {
+        if (!connectionName || connectionName.length === 0) return;
+        executeCommand([root.nmcliCommandConnection, "down", connectionName], result => {
+            Qt.callLater(() => { loadSavedConnections(() => {}); }, 500);
+            if (callback) callback(result.success);
+        });
+    }
+
     function getAllInterfaces(callback: var): void {
         executeCommand(["-t", "-f", root.deviceStatusFields, root.nmcliCommandDevice, "status"], result => {
             const interfaces = parseDeviceStatusOutput(result.output, "both");
@@ -480,21 +498,33 @@ Singleton {
         const lines = output.trim().split("\n").filter(line => line.length > 0);
         const wifiConnections = [];
         const connections = [];
+        const vpns = [];
 
         for (const line of lines) {
             const parts = line.split(":");
             if (parts.length >= 2) {
-                const name = parts[0];
-                const type = parts[1];
+                let name = parts[0];
+                let type = parts[1];
+                let active = parts[2] === "yes";
+
+                if (parts.length > 3) {
+                    active = parts[parts.length - 1] === "yes";
+                    type = parts[parts.length - 2];
+                    name = parts.slice(0, parts.length - 2).join(":");
+                }
+
                 connections.push(name);
 
                 if (type === root.connectionTypeWireless) {
                     wifiConnections.push(name);
+                } else if (type === "vpn" || type === "wireguard" || type === "tun") {
+                    vpns.push({ name: name, active: active, type: type });
                 }
             }
         }
 
         root.savedConnections = connections;
+        root.vpnConnections = vpns;
 
         if (wifiConnections.length > 0) {
             root.wifiConnectionQueue = wifiConnections;
