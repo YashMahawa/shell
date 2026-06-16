@@ -81,7 +81,10 @@ echo "Installing greeter configuration..."
 # Create/validate greeter user
 if ! getent passwd greeter >/dev/null; then
   echo "Creating greeter user..."
-  useradd -M -r -s /sbin/nologin greeter || echo "Failed to create greeter user, it may already exist."
+  if ! useradd -M -r -s /sbin/nologin greeter; then
+    echo "FATAL: Failed to create greeter user!"
+    exit 1
+  fi
 fi
 
 mkdir -p /etc/greetd
@@ -122,6 +125,12 @@ command = "caelestia-shell -c /usr/share/quickshell/caelestia/greeter.qml"
 user = "greeter"
 CONF
 
-systemctl enable greetd.service
-systemctl set-default graphical.target
+if ! systemctl enable greetd.service; then
+  echo "FATAL: Failed to enable greetd.service!"
+  exit 1
+fi
+if ! systemctl set-default graphical.target; then
+  echo "FATAL: Failed to set default graphical.target!"
+  exit 1
+fi
 echo "Greeter configured successfully. Use '$0 rollback' to revert."

@@ -130,5 +130,8 @@ Scope {
             statusMsg.text = "Login Failed: " + reason;
             passwordField.text = "";
         }
+        onStatus: message => {
+            statusMsg.text = message;
+        }
     }
 }

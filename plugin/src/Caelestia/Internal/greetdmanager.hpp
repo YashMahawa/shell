@@ -4,6 +4,7 @@
 #include <QString>
 #include <QLocalSocket>
 #include <QJsonObject>
+#include <QTimer>
 #include <qqmlintegration.h>
 
 namespace caelestia {
@@ -26,11 +27,13 @@ signals:
     void currentUserChanged();
     void authSuccess();
     void authFailed(const QString& reason);
+    void status(const QString& message);
 
 private slots:
     void handleReadyRead();
     void handleError(QLocalSocket::LocalSocketError error);
     void handleConnected();
+    void handleTimeout();
 
 private:
     void sendRequest(const QJsonObject& req);
@@ -39,6 +42,7 @@ private:
 
     QString m_currentUser;
     QLocalSocket* m_socket;
+    QTimer* m_timer;
 
     enum class State { Idle, Connecting, Auth_CreatingSession, Auth_PostingAuth, StartingSession };
     State m_state = State::Idle;

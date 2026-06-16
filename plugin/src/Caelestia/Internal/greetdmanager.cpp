@@ -7,7 +7,10 @@
 
 namespace caelestia {
 
-GreetdManager::GreetdManager(QObject* parent) : QObject(parent), m_socket(new QLocalSocket(this)) {
+GreetdManager::GreetdManager(QObject* parent) : QObject(parent), m_socket(new QLocalSocket(this)), m_timer(new QTimer(this)) {
+    m_timer->setSingleShot(true);
+    m_timer->setInterval(10000); // 10 seconds timeout
+    connect(m_timer, &QTimer::timeout, this, &GreetdManager::handleTimeout);
     connect(m_socket, &QLocalSocket::connected, this, &GreetdManager::handleConnected);
     connect(m_socket, &QLocalSocket::readyRead, this, &GreetdManager::handleReadyRead);
     connect(m_socket, &QLocalSocket::errorOccurred, this, &GreetdManager::handleError);
@@ -25,6 +28,7 @@ void GreetdManager::setCurrentUser(const QString& user) {
 }
 
 void GreetdManager::resetState(const QString& errorReason) {
+    m_timer->stop();
     m_state = State::Idle;
     m_pendingUser.clear();
     m_pendingPassword.clear();
@@ -53,6 +57,7 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
     m_pendingPassword = password;
     m_buffer.clear();
     m_state = State::Connecting;
+    m_timer->start();
 
     if (m_socket->state() != QLocalSocket::UnconnectedState) {
         m_socket->disconnectFromServer();
@@ -63,6 +68,7 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
 
 void GreetdManager::handleConnected() {
     if (m_state == State::Connecting) {
+        m_timer->start();
         m_state = State::Auth_CreatingSession;
         QJsonObject createReq;
         createReq["type"] = "create_session";
@@ -119,9 +125,11 @@ void GreetdManager::processResponse(const QJsonObject& res) {
             setCurrentUser(m_pendingUser);
             m_pendingPassword.clear(); // Clear password as it's no longer needed
             m_state = State::Idle;
+            m_timer->stop();
             emit authSuccess();
         } else if (type == "auth_message") {
             m_state = State::Auth_PostingAuth;
+            m_timer->start();
             QJsonObject authReq;
             authReq["type"] = "post_auth_message_response";
             authReq["response"] = m_pendingPassword;
@@ -136,6 +144,7 @@ void GreetdManager::processResponse(const QJsonObject& res) {
         } else if (type == "success") {
             setCurrentUser(m_pendingUser);
             m_state = State::Idle;
+            m_timer->stop();
             emit authSuccess();
         } else {
             resetState("Unexpected response type");
@@ -145,6 +154,7 @@ void GreetdManager::processResponse(const QJsonObject& res) {
         // but if we get here and it's success, we just go to idle.
         if (type == "success") {
             m_state = State::Idle;
+            m_timer->stop();
         } else {
             resetState("Failed to start session");
         }
@@ -161,6 +171,7 @@ void GreetdManager::startSession(const QStringList& cmd) {
     }
 
     m_state = State::StartingSession;
+    m_timer->start();
     QJsonObject startReq;
     startReq["type"] = "start_session";
     QJsonArray cmdArray;
@@ -168,6 +179,15 @@ void GreetdManager::startSession(const QStringList& cmd) {
     startReq["cmd"] = cmdArray;
 
     sendRequest(startReq);
+}
+
+void GreetdManager::handleTimeout() {
+    if (m_state != State::Idle) {
+        emit status("Authentication timed out");
+        // Cancel the greetd session by disconnecting
+        // resetState handles disconnecting, clearing state/passwords, and emitting authFailed
+        resetState("Authentication timed out");
+    }
 }
 
 } // namespace caelestia
