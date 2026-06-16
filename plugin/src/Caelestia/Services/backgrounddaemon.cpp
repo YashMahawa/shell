@@ -6,6 +6,7 @@
 #include <QThread>
 #include <QtConcurrent>
 #include <QVariantMap>
+#include <QMimeDatabase>
 
 namespace caelestia::services {
 
@@ -52,14 +53,22 @@ void BackgroundDaemon::triggerScan() {
 void BackgroundDaemon::scanDirectoryAsync(const QString& path) {
     QFuture<QVariantList> future = QtConcurrent::run([path]() {
         QVariantList list;
+        QMimeDatabase db;
         QDirIterator it(path, QStringList() << "*.jpg" << "*.jpeg" << "*.png" << "*.webp", QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             it.next();
+            QFileInfo fileInfo = it.fileInfo();
             QVariantMap map;
             map["path"] = it.filePath();
-            map["parentDir"] = it.fileInfo().absolutePath();
+            map["parentDir"] = fileInfo.absolutePath();
             map["relativePath"] = it.filePath().mid(path.length() + (!path.endsWith('/') ? 1 : 0));
-            map["name"] = it.fileName();
+            map["name"] = fileInfo.fileName();
+            map["baseName"] = fileInfo.baseName();
+            map["suffix"] = fileInfo.suffix();
+            map["size"] = fileInfo.size();
+            map["isDir"] = fileInfo.isDir();
+            map["isImage"] = true;
+            map["mimeType"] = db.mimeTypeForFile(fileInfo).name();
             list.append(map);
         }
         return list;

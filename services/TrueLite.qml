@@ -12,8 +12,24 @@ QtObject {
     property real blurMultiplier: active ? 0.0 : 1.0
     property bool effectsEnabled: !active
 
-    property QtObject _cpuRef: autoDetect ? Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Cpu }', root) : null
-    property QtObject _memRef: autoDetect ? Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Memory }', root) : null
+    property QtObject _cpuRef: null
+    property QtObject _memRef: null
+
+    onAutoDetectChanged: {
+        if (autoDetect) {
+            _cpuRef = Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Cpu }', root);
+            _memRef = Qt.createQmlObject('import Caelestia.Services; ServiceRef { service: Memory }', root);
+        } else {
+            if (_cpuRef) {
+                _cpuRef.destroy();
+                _cpuRef = null;
+            }
+            if (_memRef) {
+                _memRef.destroy();
+                _memRef = null;
+            }
+        }
+    }
 
     property Connections _cpuConn: Connections {
         target: autoDetect ? Cpu : null
