@@ -4,6 +4,8 @@ qml_module(caelestia-images
         cachingimageprovider.cpp
         imagecacher.cpp
         iutils.cpp
+        wallpaperengine.cpp
+        wallpaperengine.hpp
     LIBRARIES
         Qt::Gui
         Qt::Quick
