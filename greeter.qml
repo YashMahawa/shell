@@ -55,6 +55,7 @@ Scope {
                     onAccepted: {
                         statusMsg.text = "Authenticating...";
                         greetd.authenticate(userField.text, passwordField.text);
+                        passwordField.text = "";
                     }
                 }
 
@@ -73,6 +74,7 @@ Scope {
                         onClicked: {
                             statusMsg.text = "Authenticating...";
                             greetd.authenticate(userField.text, passwordField.text);
+                            passwordField.text = "";
                         }
                     }
                 }

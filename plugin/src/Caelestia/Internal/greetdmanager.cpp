@@ -78,7 +78,6 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
         return;
     }
 
-    qDebug() << "createRes:" << createResBytes;
     QJsonObject createRes = QJsonDocument::fromJson(createResBytes).object();
     if (createRes["type"].toString() == "error") {
         emit authFailed(createRes["error_description"].toString());
@@ -98,10 +97,19 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
         return;
     }
 
-    qDebug() << "authRes:" << authResBytes;
     QJsonObject authRes = QJsonDocument::fromJson(authResBytes).object();
     if (authRes["type"].toString() == "error") {
         emit authFailed(authRes["error_description"].toString());
+        m_socket->disconnectFromServer();
+        return;
+    }
+    if (authRes["type"].toString() == "auth_message") {
+        emit authFailed("PAM/Auth Error: " + authRes["auth_message"].toString());
+        m_socket->disconnectFromServer();
+        return;
+    }
+    if (authRes["type"].toString() != "success") {
+        emit authFailed("Unexpected response type");
         m_socket->disconnectFromServer();
         return;
     }
@@ -113,6 +121,10 @@ void GreetdManager::authenticate(const QString& user, const QString& password) {
 
 void GreetdManager::startSession(const QStringList& cmd) {
     if (m_socket->state() != QLocalSocket::ConnectedState) {
+        return;
+    }
+    if (cmd.isEmpty() || cmd.first().isEmpty()) {
+        emit authFailed("Invalid session command");
         return;
     }
 
@@ -141,7 +153,6 @@ void GreetdManager::startSession(const QStringList& cmd) {
             if (!m_socket->waitForReadyRead(1000)) break;
             resData.append(m_socket->read(resLen - resData.length()));
         }
-        qDebug() << "startRes:" << resData;
     }
 }
 

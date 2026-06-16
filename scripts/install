@@ -7,7 +7,27 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+if [ "$1" = "rollback" ] || [ "$1" = "uninstall" ]; then
+  echo "Rolling back greeter configuration..."
+  if [ -f /etc/greetd/config.toml.bak ]; then
+    mv /etc/greetd/config.toml.bak /etc/greetd/config.toml
+    echo "Restored original /etc/greetd/config.toml"
+  else
+    echo "No backup found, removing generated config..."
+    rm -f /etc/greetd/config.toml
+  fi
+  systemctl disable greetd.service
+  echo "Rollback complete."
+  exit 0
+fi
+
+echo "Installing greeter configuration..."
 mkdir -p /etc/greetd
+if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
+  cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
+  echo "Backed up existing config to /etc/greetd/config.toml.bak"
+fi
+
 cat <<CONF > /etc/greetd/config.toml
 [terminal]
 vt = 1
@@ -19,4 +39,4 @@ CONF
 
 systemctl enable greetd.service
 systemctl set-default graphical.target
-echo "Greeter configured successfully."
+echo "Greeter configured successfully. Use '$0 rollback' to revert."

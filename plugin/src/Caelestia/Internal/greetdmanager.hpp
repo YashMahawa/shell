@@ -7,6 +7,15 @@
 
 namespace caelestia {
 
+/**
+ * @brief Native greetd authentication and session handoff manager.
+ * 
+ * This class implements the JSON over Unix socket IPC protocol used by greetd.
+ * The typical protocol flow for authentication is:
+ * 1. create_session (with username) -> greetd responds with an auth_message (e.g. PAM password prompt).
+ * 2. post_auth_message_response (with secret) -> greetd responds with success (or error/another auth_message).
+ * 3. start_session (with command array) -> greetd replaces itself with the target user's session.
+ */
 class GreetdManager : public QObject {
     Q_OBJECT
     QML_ELEMENT
