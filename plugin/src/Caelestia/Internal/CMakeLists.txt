@@ -9,6 +9,8 @@ qml_module(caelestia-internal
         logindmanager.cpp
         sparklineitem.cpp
         visualiserbars.cpp
+        greetdmanager.cpp
+        themebridge.cpp
     LIBRARIES
         Qt::Gui
         Qt::Quick

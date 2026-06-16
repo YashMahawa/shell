@@ -5,6 +5,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Internal
 import Caelestia.Config
 import qs.services
 import qs.utils
@@ -115,7 +116,12 @@ Singleton {
         path: `${Paths.state}/scheme.json`
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: root.load(text(), false)
+        onLoaded: {
+            root.load(text(), false);
+            if (!ThemeBridge.exportGreeterTheme(path)) {
+                console.error("Colours: Failed to export greeter theme to /var/tmp.");
+            }
+        }
     }
 
     ImageAnalyser {
