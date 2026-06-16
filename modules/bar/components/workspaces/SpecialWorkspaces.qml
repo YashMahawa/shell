@@ -12,6 +12,7 @@ import qs.utils
 
 Item {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     required property ShellScreen screen
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
@@ -34,7 +35,7 @@ Item {
             radius: Tokens.rounding.full
 
             gradient: Gradient {
-                orientation: Gradient.Vertical
+                orientation: isVertical ? Gradient.Vertical : Gradient.Horizontal
 
                 GradientStop {
                     position: 0
@@ -56,13 +57,15 @@ Item {
         }
 
         Rectangle {
-            anchors.top: parent.top
+            anchors.top: isVertical ? parent.top : undefined
+            anchors.bottom: !isVertical ? parent.bottom : undefined
             anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.right: isVertical ? parent.right : undefined
 
             radius: Tokens.rounding.full
-            implicitHeight: parent.height / 2
-            opacity: view.contentY > 0 ? 0 : 1
+            implicitHeight: isVertical ? parent.height / 2 : -1
+            implicitWidth: isVertical ? -1 : parent.width / 2
+            opacity: (isVertical ? view.contentY : view.contentX) > 0 ? 0 : 1
 
             Behavior on opacity {
                 Anim {
@@ -73,12 +76,14 @@ Item {
 
         Rectangle {
             anchors.bottom: parent.bottom
-            anchors.left: parent.left
+            anchors.top: !isVertical ? parent.top : undefined
             anchors.right: parent.right
+            anchors.left: isVertical ? parent.left : undefined
 
             radius: Tokens.rounding.full
-            implicitHeight: parent.height / 2
-            opacity: view.contentY < view.contentHeight - parent.height + Tokens.padding.extraSmall ? 0 : 1
+            implicitHeight: isVertical ? parent.height / 2 : -1
+            implicitWidth: isVertical ? -1 : parent.width / 2
+            opacity: (isVertical ? view.contentY : view.contentX) < (isVertical ? view.contentHeight - parent.height : view.contentWidth - parent.width) + Tokens.padding.extraSmall ? 0 : 1
 
             Behavior on opacity {
                 Anim {
@@ -90,6 +95,7 @@ Item {
 
     ListView {
         id: view
+        orientation: isVertical ? ListView.Vertical : ListView.Horizontal
 
         anchors.fill: parent
         spacing: Tokens.spacing.medium
@@ -103,15 +109,20 @@ Item {
         }
 
         preferredHighlightBegin: 0
-        preferredHighlightEnd: height
+        preferredHighlightEnd: isVertical ? height : width
         highlightRangeMode: ListView.StrictlyEnforceRange
 
         highlightFollowsCurrentItem: false
         highlight: Item {
-            y: view.currentItem?.y ?? 0
-            implicitHeight: (view.currentItem as SpecialWsDelegate)?.size ?? 0
+            y: isVertical ? (view.currentItem?.y ?? 0) : 0
+            x: isVertical ? 0 : (view.currentItem?.x ?? 0)
+            implicitHeight: isVertical ? ((view.currentItem as SpecialWsDelegate)?.size ?? 0) : Tokens.sizes.bar.innerWidth - Tokens.padding.small
+            implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small : ((view.currentItem as SpecialWsDelegate)?.size ?? 0)
 
             Behavior on y {
+                Anim {}
+            }
+            Behavior on x {
                 Anim {}
             }
         }
@@ -172,11 +183,15 @@ Item {
             StyledClippingRect {
                 id: indicator
 
-                anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.left: isVertical ? parent.left : undefined
+                anchors.right: isVertical ? parent.right : undefined
+                anchors.top: !isVertical ? parent.top : undefined
+                anchors.bottom: !isVertical ? parent.bottom : undefined
 
-                y: (view.currentItem?.y ?? 0) - view.contentY
-                implicitHeight: (view.currentItem as SpecialWsDelegate)?.size ?? 0
+                y: isVertical ? (view.currentItem?.y ?? 0) - view.contentY : 0
+                x: isVertical ? 0 : (view.currentItem?.x ?? 0) - view.contentX
+                implicitHeight: isVertical ? ((view.currentItem as SpecialWsDelegate)?.size ?? 0) : Tokens.sizes.bar.innerWidth - Tokens.padding.small
+                implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small : ((view.currentItem as SpecialWsDelegate)?.size ?? 0)
 
                 color: Colours.palette.m3tertiary
                 radius: Tokens.rounding.full
@@ -188,8 +203,8 @@ Item {
 
                     anchors.horizontalCenter: parent.horizontalCenter
 
-                    x: 0
-                    y: -indicator.y
+                    x: isVertical ? 0 : -indicator.x
+                    y: isVertical ? -indicator.y : 0
                     implicitWidth: view.width
                     implicitHeight: view.height
                 }
@@ -205,6 +220,11 @@ Item {
                         type: Anim.Emphasized
                     }
                 }
+                Behavior on implicitWidth {
+                    Anim {
+                        type: Anim.Emphasized
+                    }
+                }
             }
         }
     }
@@ -215,14 +235,18 @@ Item {
         anchors.fill: view
 
         drag.target: view.contentItem
-        drag.axis: Drag.YAxis
+        drag.axis: isVertical ? Drag.YAxis : Drag.XAxis
         drag.maximumY: 0
-        drag.minimumY: Math.min(0, view.height - view.contentHeight - Tokens.padding.extraSmall)
+        drag.maximumX: 0
+        drag.minimumY: isVertical ? Math.min(0, view.height - view.contentHeight - Tokens.padding.extraSmall) : 0
+        drag.minimumX: isVertical ? 0 : Math.min(0, view.width - view.contentWidth - Tokens.padding.extraSmall)
 
-        onPressed: event => startY = event.y
+        property real startPos
+
+        onPressed: event => startPos = isVertical ? event.y : event.x
 
         onClicked: event => {
-            if (Math.abs(event.y - startY) > drag.threshold)
+            if (Math.abs((isVertical ? event.y : event.x) - startPos) > drag.threshold)
                 return;
 
             const ws = view.itemAt(event.x, event.y) as SpecialWsDelegate;
@@ -233,19 +257,23 @@ Item {
         }
     }
 
-    component SpecialWsDelegate: ColumnLayout {
+    component SpecialWsDelegate: GridLayout {
         id: ws
+        flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
         required property HyprlandWorkspace modelData
-        readonly property int size: label.Layout.preferredHeight + (hasWindows ? windows.implicitHeight + Tokens.padding.extraSmall : 0)
+        readonly property int size: (isVertical ? label.Layout.preferredHeight : label.Layout.preferredWidth) + (hasWindows ? (isVertical ? windows.implicitHeight : windows.implicitWidth) + Tokens.padding.extraSmall : 0)
         property int wsId
         property string icon
         property bool hasWindows
 
-        anchors.left: view.contentItem.left
-        anchors.right: view.contentItem.right
+        anchors.left: isVertical ? view.contentItem.left : undefined
+        anchors.right: isVertical ? view.contentItem.right : undefined
+        anchors.top: !isVertical ? view.contentItem.top : undefined
+        anchors.bottom: !isVertical ? view.contentItem.bottom : undefined
 
-        spacing: 0
+        rowSpacing: 0
+        columnSpacing: 0
 
         Component.onCompleted: {
             wsId = modelData.id;
@@ -287,8 +315,9 @@ Item {
 
             asynchronous: true
 
-            Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
-            Layout.preferredHeight: Tokens.sizes.bar.innerWidth - Tokens.padding.small
+            Layout.alignment: isVertical ? (Qt.AlignHCenter | Qt.AlignTop) : (Qt.AlignVCenter | Qt.AlignLeft)
+            Layout.preferredHeight: isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small : -1
+            Layout.preferredWidth: isVertical ? -1 : Tokens.sizes.bar.innerWidth - Tokens.padding.small
 
             sourceComponent: ws.icon.length === 1 ? letterComp : iconComp
 
@@ -318,14 +347,18 @@ Item {
             asynchronous: true
 
             Layout.alignment: Qt.AlignHCenter
-            Layout.fillHeight: true
-            Layout.preferredHeight: implicitHeight
+            Layout.fillHeight: isVertical
+            Layout.fillWidth: !isVertical
+            Layout.preferredHeight: isVertical ? implicitHeight : -1
+            Layout.preferredWidth: isVertical ? -1 : implicitWidth
 
             visible: active
             active: ws.hasWindows
 
-            sourceComponent: Column {
-                spacing: 0
+            sourceComponent: GridLayout {
+                flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                rowSpacing: 0
+                columnSpacing: 0
 
                 add: Transition {
                     Anim {

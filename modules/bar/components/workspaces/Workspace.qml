@@ -8,8 +8,10 @@ import qs.components
 import qs.services
 import qs.utils
 
-ColumnLayout {
+GridLayout {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
+    flow: isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
     required property int index
     required property int activeWsId
@@ -18,22 +20,26 @@ ColumnLayout {
 
     readonly property bool isWorkspace: true // Flag for finding workspace children
     // Unanimated prop for others to use as reference
-    readonly property int size: implicitHeight + (hasWindows ? Tokens.padding.extraSmall : 0)
+    readonly property int size: (isVertical ? implicitHeight : implicitWidth) + (hasWindows ? Tokens.padding.extraSmall : 0)
 
     readonly property int ws: groupOffset + index + 1
     readonly property bool isOccupied: occupied[ws] ?? false
     readonly property bool hasWindows: isOccupied && Config.bar.workspaces.showWindows
 
-    Layout.alignment: Qt.AlignHCenter
-    Layout.preferredHeight: size
+    Layout.alignment: isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
+    Layout.preferredHeight: isVertical ? size : -1
+    Layout.preferredWidth: isVertical ? -1 : size
 
-    spacing: 0
+    rowSpacing: 0
+    columnSpacing: 0
 
     StyledText {
         id: indicator
 
-        Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
-        Layout.preferredHeight: Tokens.sizes.bar.innerWidth - Tokens.padding.small
+        Layout.alignment: isVertical ? (Qt.AlignHCenter | Qt.AlignTop) : (Qt.AlignVCenter | Qt.AlignLeft)
+        Layout.preferredHeight: isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small : -1
+        Layout.preferredWidth: isVertical ? -1 : Tokens.sizes.bar.innerWidth - Tokens.padding.small
+        horizontalAlignment: isVertical ? Text.AlignHCenter : Text.AlignHCenter
 
         animate: true
         text: {
@@ -60,15 +66,19 @@ ColumnLayout {
 
         asynchronous: true
 
-        Layout.alignment: Qt.AlignHCenter
-        Layout.fillHeight: true
-        Layout.topMargin: -Tokens.sizes.bar.innerWidth / 10
+        Layout.alignment: isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
+        Layout.fillHeight: isVertical
+        Layout.fillWidth: !isVertical
+        Layout.topMargin: isVertical ? -Tokens.sizes.bar.innerWidth / 10 : 0
+        Layout.leftMargin: !isVertical ? -Tokens.sizes.bar.innerWidth / 10 : 0
 
         visible: active
         active: root.hasWindows
 
-        sourceComponent: Column {
-            spacing: 0
+        sourceComponent: GridLayout {
+            flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+            rowSpacing: 0
+            columnSpacing: 0
 
             add: Transition {
                 Anim {
@@ -112,6 +122,9 @@ ColumnLayout {
     }
 
     Behavior on Layout.preferredHeight {
+        Anim {}
+    }
+    Behavior on Layout.preferredWidth {
         Anim {}
     }
 }

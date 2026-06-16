@@ -8,25 +8,28 @@ import qs.services
 
 StyledRect {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     readonly property color colour: Colours.palette.m3tertiary
     readonly property int padding: Config.bar.clock.background ? Tokens.padding.medium : Tokens.padding.extraSmall
     readonly property var font: Tokens.font.body.builders.small.scale(1.1)
 
-    implicitWidth: Tokens.sizes.bar.innerWidth
-    implicitHeight: layout.implicitHeight + root.padding * 2
+    implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth : layout.implicitWidth + root.padding * 2
+    implicitHeight: isVertical ? layout.implicitHeight + root.padding * 2 : Tokens.sizes.bar.innerWidth
 
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, Config.bar.clock.background ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Tokens.rounding.full
 
-    ColumnLayout {
+    GridLayout {
         id: layout
+        flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
         anchors.centerIn: parent
-        spacing: Tokens.spacing.extraSmall
+        rowSpacing: Tokens.spacing.extraSmall
+        columnSpacing: Tokens.spacing.extraSmall
 
         Loader {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             asynchronous: true
             active: Config.bar.clock.showIcon
             visible: active
@@ -38,24 +41,26 @@ StyledRect {
         }
 
         StyledText {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             visible: Config.bar.clock.showDate
 
             horizontalAlignment: StyledText.AlignHCenter
-            text: Time.format("ddd\nd")
+            text: root.isVertical ? Time.format("ddd\nd") : Time.format("ddd d")
             font: Tokens.font.body.small
             color: root.colour
         }
 
         Rectangle {
-            Layout.fillWidth: true
+            Layout.fillWidth: root.isVertical
+            Layout.fillHeight: !root.isVertical
             visible: Config.bar.clock.showDate
-            implicitHeight: 1
+            implicitHeight: root.isVertical ? 1 : -1
+            implicitWidth: root.isVertical ? -1 : 1
             color: Colours.palette.m3outlineVariant
         }
 
         StyledText {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             text: Time.hourStr
             font: {
                 const scale = text === "11" ? 1.15 : Math.min(1.05, Math.max(hourMetrics.width, minMetrics.width) / hourMetrics.width);
@@ -72,8 +77,9 @@ StyledRect {
         }
 
         StyledText {
-            Layout.topMargin: -parent.spacing - 4
-            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: root.isVertical ? -parent.rowSpacing - 4 : 0
+            Layout.leftMargin: !root.isVertical ? -parent.columnSpacing - 4 : 0
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             text: Time.minuteStr
             font: {
                 const scale = text === "11" ? 1.15 : Math.min(1.05, Math.max(hourMetrics.width, minMetrics.width) / minMetrics.width);
@@ -90,8 +96,9 @@ StyledRect {
         }
 
         Loader {
-            Layout.topMargin: -parent.spacing - 4
-            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: root.isVertical ? -parent.rowSpacing - 4 : 0
+            Layout.leftMargin: !root.isVertical ? -parent.columnSpacing - 4 : 0
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             asynchronous: true
             active: GlobalConfig.services.useTwelveHourClock
             visible: active

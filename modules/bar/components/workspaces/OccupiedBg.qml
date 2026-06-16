@@ -8,6 +8,7 @@ import qs.services
 
 Item {
     id: root
+    readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     required property Repeater workspaces
     required property var occupied
@@ -62,11 +63,13 @@ Item {
                 return i % Config.bar.workspaces.shown;
             }
 
-            anchors.horizontalCenter: root.horizontalCenter
+            anchors.horizontalCenter: root.isVertical ? root.horizontalCenter : undefined
+            anchors.verticalCenter: !root.isVertical ? root.verticalCenter : undefined
 
-            y: (start?.y ?? 0) - 1
-            implicitWidth: Tokens.sizes.bar.innerWidth - Tokens.padding.small + 2
-            implicitHeight: start && end ? end.y + end.size - start.y + 2 : 0
+            y: root.isVertical ? ((start?.y ?? 0) - 1) : 0
+            x: !root.isVertical ? ((start?.x ?? 0) - 1) : 0
+            implicitWidth: root.isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small + 2 : (start && end ? end.x + end.size - start.x + 2 : 0)
+            implicitHeight: root.isVertical ? (start && end ? end.y + end.size - start.y + 2 : 0) : Tokens.sizes.bar.innerWidth - Tokens.padding.small + 2
 
             color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
             radius: Tokens.rounding.full
@@ -83,7 +86,12 @@ Item {
             Behavior on y {
                 Anim {}
             }
-
+            Behavior on x {
+                Anim {}
+            }
+            Behavior on implicitWidth {
+                Anim {}
+            }
             Behavior on implicitHeight {
                 Anim {}
             }
