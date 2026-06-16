@@ -37,6 +37,7 @@ Scope {
             color: Colours.palette.m3background
 
             Column {
+                id: mainColumn
                 anchors.centerIn: parent
                 spacing: Tokens.spacing.large
 
@@ -59,10 +60,24 @@ Scope {
                     }
                 }
 
-                StyledTextField {
-                    id: sessionCommandField
-                    placeholderText: "Session Command"
-                    text: "caelestia-shell"
+                property var sessions: [
+                    { name: "Caelestia", cmd: ["caelestia-shell"] },
+                    { name: "Hyprland", cmd: ["Hyprland"] }
+                ]
+                property int selectedSession: 0
+
+                Row {
+                    spacing: Tokens.spacing.medium
+                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    Repeater {
+                        model: mainColumn.sessions
+                        StyledRadioButton {
+                            text: modelData.name
+                            checked: mainColumn.selectedSession === index
+                            onClicked: mainColumn.selectedSession = index
+                        }
+                    }
                 }
 
                 StyledText {
@@ -109,7 +124,7 @@ Scope {
         onAuthSuccess: {
             statusMsg.text = "Success!";
             // Start the default session
-            greetd.startSession(sessionCommandField.text.split(" ")); // Example
+            greetd.startSession(mainColumn.sessions[mainColumn.selectedSession].cmd);
         }
         onAuthFailed: reason => {
             statusMsg.text = "Login Failed: " + reason;

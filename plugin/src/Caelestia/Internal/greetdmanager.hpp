@@ -3,19 +3,11 @@
 #include <QObject>
 #include <QString>
 #include <QLocalSocket>
+#include <QJsonObject>
 #include <qqmlintegration.h>
 
 namespace caelestia {
 
-/**
- * @brief Native greetd authentication and session handoff manager.
- * 
- * This class implements the JSON over Unix socket IPC protocol used by greetd.
- * The typical protocol flow for authentication is:
- * 1. create_session (with username) -> greetd responds with an auth_message (e.g. PAM password prompt).
- * 2. post_auth_message_response (with secret) -> greetd responds with success (or error/another auth_message).
- * 3. start_session (with command array) -> greetd replaces itself with the target user's session.
- */
 class GreetdManager : public QObject {
     Q_OBJECT
     QML_ELEMENT
@@ -35,9 +27,25 @@ signals:
     void authSuccess();
     void authFailed(const QString& reason);
 
+private slots:
+    void handleReadyRead();
+    void handleError(QLocalSocket::LocalSocketError error);
+    void handleConnected();
+
 private:
+    void sendRequest(const QJsonObject& req);
+    void processResponse(const QJsonObject& res);
+    void resetState(const QString& errorReason = QString());
+
     QString m_currentUser;
     QLocalSocket* m_socket;
+
+    enum class State { Idle, Connecting, Auth_CreatingSession, Auth_PostingAuth, StartingSession };
+    State m_state = State::Idle;
+
+    QString m_pendingUser;
+    QString m_pendingPassword;
+    QByteArray m_buffer;
 };
 
 } // namespace caelestia

@@ -5,6 +5,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Internal
 import Caelestia.Config
 import qs.services
 import qs.utils
@@ -117,7 +118,9 @@ Singleton {
         onFileChanged: reload()
         onLoaded: {
             root.load(text(), false);
-            Quickshell.execDetached(["sh", "-c", "cat ~/.local/state/caelestia/scheme.json > /var/tmp/caelestia-greeter-theme.json && chmod 644 /var/tmp/caelestia-greeter-theme.json || true"]);
+            if (!ThemeBridge.exportGreeterTheme(path)) {
+                console.error("Colours: Failed to export greeter theme to /var/tmp.");
+            }
         }
     }
 

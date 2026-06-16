@@ -7,7 +7,9 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$1" = "rollback" ] || [ "$1" = "uninstall" ]; then
+ACTION=$1
+
+if [ "$ACTION" = "rollback" ] || [ "$ACTION" = "uninstall" ]; then
   echo "Rolling back greeter configuration..."
   if [ -f /etc/greetd/config.toml.bak ]; then
     mv /etc/greetd/config.toml.bak /etc/greetd/config.toml
@@ -22,7 +24,14 @@ if [ "$1" = "rollback" ] || [ "$1" = "uninstall" ]; then
   if [ -f /etc/greetd/prev_dm.bak ]; then
     PREV_DM=$(cat /etc/greetd/prev_dm.bak)
     if [ -n "$PREV_DM" ]; then
-      systemctl enable "$PREV_DM"
+      if ! systemctl list-unit-files "$PREV_DM" >/dev/null 2>&1; then
+        echo "FATAL: Previous display manager $PREV_DM does not exist!"
+        exit 1
+      fi
+      if ! systemctl enable "$PREV_DM"; then
+        echo "FATAL: Failed to enable $PREV_DM!"
+        exit 1
+      fi
       echo "Restored previous display manager: $PREV_DM"
     fi
     rm -f /etc/greetd/prev_dm.bak
@@ -31,13 +40,39 @@ if [ "$1" = "rollback" ] || [ "$1" = "uninstall" ]; then
   if [ -f /etc/greetd/prev_default_target.bak ]; then
     PREV_TARGET=$(cat /etc/greetd/prev_default_target.bak)
     if [ -n "$PREV_TARGET" ]; then
-      systemctl set-default "$PREV_TARGET"
+      if ! systemctl set-default "$PREV_TARGET"; then
+        echo "FATAL: Failed to set default target $PREV_TARGET!"
+        exit 1
+      fi
       echo "Restored previous default target: $PREV_TARGET"
     fi
     rm -f /etc/greetd/prev_default_target.bak
   fi
 
   echo "Rollback complete."
+  exit 0
+fi
+
+if [ "$ACTION" != "--apply" ]; then
+  echo "Dry-run / Status Output:"
+  echo "Current Default Target: $(systemctl get-default 2>/dev/null)"
+  
+  CURRENT_DM=""
+  if [ -L /etc/systemd/system/display-manager.service ]; then
+    CURRENT_DM=$(basename "$(readlink /etc/systemd/system/display-manager.service)")
+  else
+    for dm in gdm lightdm sddm lxdm xdm; do
+      if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
+        CURRENT_DM="$dm.service"
+        break
+      fi
+    done
+  fi
+  echo "Current Display Manager: ${CURRENT_DM:-None}"
+  echo "greetd installed user: $(getent passwd greeter >/dev/null && echo "Yes" || echo "No")"
+  echo ""
+  echo "To install and enable the greeter as your default display manager, run:"
+  echo "  $0 --apply"
   exit 0
 fi
 

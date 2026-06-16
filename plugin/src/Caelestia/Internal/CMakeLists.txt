@@ -10,6 +10,7 @@ qml_module(caelestia-internal
         sparklineitem.cpp
         visualiserbars.cpp
         greetdmanager.cpp
+        themebridge.cpp
     LIBRARIES
         Qt::Gui
         Qt::Quick
