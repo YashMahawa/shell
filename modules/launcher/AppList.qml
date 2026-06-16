@@ -59,17 +59,65 @@ StyledListView {
         return "apps";
     }
 
+
+    property var currentValues: []
+
+    Timer {
+        id: searchDebounce
+        interval: 150
+        running: false
+        repeat: false
+        onTriggered: {
+            root.updateSearch();
+        }
+    }
+
+    Connections {
+        target: search
+        function onTextChanged() {
+            searchDebounce.restart();
+        }
+    }
+
+    Connections {
+        target: Apps
+        function onSearchResultsChanged() {
+            if (root.state === "apps") {
+                root.currentValues = Apps.searchResults;
+            }
+        }
+    }
+
+    function updateSearch() {
+        if (state === "apps") {
+            Apps.search(search.text);
+        } else if (state === "actions") {
+            currentValues = Actions.query(search.text);
+        } else if (state === "calc") {
+            currentValues = [0];
+        } else if (state === "scheme") {
+            currentValues = Schemes.query(search.text);
+        } else if (state === "variant") {
+            currentValues = M3Variants.query(search.text);
+        }
+    }
+
     onStateChanged: {
         if (state === "scheme" || state === "variant")
             Schemes.reload();
+        
+        // When state changes, immediately update since we might have switched prefix
+        searchDebounce.stop();
+        updateSearch();
     }
+
 
     states: [
         State {
             name: "apps"
 
             PropertyChanges {
-                model.values: Apps.search(search.text)
+                model.values: root.currentValues
                 root.delegate: appItem
             }
         },
@@ -77,7 +125,7 @@ StyledListView {
             name: "actions"
 
             PropertyChanges {
-                model.values: Actions.query(search.text)
+                model.values: root.currentValues
                 root.delegate: actionItem
             }
         },
@@ -93,7 +141,7 @@ StyledListView {
             name: "scheme"
 
             PropertyChanges {
-                model.values: Schemes.query(search.text)
+                model.values: root.currentValues
                 root.delegate: schemeItem
             }
         },

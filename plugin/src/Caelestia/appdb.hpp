@@ -69,6 +69,7 @@ class AppDb : public QObject {
     Q_PROPERTY(QObjectList entries READ entries WRITE setEntries NOTIFY entriesChanged REQUIRED)
     Q_PROPERTY(QStringList favouriteApps READ favouriteApps WRITE setFavouriteApps NOTIFY favouriteAppsChanged REQUIRED)
     Q_PROPERTY(QQmlListProperty<caelestia::AppEntry> apps READ apps NOTIFY appsChanged)
+    Q_PROPERTY(QObjectList searchResults READ searchResults NOTIFY searchResultsChanged)
 
 public:
     explicit AppDb(QObject* parent = nullptr);
@@ -87,12 +88,20 @@ public:
     [[nodiscard]] QQmlListProperty<AppEntry> apps();
 
     Q_INVOKABLE void incrementFrequency(const QString& id);
+    
+    Q_INVOKABLE void searchAsync(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy);
+    
+    [[nodiscard]] QObjectList searchResults() const;
 
 signals:
     void pathChanged();
     void entriesChanged();
     void favouriteAppsChanged();
     void appsChanged();
+    void searchResultsChanged();
+    
+public slots:
+    void setSearchResults(quint64 generation, const QString& cacheKey, const QObjectList& results);
 
 private:
     QTimer* m_timer;
@@ -104,7 +113,13 @@ private:
     QList<QRegularExpression> m_favouriteAppsRegex; // pre-regexified m_favouriteApps list
     QHash<QString, AppEntry*> m_apps;
     mutable QList<AppEntry*> m_sortedApps;
+    
+    QObjectList m_searchResults;
+    QHash<QString, QObjectList> m_searchCache;
+    QStringList m_searchCacheOrder;
+    quint64 m_searchGeneration = 0;
 
+    QString generateCacheKey(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) const;
     QString regexifyString(const QString& original) const;
     QList<AppEntry*>& getSortedApps() const;
     bool isFavourite(const AppEntry* app) const;
