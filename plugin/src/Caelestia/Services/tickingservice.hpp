@@ -27,7 +27,7 @@ private:
     void applyInterval(int ms);
 
     QTimer* m_timer;
-    int m_interval = 0; // Event-driven model
+    int m_interval = 1000;
     bool m_running = false;
 };
 
