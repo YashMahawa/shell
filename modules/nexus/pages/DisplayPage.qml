@@ -18,9 +18,17 @@ PageBase {
 
     property var monitorList: Hypr.monitors.values
     property bool showConfirmSave: false
+    property string errorMessage: ""
 
     Process {
         id: monitorProc
+        onExited: exitCode => { // qmllint disable signal-handler-parameters
+            if (exitCode !== 0) {
+                root.errorMessage = qsTr("Process failed. Please check your configuration.");
+            } else {
+                root.errorMessage = "";
+            }
+        }
     }
 
     ColumnLayout {
@@ -28,6 +36,15 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        StyledText {
+            Layout.fillWidth: true
+            text: root.errorMessage
+            color: Colours.palette.m3error
+            font: Tokens.font.body.small
+            visible: root.errorMessage !== ""
+            wrapMode: Text.Wrap
+        }
 
         ConnectedRect {
             Layout.fillWidth: true
@@ -131,7 +148,7 @@ PageBase {
                                 let res = `${m.width}x${m.height}@${m.refreshRate}`;
                                 
                                 monitorProc.exec([
-                                    "/app/modules/nexus/scripts/manage_monitors.py",
+                                    Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"),
                                     "--apply",
                                     "--name", m.name,
                                     "--res", res,
@@ -193,7 +210,7 @@ PageBase {
                                     let res = `${m.width}x${m.height}@${m.refreshRate}`;
                                     
                                     monitorProc.exec([
-                                        "/app/modules/nexus/scripts/manage_monitors.py",
+                                        Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"),
                                         "--apply",
                                         "--name", m.name,
                                         "--res", res,
@@ -255,7 +272,7 @@ PageBase {
                                     pos: `${m.x}x${m.y}`,
                                     scale: m.scale
                                 }));
-                                monitorProc.exec(["/app/modules/nexus/scripts/manage_monitors.py", "--save", "--monitors-json", JSON.stringify(monitorsData)]);
+                                monitorProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
                                 root.showConfirmSave = false;
                             }
                         }

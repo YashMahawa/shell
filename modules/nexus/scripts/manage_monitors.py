@@ -6,19 +6,29 @@ import os
 import shutil
 import argparse
 import json
+import time
 
 def validate_monitor_name(name):
     if not re.match(r'^[a-zA-Z0-9_-]+$', name):
         raise ValueError(f"Invalid monitor name: {name}")
 
-def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale):
-    validate_monitor_name(name)
+def validate_res(res):
     if not re.match(r'^\d+x\d+@[\d\.]+$', res) and res != "preferred":
         raise ValueError("Invalid resolution")
+
+def validate_pos(pos):
     if not re.match(r'^-?\d+x-?\d+$', pos) and pos != "auto":
         raise ValueError("Invalid position")
+
+def validate_scale(scale):
     if not re.match(r'^[\d\.]+$', str(scale)):
         raise ValueError("Invalid scale")
+
+def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale):
+    validate_monitor_name(name)
+    validate_res(res)
+    validate_pos(pos)
+    validate_scale(scale)
 
     cmd = ["hyprctl", "keyword", "monitor", f"{name},{res},{pos},{scale}"]
     try:
@@ -46,14 +56,11 @@ def save_monitors(monitors_json):
     monitors_conf_path = os.path.join(config_dir, "monitors.conf")
     hyprland_conf_path = os.path.join(config_dir, "hyprland.conf")
 
-    with open(monitors_conf_path, "w") as f:
-        for m in monitors:
-            name = m.get("name")
-            validate_monitor_name(name)
-            res = m.get("res")
-            pos = m.get("pos")
-            scale = m.get("scale")
-            f.write(f"monitor={name},{res},{pos},{scale}\n")
+    for m in monitors:
+        validate_monitor_name(m.get("name"))
+        validate_res(m.get("res"))
+        validate_pos(m.get("pos"))
+        validate_scale(m.get("scale"))
 
     if os.path.exists(hyprland_conf_path):
         with open(hyprland_conf_path, "r") as f:
@@ -61,13 +68,27 @@ def save_monitors(monitors_json):
 
         source_line = "source = ~/.config/hypr/monitors.conf"
         if not re.search(r'^\s*source\s*=\s*~/\.config/hypr/monitors\.conf', content, re.MULTILINE):
-            # Backup
-            shutil.copy2(hyprland_conf_path, hyprland_conf_path + ".bak")
-            with open(hyprland_conf_path, "a") as f:
-                f.write(f"\n{source_line}\n")
-            print("Added source to hyprland.conf")
+            timestamp = int(time.time())
+            backup_path = f"{hyprland_conf_path}.bak.{timestamp}"
+            shutil.copy2(hyprland_conf_path, backup_path)
+            try:
+                with open(hyprland_conf_path, "a") as f:
+                    f.write(f"\n{source_line}\n")
+                print(f"Added source to hyprland.conf (backup saved to {backup_path})")
+            except Exception as e:
+                print(f"Failed to update hyprland.conf: {e}", file=sys.stderr)
+                shutil.copy2(backup_path, hyprland_conf_path)
+                sys.exit(1)
         else:
             print("source already in hyprland.conf")
+
+    try:
+        with open(monitors_conf_path, "w") as f:
+            for m in monitors:
+                f.write(f"monitor={m['name']},{m['res']},{m['pos']},{m['scale']}\n")
+    except Exception as e:
+        print(f"Failed to write monitors.conf: {e}", file=sys.stderr)
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser()
