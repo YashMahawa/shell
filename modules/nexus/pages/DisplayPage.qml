@@ -23,9 +23,19 @@ PageBase {
         for (let i = 0; i < monitorList.length; i++) {
             const m = monitorList[i];
             let res = `${m.width}x${m.height}@${m.refreshRate}`;
-            conf += `monitor=${m.name},${res},${m.x}x${m.y},${m.scale}\\n`;
+            conf += `monitor=${m.name},${res},${m.x}x${m.y},${m.scale}\n`;
         }
-        saveProc.exec(["sh", "-c", "mkdir -p ~/.config/hypr && printf '%b' '" + conf + "' > ~/.config/hypr/monitors.conf"]);
+        
+        let shCmd = `
+mkdir -p ~/.config/hypr
+printf '%s\n' "$1" > ~/.config/hypr/monitors.conf
+if [ -f ~/.config/hypr/hyprland.conf ]; then
+    if ! grep -q "^[[:space:]]*source[[:space:]]*=[[:space:]]*~/.config/hypr/monitors.conf" ~/.config/hypr/hyprland.conf; then
+        echo "source = ~/.config/hypr/monitors.conf" >> ~/.config/hypr/hyprland.conf
+    fi
+fi
+`;
+        saveProc.exec(["sh", "-c", shCmd, "--", conf]);
     }
 
     Process {
@@ -138,9 +148,16 @@ PageBase {
                                 
                                 let res = `${monRect.modelData.width}x${monRect.modelData.height}@${monRect.modelData.refreshRate}`;
                                 let cmd = `keyword monitor ${monRect.modelData.name},${res},${newPx}x${newPy},${monRect.modelData.scale}`;
-                                Hypr.dispatch(cmd);
+                                let oldCmd = `keyword monitor ${monRect.modelData.name},${res},${monRect.modelData.x}x${monRect.modelData.y},${monRect.modelData.scale}`;
                                 
-                                root.saveMonitors();
+                                let result = String(Hypr.dispatch(cmd) || "");
+                                if (result.toLowerCase().includes("invalid") || result.toLowerCase().includes("error") || result.toLowerCase().includes("fail")) {
+                                    console.error("Monitor change failed, reverting:", result);
+                                    Hypr.dispatch(oldCmd);
+                                } else {
+                                    root.saveMonitors();
+                                }
+                                
                                 Qt.callLater(() => { canvas.updateBounds(); });
                             }
                         }
@@ -191,8 +208,15 @@ PageBase {
                                     let m = monitorRect.modelData;
                                     let res = `${m.width}x${m.height}@${m.refreshRate}`;
                                     let cmd = `keyword monitor ${m.name},${res},${m.x}x${m.y},${modelData}`;
-                                    Hypr.dispatch(cmd);
-                                    root.saveMonitors();
+                                    let oldCmd = `keyword monitor ${m.name},${res},${m.x}x${m.y},${m.scale}`;
+                                    
+                                    let result = String(Hypr.dispatch(cmd) || "");
+                                    if (result.toLowerCase().includes("invalid") || result.toLowerCase().includes("error") || result.toLowerCase().includes("fail")) {
+                                        console.error("Scale change failed, reverting:", result);
+                                        Hypr.dispatch(oldCmd);
+                                    } else {
+                                        root.saveMonitors();
+                                    }
                                 }
                             }
                         }
