@@ -101,7 +101,7 @@ signals:
     void searchResultsChanged();
     
 public slots:
-    void setSearchResults(const QString& query, const QObjectList& results);
+    void setSearchResults(quint64 generation, const QString& cacheKey, const QObjectList& results);
 
 private:
     QTimer* m_timer;
@@ -117,7 +117,9 @@ private:
     QObjectList m_searchResults;
     QHash<QString, QObjectList> m_searchCache;
     QStringList m_searchCacheOrder;
+    quint64 m_searchGeneration = 0;
 
+    QString generateCacheKey(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) const;
     QString regexifyString(const QString& original) const;
     QList<AppEntry*>& getSortedApps() const;
     bool isFavourite(const AppEntry* app) const;

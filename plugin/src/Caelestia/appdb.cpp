@@ -14,32 +14,38 @@ Q_LOGGING_CATEGORY(lcAppDb, "caelestia.appdb", QtInfoMsg)
 
 namespace caelestia {
 
+struct AppSnapshot {
+    QObject* entry;
+    bool runInTerminal;
+    QList<QString> values;
+};
+
 class SearchTask : public QRunnable {
 public:
-    SearchTask(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy, const QList<AppEntry*>& apps, AppDb* db)
-        : m_query(query), m_keys(keys), m_weights(weights), m_isTerminalOnly(isTerminalOnly), m_useFuzzy(useFuzzy), m_apps(apps), m_db(db) {}
+    SearchTask(const QString& query, const QString& cacheKey, quint64 generation, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy, const QList<AppSnapshot>& apps, AppDb* db)
+        : m_query(query), m_cacheKey(cacheKey), m_generation(generation), m_weights(weights), m_isTerminalOnly(isTerminalOnly), m_useFuzzy(useFuzzy), m_apps(apps), m_db(db) {}
 
     void run() override {
         QObjectList results;
         if (m_query.isEmpty() && !m_isTerminalOnly) {
-            for (auto* app : m_apps) {
-                results.append(app->entry());
+            for (const auto& app : m_apps) {
+                results.append(app.entry);
             }
         } else {
             QList<QPair<double, QObject*>> scoredApps;
-            for (auto* app : m_apps) {
-                if (m_isTerminalOnly && !app->entry()->property("runInTerminal").toBool()) {
+            for (const auto& app : m_apps) {
+                if (m_isTerminalOnly && !app.runInTerminal) {
                     continue;
                 }
                 if (m_query.isEmpty()) {
-                    scoredApps.append({0.0, app->entry()});
+                    scoredApps.append({0.0, app.entry});
                     continue;
                 }
 
                 double totalScore = 0;
                 bool matched = false;
-                for (int i = 0; i < m_keys.size(); ++i) {
-                    QString val = app->property(m_keys[i].toUtf8().constData()).toString();
+                for (int i = 0; i < app.values.size(); ++i) {
+                    QString val = app.values[i];
                     double score = m_useFuzzy ? fuzzyMatchScore(m_query, val) : exactMatchScore(m_query, val);
                     if (score > -10000.0) {
                         matched = true;
@@ -48,7 +54,7 @@ public:
                     }
                 }
                 if (matched) {
-                    scoredApps.append({totalScore, app->entry()});
+                    scoredApps.append({totalScore, app.entry});
                 }
             }
 
@@ -61,18 +67,19 @@ public:
             }
         }
 
-        QMetaObject::invokeMethod(m_db, [db = m_db, query = m_query, res = results]() {
-            db->setSearchResults(query, res);
+        QMetaObject::invokeMethod(m_db, [db = m_db, gen = m_generation, key = m_cacheKey, res = results]() {
+            db->setSearchResults(gen, key, res);
         });
     }
 
 private:
     QString m_query;
-    QStringList m_keys;
+    QString m_cacheKey;
+    quint64 m_generation;
     QList<qreal> m_weights;
     bool m_isTerminalOnly;
     bool m_useFuzzy;
-    QList<AppEntry*> m_apps;
+    QList<AppSnapshot> m_apps;
     AppDb* m_db;
 
     double fuzzyMatchScore(const QString& query, const QString& target) const {
@@ -432,12 +439,41 @@ void AppDb::updateApps() {
 
 
 
+QString AppDb::generateCacheKey(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) const {
+    QStringList parts;
+    parts << query << keys.join(",");
+    QStringList weightStrs;
+    for (qreal w : weights) {
+        weightStrs << QString::number(w);
+    }
+    parts << weightStrs.join(",");
+    parts << (isTerminalOnly ? "1" : "0") << (useFuzzy ? "1" : "0");
+    return parts.join("|");
+}
+
 void AppDb::searchAsync(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) {
-    if (m_searchCache.contains(query)) {
-        setSearchResults(query, m_searchCache.value(query));
+    QString cacheKey = generateCacheKey(query, keys, weights, isTerminalOnly, useFuzzy);
+    m_searchGeneration++;
+    quint64 currentGen = m_searchGeneration;
+
+    if (m_searchCache.contains(cacheKey)) {
+        setSearchResults(currentGen, cacheKey, m_searchCache.value(cacheKey));
         return;
     }
-    auto* task = new SearchTask(query, keys, weights, isTerminalOnly, useFuzzy, m_sortedApps, this);
+
+    QList<AppSnapshot> snapshot;
+    snapshot.reserve(m_sortedApps.size());
+    for (auto* app : m_sortedApps) {
+        AppSnapshot s;
+        s.entry = app->entry();
+        s.runInTerminal = s.entry->property("runInTerminal").toBool();
+        for (const QString& key : keys) {
+            s.values.append(app->property(key.toUtf8().constData()).toString());
+        }
+        snapshot.append(s);
+    }
+
+    auto* task = new SearchTask(query, cacheKey, currentGen, weights, isTerminalOnly, useFuzzy, snapshot, this);
     QThreadPool::globalInstance()->start(task);
 }
 
@@ -445,10 +481,14 @@ QObjectList AppDb::searchResults() const {
     return m_searchResults;
 }
 
-void AppDb::setSearchResults(const QString& query, const QObjectList& results) {
-    if (!m_searchCache.contains(query)) {
-        m_searchCache.insert(query, results);
-        m_searchCacheOrder.append(query);
+void AppDb::setSearchResults(quint64 generation, const QString& cacheKey, const QObjectList& results) {
+    if (generation != m_searchGeneration) {
+        return;
+    }
+
+    if (!m_searchCache.contains(cacheKey)) {
+        m_searchCache.insert(cacheKey, results);
+        m_searchCacheOrder.append(cacheKey);
         if (m_searchCacheOrder.size() > 50) {
             m_searchCache.remove(m_searchCacheOrder.takeFirst());
         }
