@@ -34,14 +34,14 @@ void UiScheduler::updateTimer() {
 void UiScheduler::connectNotify(const QMetaMethod& signal) {
     QObject::connectNotify(signal);
     if (signal == QMetaMethod::fromSignal(&UiScheduler::tick)) {
-        updateTimer();
+        QMetaObject::invokeMethod(this, [this]() { updateTimer(); }, Qt::QueuedConnection);
     }
 }
 
 void UiScheduler::disconnectNotify(const QMetaMethod& signal) {
     QObject::disconnectNotify(signal);
     if (signal == QMetaMethod::fromSignal(&UiScheduler::tick)) {
-        updateTimer();
+        QMetaObject::invokeMethod(this, [this]() { updateTimer(); }, Qt::QueuedConnection);
     }
 }
 
