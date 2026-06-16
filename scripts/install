@@ -1,0 +1,22 @@
+#!/bin/bash
+# Automate the installation and service enablement of the greeter.
+# This script configures the greeter as the system's default display manager.
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit 1
+fi
+
+mkdir -p /etc/greetd
+cat <<CONF > /etc/greetd/config.toml
+[terminal]
+vt = 1
+
+[default_session]
+command = "caelestia-shell -c /usr/share/quickshell/caelestia/greeter.qml"
+user = "greeter"
+CONF
+
+systemctl enable greetd.service
+systemctl set-default graphical.target
+echo "Greeter configured successfully."

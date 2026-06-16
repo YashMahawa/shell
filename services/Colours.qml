@@ -115,7 +115,10 @@ Singleton {
         path: `${Paths.state}/scheme.json`
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: root.load(text(), false)
+        onLoaded: {
+            root.load(text(), false);
+            Quickshell.execDetached(["sh", "-c", "cat ~/.local/state/caelestia/scheme.json > /var/tmp/caelestia-greeter-theme.json && chmod 644 /var/tmp/caelestia-greeter-theme.json || true"]);
+        }
     }
 
     ImageAnalyser {
