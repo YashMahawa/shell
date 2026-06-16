@@ -47,6 +47,130 @@ PageBase {
             target: Nmcli
         }
 
+        // Ethernet Section
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+            visible: Nmcli.ethernetDevices.length > 0
+
+            ConnectedRect {
+                Layout.fillWidth: true
+                first: true
+                last: Nmcli.ethernetDevices.length === 0
+                implicitHeight: ethTitleLayout.implicitHeight + ethTitleLayout.anchors.margins * 2
+
+                RowLayout {
+                    id: ethTitleLayout
+                    anchors.fill: parent
+                    anchors.margins: Tokens.padding.medium
+                    anchors.leftMargin: Tokens.padding.largeIncreased
+                    anchors.rightMargin: Tokens.padding.largeIncreased
+                    spacing: Tokens.spacing.medium
+
+                    MaterialIcon {
+                        text: "settings_ethernet"
+                        font: Tokens.font.icon.medium
+                    }
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: qsTr("Ethernet")
+                        font: Tokens.font.body.medium
+                    }
+                }
+            }
+
+            Repeater {
+                model: Nmcli.ethernetDevices
+                delegate: ConnectedRect {
+                    Layout.fillWidth: true
+                    first: false
+                    last: index === Nmcli.ethernetDevices.length - 1
+                    implicitHeight: ethLayout.implicitHeight + ethLayout.anchors.margins * 2
+
+                    RowLayout {
+                        id: ethLayout
+                        anchors.fill: parent
+                        anchors.margins: Tokens.padding.medium
+                        anchors.leftMargin: Tokens.padding.largeIncreased
+                        anchors.rightMargin: Tokens.padding.largeIncreased
+                        spacing: Tokens.spacing.medium
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: modelData.name || modelData.interface
+                                font: Tokens.font.body.small
+                            }
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: modelData.connected ? qsTr("Connected") : qsTr("Disconnected")
+                                color: Colours.palette.m3outline
+                                font: Tokens.font.label.small
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // VPN Section
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+            visible: Nmcli.vpnConnections.length > 0
+
+            ConnectedRect {
+                Layout.fillWidth: true
+                first: true
+                last: false
+                implicitHeight: vpnTitleLayout.implicitHeight + vpnTitleLayout.anchors.margins * 2
+
+                RowLayout {
+                    id: vpnTitleLayout
+                    anchors.fill: parent
+                    anchors.margins: Tokens.padding.medium
+                    anchors.leftMargin: Tokens.padding.largeIncreased
+                    anchors.rightMargin: Tokens.padding.largeIncreased
+                    spacing: Tokens.spacing.medium
+
+                    MaterialIcon {
+                        text: "vpn_key"
+                        font: Tokens.font.icon.medium
+                    }
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: qsTr("VPN Profiles")
+                        font: Tokens.font.body.medium
+                    }
+                }
+            }
+
+            Repeater {
+                model: Nmcli.vpnConnections
+                delegate: ToggleRow {
+                    Layout.fillWidth: true
+                    first: false
+                    last: index === Nmcli.vpnConnections.length - 1
+                    text: modelData.name
+                    subtext: modelData.type
+                    checked: modelData.active
+                    onToggled: {
+                        if (checked) {
+                            Nmcli.connectVpn(modelData.name);
+                        } else {
+                            Nmcli.disconnectVpn(modelData.name);
+                        }
+                    }
+                }
+            }
+        }
+
         ToggleRow {
             Layout.fillWidth: true
             first: true
