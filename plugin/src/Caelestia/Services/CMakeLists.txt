@@ -8,6 +8,7 @@ qml_module(caelestia-services
         audioprovider.cpp
         cavaprovider.cpp
         tickingservice.cpp
+    uischeduler.cpp
         sensorslib.cpp
         usagefmt.cpp
         cpu.cpp

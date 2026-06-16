@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Components
 import Caelestia.Config
+import Caelestia.Services
 import qs.components
 import qs.services
 
@@ -56,8 +57,9 @@ LazyListView {
             readonly property bool closed: notifInner.notifCount === 0
             property int startY
 
+            property bool clearing: false
             function closeAll(): void {
-                clearTimer.start();
+                clearing = true;
             }
 
             LazyListView.trackViewport: !notifInner.expanded && notifInner.nonAnimHeight < notifInner.implicitHeight
@@ -98,23 +100,21 @@ LazyListView {
                     closeAll();
             }
 
-            Timer {
-                id: clearTimer
-
-                interval: 15
-                repeat: true
-                triggeredOnStart: true
-                onTriggered: {
-                    const notifs = Notifs.notClosed.filter(n => n.appName === notif.modelData);
-                    if (notifs.length === 0) {
-                        stop();
-                        return;
+            Connections {
+                target: UiScheduler
+                function onTick() {
+                    if (notif.clearing) {
+                        const notifs = Notifs.notClosed.filter(n => n.appName === notif.modelData);
+                        if (notifs.length === 0) {
+                            notif.clearing = false;
+                            return;
+                        }
+                        for (const n of notifs.slice(0, 30))
+                            n.close();
                     }
-
-                    for (const n of notifs.slice(0, 30))
-                        n.close();
                 }
             }
+
 
             NotifGroup {
                 id: notifInner
