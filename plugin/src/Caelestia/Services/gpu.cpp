@@ -11,6 +11,9 @@
 
 namespace caelestia::services {
 
+
+#include <dlfcn.h>
+
 namespace {
 
 constexpr const char* kTypeDetectScript =
@@ -20,7 +23,54 @@ constexpr const char* kTypeDetectScript =
 
 constexpr const char* kNameDetectScript = "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null"
                                           " || glxinfo -B 2>/dev/null | grep 'Device:' | cut -d':' -f2 | cut -d'(' -f1"
-                                          " || lspci 2>/dev/null | grep -i 'vga\\|3d controller\\|display' | head -1";
+                                          " || lspci 2>/dev/null | grep -i 'vga\|3d controller\|display' | head -1";
+
+typedef struct nvmlDevice_st* nvmlDevice_t;
+typedef enum { NVML_SUCCESS = 0 } nvmlReturn_t;
+typedef struct { unsigned int gpu; unsigned int memory; } nvmlUtilization_t;
+
+typedef nvmlReturn_t (*nvmlInit_v2_t)();
+typedef nvmlReturn_t (*nvmlDeviceGetHandleByIndex_v2_t)(unsigned int, nvmlDevice_t*);
+typedef nvmlReturn_t (*nvmlDeviceGetUtilizationRates_t)(nvmlDevice_t, nvmlUtilization_t*);
+typedef nvmlReturn_t (*nvmlDeviceGetTemperature_t)(nvmlDevice_t, int, unsigned int*);
+
+struct NvmlAPI {
+    void* handle = nullptr;
+    nvmlInit_v2_t nvmlInit = nullptr;
+    nvmlDeviceGetHandleByIndex_v2_t nvmlDeviceGetHandleByIndex = nullptr;
+    nvmlDeviceGetUtilizationRates_t nvmlDeviceGetUtilizationRates = nullptr;
+    nvmlDeviceGetTemperature_t nvmlDeviceGetTemperature = nullptr;
+    nvmlDevice_t device = nullptr;
+    bool initialized = false;
+
+    NvmlAPI() {
+        handle = dlopen("libnvidia-ml.so.1", RTLD_NOW);
+        if (!handle) handle = dlopen("libnvidia-ml.so", RTLD_NOW);
+        if (handle) {
+            nvmlInit = (nvmlInit_v2_t)dlsym(handle, "nvmlInit_v2");
+            if (!nvmlInit) nvmlInit = (nvmlInit_v2_t)dlsym(handle, "nvmlInit");
+            nvmlDeviceGetHandleByIndex = (nvmlDeviceGetHandleByIndex_v2_t)dlsym(handle, "nvmlDeviceGetHandleByIndex_v2");
+            if (!nvmlDeviceGetHandleByIndex) nvmlDeviceGetHandleByIndex = (nvmlDeviceGetHandleByIndex_v2_t)dlsym(handle, "nvmlDeviceGetHandleByIndex");
+            nvmlDeviceGetUtilizationRates = (nvmlDeviceGetUtilizationRates_t)dlsym(handle, "nvmlDeviceGetUtilizationRates");
+            nvmlDeviceGetTemperature = (nvmlDeviceGetTemperature_t)dlsym(handle, "nvmlDeviceGetTemperature");
+            if (nvmlInit && nvmlDeviceGetHandleByIndex && nvmlDeviceGetUtilizationRates && nvmlDeviceGetTemperature) {
+                if (nvmlInit() == NVML_SUCCESS) {
+                    if (nvmlDeviceGetHandleByIndex(0, &device) == NVML_SUCCESS) {
+                        initialized = true;
+                    }
+                }
+            }
+        }
+    }
+    ~NvmlAPI() {
+        if (handle) dlclose(handle);
+    }
+};
+
+NvmlAPI& get_nvml() {
+    static NvmlAPI api;
+    return api;
+}
 
 } // namespace
 
@@ -191,6 +241,26 @@ void Gpu::readGenericUsage() {
 }
 
 void Gpu::startNvidiaUsage() {
+    auto& nvml = get_nvml();
+    if (nvml.initialized) {
+        nvmlUtilization_t util;
+        unsigned int temp = 0;
+        if (nvml.nvmlDeviceGetUtilizationRates(nvml.device, &util) == 0 /* NVML_SUCCESS */) {
+            const qreal usage = util.gpu / 100.0;
+            if (std::abs(usage - m_percentage) > 0.0001) {
+                m_percentage = usage;
+                Q_EMIT percentageChanged();
+            }
+        }
+        if (nvml.nvmlDeviceGetTemperature(nvml.device, 0 /* NVML_TEMPERATURE_GPU */, &temp) == 0) {
+            if (std::abs(temp - m_temperature) > 0.05) {
+                m_temperature = temp;
+                Q_EMIT temperatureChanged();
+            }
+        }
+        return;
+    }
+
     if (m_nvidiaProc) {
         return;
     }
@@ -220,7 +290,6 @@ void Gpu::startNvidiaUsage() {
     m_nvidiaProc->start(QStringLiteral("nvidia-smi"), { QStringLiteral("--query-gpu=utilization.gpu,temperature.gpu"),
                                                           QStringLiteral("--format=csv,noheader,nounits") });
 }
-
 void Gpu::readGpuTemperature() {
     const auto t = sensorslib::gpuPciAverageTemp();
     const qreal newTemp = t.value_or(0.0);

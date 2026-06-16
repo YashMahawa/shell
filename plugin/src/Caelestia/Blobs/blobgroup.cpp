@@ -36,6 +36,14 @@ void BlobGroup::setCornerFill(bool e) {
     markDirty();
 }
 
+void BlobGroup::setLod(bool e) {
+    if (m_lod == e)
+        return;
+    m_lod = e;
+    emit lodChanged();
+    markDirty();
+}
+
 void BlobGroup::addShape(BlobShape* shape) {
     if (!shape || m_shapes.contains(shape))
         return;

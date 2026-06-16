@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Caelestia
 import Caelestia.Config
+import Caelestia.Services
 import qs.services
 
 Singleton {
@@ -25,8 +26,13 @@ Singleton {
         });
     }
 
+
+    Component.onCompleted: UiScheduler.throttled = props.enabled;
+
     onEnabledChanged: {
+        UiScheduler.throttled = enabled;
         if (enabled) {
+
             setDynamicConfs();
             if (GlobalConfig.utilities.toasts.gameModeChanged)
                 Toaster.toast(qsTr("Game mode enabled"), qsTr("Disabled Hyprland animations, blur, gaps and shadows"), "gamepad");

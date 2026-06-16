@@ -31,6 +31,7 @@ Item {
         id: blobGroup
 
         smoothing: root.Tokens.rounding.medium
+        lod: GameMode.enabled || !nState.window.active
         color: root.blobColour
     }
 

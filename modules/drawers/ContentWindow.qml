@@ -149,6 +149,7 @@ StyledWindow {
 
             color: root.surfaceColour
             smoothing: root.contentItem.Config.border.smoothing
+            lod: GameMode.enabled || !focusGrab.active
         }
 
         BlobInvertedRect {

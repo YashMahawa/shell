@@ -1,5 +1,7 @@
 import QtQuick
 import qs.components
+import Caelestia.Services
+import qs.services
 
 ListView {
     id: root
@@ -23,9 +25,13 @@ ListView {
         }
     }
 
-    Timer {
-        running: root.doneFakeFlick
-        interval: 10
-        onTriggered: root.doneFakeFlick = false
+
+    Connections {
+        target: UiScheduler
+        function onTick() {
+            if (root.doneFakeFlick)
+                root.doneFakeFlick = false;
+        }
     }
+
 }

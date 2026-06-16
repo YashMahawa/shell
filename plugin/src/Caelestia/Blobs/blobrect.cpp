@@ -20,7 +20,7 @@ void BlobRect::updatePolish() {
         float totalDelta = std::abs(m_dm00 - 1.0f) + std::abs(m_dm01) + std::abs(m_dm11 - 1.0f);
         float totalVel = std::abs(m_dmVel00) + std::abs(m_dmVel01) + std::abs(m_dmVel11);
 
-        if (totalDelta < 0.004f && totalVel < 0.05f) {
+        if (totalDelta < 0.02f && totalVel < 0.2f) {
             // Snap to rest, no visible deformation
             m_dm00 = 1.0f;
             m_dm01 = 0.0f;
@@ -68,7 +68,7 @@ void BlobRect::updatePhysics() {
     const float speed = std::sqrt(velX * velX + velY * velY);
 
     if (!m_physicsActive) {
-        if (speed < 5.0f)
+        if (speed < 15.0f)
             return;
         m_physicsActive = true;
     }
@@ -284,10 +284,10 @@ void BlobRect::excludeCornersRemoveLast(QQmlListProperty<BlobRect>* prop) {
 }
 
 void BlobRect::checkAtRest(float speed) {
-    constexpr float kEpsilon = 0.002f;
+    constexpr float kEpsilon = 0.02f;
     const bool atRest = std::abs(m_dm00 - 1.0f) < kEpsilon && std::abs(m_dm01) < kEpsilon &&
                         std::abs(m_dm11 - 1.0f) < kEpsilon && std::abs(m_dmVel00) < kEpsilon &&
-                        std::abs(m_dmVel01) < kEpsilon && std::abs(m_dmVel11) < kEpsilon && speed < 5.0f;
+                        std::abs(m_dmVel01) < kEpsilon && std::abs(m_dmVel11) < kEpsilon && speed < 15.0f;
 
     if (atRest) {
         m_dm00 = 1.0f;

@@ -21,6 +21,7 @@ Item {
         color: Colours.palette.m3surfaceContainerHighest
         smoothing: root.Tokens.rounding.medium
         cornerFill: false
+        lod: GameMode.enabled || !root.Window.active
 
         Behavior on color {
             CAnim {}
