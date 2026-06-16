@@ -23,7 +23,7 @@ Searcher {
     property bool previewColourLock
     property bool pendingPreviewClear
 
-    function getCategoryFor(w: FileSystemEntry): string {
+    function getCategoryFor(w: var): string {
         let category = w.parentDir.slice(Paths.wallsdir.length + 1);
         if (category.includes("/"))
             category = category.slice(0, category.indexOf("/"));
