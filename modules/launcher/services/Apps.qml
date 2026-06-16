@@ -7,6 +7,8 @@ import qs.utils
 
 Searcher {
     id: root
+    
+    property var searchResults: appDb.searchResults
 
     function launch(entry: DesktopEntry): void {
         appDb.incrementFrequency(entry.id);
@@ -23,42 +25,47 @@ Searcher {
             });
     }
 
-    function search(search: string): list<var> {
+    function search(search: string): void {
         const prefix = GlobalConfig.launcher.specialPrefix;
+        let keys = ["name"];
+        let weights = [1];
+        let actualSearch = search;
+        let isTerminalOnly = false;
 
         if (search.startsWith(`${prefix}i `)) {
             keys = ["id", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}c `)) {
             keys = ["categories", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}d `)) {
             keys = ["comment", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}e `)) {
             keys = ["execString", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}w `)) {
             keys = ["startupClass", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}g `)) {
             keys = ["genericName", "name"];
             weights = [0.9, 0.1];
+            actualSearch = search.slice(prefix.length + 2);
         } else if (search.startsWith(`${prefix}k `)) {
             keys = ["keywords", "name"];
             weights = [0.9, 0.1];
-        } else {
-            keys = ["name"];
-            weights = [1];
-
-            if (!search.startsWith(`${prefix}t `))
-                return query(search).map(e => e.entry);
+            actualSearch = search.slice(prefix.length + 2);
+        } else if (search.startsWith(`${prefix}t `)) {
+            isTerminalOnly = true;
+            actualSearch = search.slice(prefix.length + 2);
         }
 
-        const results = query(search.slice(prefix.length + 2)).map(e => e.entry);
-        if (search.startsWith(`${prefix}t `))
-            return results.filter(a => a.runInTerminal);
-        return results;
+        appDb.searchAsync(actualSearch, keys, weights, isTerminalOnly, GlobalConfig.launcher.useFuzzy.apps);
     }
 
     function selector(item: var): string {
