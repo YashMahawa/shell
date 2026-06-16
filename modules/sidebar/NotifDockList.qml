@@ -100,12 +100,6 @@ LazyListView {
                     closeAll();
             }
 
-
-            property bool clearing: false
-            function closeAll(): void {
-                clearing = true;
-            }
-
             Connections {
                 target: UiScheduler
                 function onTick() {

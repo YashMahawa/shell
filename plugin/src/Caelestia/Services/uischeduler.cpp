@@ -1,4 +1,5 @@
 #include "uischeduler.hpp"
+#include <QMetaMethod>
 
 namespace caelestia::services {
 
@@ -23,7 +24,25 @@ void UiScheduler::setThrottled(bool t) {
 }
 
 void UiScheduler::updateTimer() {
-    m_timer->start(m_throttled ? 16 : 10);
+    if (isSignalConnected(QMetaMethod::fromSignal(&UiScheduler::tick))) {
+        m_timer->start(m_throttled ? 16 : 10);
+    } else {
+        m_timer->stop();
+    }
+}
+
+void UiScheduler::connectNotify(const QMetaMethod& signal) {
+    QObject::connectNotify(signal);
+    if (signal == QMetaMethod::fromSignal(&UiScheduler::tick)) {
+        updateTimer();
+    }
+}
+
+void UiScheduler::disconnectNotify(const QMetaMethod& signal) {
+    QObject::disconnectNotify(signal);
+    if (signal == QMetaMethod::fromSignal(&UiScheduler::tick)) {
+        updateTimer();
+    }
 }
 
 } // namespace caelestia::services

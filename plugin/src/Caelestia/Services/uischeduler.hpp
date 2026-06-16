@@ -19,6 +19,10 @@ public:
     bool throttled() const;
     void setThrottled(bool t);
 
+protected:
+    void connectNotify(const QMetaMethod& signal) override;
+    void disconnectNotify(const QMetaMethod& signal) override;
+
 signals:
     void throttledChanged();
     void tick();
