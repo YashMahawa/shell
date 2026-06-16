@@ -1,10 +1,14 @@
 #include "imagecacher.hpp"
 
 #include <qcryptographichash.h>
+#include <qdatetime.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
 #include <qimage.h>
+#include <qjsondocument.h>
+#include <qjsonobject.h>
+#include <qvariant.h>
 #include <qloggingcategory.h>
 #include <qmutex.h>
 #include <qpainter.h>
@@ -31,6 +35,92 @@ QString sha256sum(const QString& path) {
     return hash.result().toHex();
 }
 
+struct FileMetadata {
+    qint64 size = 0;
+    qint64 mtime = 0;
+    QString hash;
+
+    QJsonObject toJson() const {
+        return QJsonObject{
+            {"size", size},
+            {"mtime", mtime},
+            {"hash", hash}
+        };
+    }
+    static FileMetadata fromJson(const QJsonObject& obj) {
+        return FileMetadata{
+            obj["size"].toVariant().toLongLong(),
+            obj["mtime"].toVariant().toLongLong(),
+            obj["hash"].toString()
+        };
+    }
+};
+
+QMutex s_metadataMutex;
+QHash<QString, FileMetadata> s_metadata;
+bool s_metadataLoaded = false;
+
+void loadMetadata() {
+    QMutexLocker locker(&s_metadataMutex);
+    if (s_metadataLoaded) return;
+    s_metadataLoaded = true;
+
+    QFile file(ImageCacher::cacheDir() + QStringLiteral("/metadata.json"));
+    if (file.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        if (doc.isObject()) {
+            QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                s_metadata[it.key()] = FileMetadata::fromJson(it.value().toObject());
+            }
+        }
+    }
+}
+
+void saveMetadata() {
+    QMutexLocker locker(&s_metadataMutex);
+    QJsonObject obj;
+    for (auto it = s_metadata.begin(); it != s_metadata.end(); ++it) {
+        obj[it.key()] = it.value().toJson();
+    }
+    
+    QDir().mkpath(ImageCacher::cacheDir());
+    QSaveFile saveFile(ImageCacher::cacheDir() + QStringLiteral("/metadata.json"));
+    if (saveFile.open(QIODevice::WriteOnly)) {
+        saveFile.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        saveFile.commit();
+    }
+}
+
+QString getOrComputeHash(const QString& path) {
+    loadMetadata();
+
+    QFileInfo info(path);
+    qint64 size = info.size();
+    qint64 mtime = info.lastModified().toMSecsSinceEpoch();
+
+    {
+        QMutexLocker locker(&s_metadataMutex);
+        if (s_metadata.contains(path)) {
+            const auto& meta = s_metadata[path];
+            if (meta.size == size && meta.mtime == mtime && !meta.hash.isEmpty()) {
+                return meta.hash;
+            }
+        }
+    }
+
+    QString hash = sha256sum(path);
+    if (hash.isEmpty()) return {};
+
+    {
+        QMutexLocker locker(&s_metadataMutex);
+        s_metadata[path] = FileMetadata{size, mtime, hash};
+    }
+    saveMetadata();
+
+    return hash;
+}
+
 QString fillSuffix(ImageCacher::FillMode fillMode) {
     switch (fillMode) {
     case ImageCacher::FillMode::Crop:
@@ -55,7 +145,7 @@ const QString& ImageCacher::cacheDir() {
 }
 
 QString ImageCacher::cachePathFor(const QString& sourcePath, const QSize& size, FillMode fillMode) {
-    const QString sha = sha256sum(sourcePath);
+    const QString sha = getOrComputeHash(sourcePath);
     if (sha.isEmpty())
         return {};
 

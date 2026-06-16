@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Caelestia.Config
+import Caelestia.Images
 import qs.components
 import qs.components.filedialog
 import qs.components.images
@@ -12,26 +13,11 @@ Item {
     id: root
 
     property string source: Wallpapers.current
-    property CachingImage current
     property bool completed
 
-    onSourceChanged: {
-        if (!source)
-            current = null;
-        else
-            current = imgComp.createObject(this, {
-                path: source
-            });
-    }
-
     Component.onCompleted: {
-        if (source)
-            Qt.callLater(() => {
-                current = imgComp.createObject(this, {
-                    path: source
-                });
-                completed = true;
-            });
+        WallpaperEngine.source = Qt.binding(() => root.source);
+        completed = true;
     }
 
     Loader {
@@ -100,34 +86,27 @@ Item {
         }
     }
 
-    Component {
-        id: imgComp
-
-        CachingImage {
+    Repeater {
+        model: WallpaperEngine
+        delegate: CachingImage {
             id: img
 
             anchors.fill: parent
 
-            opacity: 0
+            path: model.path
+
+            opacity: status === Image.Ready ? 1 : 0
 
             onStatusChanged: {
-                if (status === Image.Ready)
-                    anim.start();
+                if (status === Image.Ready) {
+                    WallpaperEngine.markReady(index);
+                }
             }
 
-            Anim on opacity {
-                id: anim
-
-                type: Anim.SlowEffects
-                running: false
-                from: 0
-                to: 1
-            }
-
-            Timer {
-                running: root.current !== img && root.current?.status === Image.Ready
-                interval: anim.duration
-                onTriggered: img.destroy()
+            Behavior on opacity {
+                Anim {
+                    type: Anim.SlowEffects
+                }
             }
         }
     }
