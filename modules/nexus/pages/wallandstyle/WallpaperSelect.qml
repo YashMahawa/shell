@@ -120,7 +120,7 @@ PageBase {
                 }
 
                 WallItem {
-                    required property FileSystemEntry modelData
+                    required property var modelData
 
                     // Empty placeholders for sizing
                     opacity: modelData ? 1 : 0

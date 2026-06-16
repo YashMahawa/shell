@@ -10,7 +10,7 @@ import qs.services
 Item {
     id: root
 
-    required property FileSystemEntry modelData
+    required property var modelData
     required property DrawerVisibilities visibilities
 
     scale: 0.5
