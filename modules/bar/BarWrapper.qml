@@ -39,16 +39,16 @@ Item {
 
     clip: true
     visible: (isVertical ? width : height) > Config.border.thickness
-    implicitWidth: fullscreen ? 0 : (isVertical ? Config.border.thickness : -1)
-    implicitHeight: fullscreen ? 0 : (isVertical ? -1 : Config.border.thickness)
+    implicitWidth: fullscreen ? 0 : (isVertical ? Config.border.thickness : content.implicitWidth)
+    implicitHeight: fullscreen ? 0 : (isVertical ? content.implicitHeight : Config.border.thickness)
 
     states: State {
         name: "visible"
         when: root.shouldBeVisible
 
         PropertyChanges {
-            root.implicitWidth: root.isVertical ? root.contentThickness : root.implicitWidth
-            root.implicitHeight: !root.isVertical ? root.contentThickness : root.implicitHeight
+            root.implicitWidth: root.isVertical ? root.contentThickness : content.implicitWidth
+            root.implicitHeight: !root.isVertical ? root.contentThickness : content.implicitHeight
         }
     }
 
@@ -85,8 +85,8 @@ Item {
         active: root.shouldBeVisible
 
         sourceComponent: Bar {
-            width: root.isVertical ? root.contentThickness : -1
-            height: root.isVertical ? -1 : root.contentThickness
+            width: root.isVertical ? root.contentThickness : parent.width
+            height: root.isVertical ? parent.height : root.contentThickness
             screen: root.screen
             visibilities: root.visibilities
             popouts: root.popouts // qmllint disable incompatible-type
