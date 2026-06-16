@@ -143,7 +143,7 @@ WlSessionLockSurface {
                 Anim {
                     target: lockContent
                     property: "implicitWidth"
-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
+                    to: (root.screen?.width ?? 0) * lockContent.Tokens.sizes.lock.widthMult
                 }
                 Anim {
                     target: lockContent
@@ -213,7 +213,7 @@ WlSessionLockSurface {
             id: content
 
             anchors.centerIn: parent
-            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
+            width: (root.screen?.width ?? 0) * Tokens.sizes.lock.widthMult - Tokens.padding.extraLargeIncreased
             height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
 
             lock: root

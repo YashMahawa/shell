@@ -14,6 +14,7 @@ StyledRect {
     id: root
 
     required property real rootHeight
+    required property real fluidScale
     readonly property int cBoxSize: Tokens.font.body.medium.pointSize * 2
 
     implicitHeight: layout.implicitHeight + layout.anchors.topMargin + layout.anchors.margins
@@ -76,7 +77,7 @@ StyledRect {
                 id: iconLoader
 
                 Layout.fillHeight: true
-                active: root.width > Tokens.sizes.lock.largeLogoWidth
+                active: root.width > Tokens.sizes.lock.largeLogoWidth * fluidScale
 
                 sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
             }
@@ -93,13 +94,13 @@ StyledRect {
                         const hasBatt = UPower.displayDevice.isLaptopBattery;
                         const rHeight = root.rootHeight;
 
-                        if (!hasBatt && rHeight > Tokens.sizes.lock.fetch4LinesHeight)
+                        if (!hasBatt && rHeight > Tokens.sizes.lock.fetch4LinesHeight * fluidScale)
                             items.push(`OS  : ${SysInfo.osPrettyName || SysInfo.osName}`);
 
-                        if (rHeight > (hasBatt ? Tokens.sizes.lock.fetch4LinesHeight : Tokens.sizes.lock.fetch3LinesHeight))
+                        if (rHeight > (hasBatt ? Tokens.sizes.lock.fetch4LinesHeight : Tokens.sizes.lock.fetch3LinesHeight) * fluidScale)
                             items.push(`WM  : ${SysInfo.wm}`);
 
-                        if (!hasBatt || rHeight > Tokens.sizes.lock.fetch3LinesHeight)
+                        if (!hasBatt || rHeight > Tokens.sizes.lock.fetch3LinesHeight * fluidScale)
                             items.push(`USER: ${SysInfo.user}`);
 
                         items.push(`UP  : ${SysInfo.uptime}`);
@@ -126,7 +127,7 @@ StyledRect {
 
             Layout.topMargin: iconLoader.active ? Tokens.spacing.small : 0
             Layout.alignment: Qt.AlignHCenter
-            active: root.rootHeight > Tokens.sizes.lock.showColourBoxRowHeight
+            active: root.rootHeight > Tokens.sizes.lock.showColourBoxRowHeight * fluidScale
 
             sourceComponent: RowLayout {
                 id: coloursRow
@@ -174,6 +175,6 @@ StyledRect {
     }
 
     component MonoText: StyledText {
-        font: root.width > Tokens.sizes.lock.largeFontWidth ? Tokens.font.mono.medium : Tokens.font.mono.small
+        font: root.width > Tokens.sizes.lock.largeFontWidth * fluidScale ? Tokens.font.mono.medium : Tokens.font.mono.small
     }
 }
