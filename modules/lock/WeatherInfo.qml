@@ -8,7 +8,8 @@ StyledRect {
     id: root
 
     required property int rootHeight
-    readonly property bool showForecast: rootHeight >= Tokens.sizes.lock.showForecastHeight
+    required property real fluidScale
+    readonly property bool showForecast: rootHeight >= Tokens.sizes.lock.showForecastHeight * fluidScale
 
     implicitHeight: {
         const base = brief.implicitHeight + brief.anchors.topMargin;
@@ -35,6 +36,7 @@ StyledRect {
         anchors.topMargin: Tokens.padding.extraLarge
 
         rootHeight: root.rootHeight
+        fluidScale: root.fluidScale
     }
 
     Loader {
@@ -48,6 +50,8 @@ StyledRect {
         active: root.showForecast
         asynchronous: true
 
-        sourceComponent: Forecast {}
+        sourceComponent: Forecast {
+            fluidScale: root.fluidScale
+        }
     }
 }
