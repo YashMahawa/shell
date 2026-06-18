@@ -10,6 +10,7 @@ ColumnLayout {
     id: root
 
     required property int rootHeight
+    property real fluidScale: 1
 
     anchors.left: parent.left
     anchors.right: parent.right

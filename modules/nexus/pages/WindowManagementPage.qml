@@ -21,7 +21,7 @@ PageBase {
     property int gapsIn: 5
     property int gapsOut: 10
     property int rounding: 15
-    property real opacity: 0.95
+    property real windowOpacity: 0.95
     property string statusMessage: ""
     property bool statusIsError: false
 
@@ -44,44 +44,10 @@ PageBase {
                 "general:gaps_in": String(gapsIn),
                 "general:gaps_out": String(gapsOut),
                 "decoration:rounding": String(rounding),
-                "decoration:active_opacity": String(opacity),
-                "decoration:inactive_opacity": String(opacity)
+                "decoration:active_opacity": String(windowOpacity),
+                "decoration:inactive_opacity": String(windowOpacity)
             })
         ]);
-    }
-
-    Process {
-        id: settingsProc
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const message = text.trim();
-                if (message) {
-                    root.statusMessage = message;
-                    root.statusIsError = false;
-                }
-            }
-        }
-
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const message = text.trim();
-                if (message) {
-                    root.statusMessage = message;
-                    root.statusIsError = true;
-                }
-            }
-        }
-
-        onExited: exitCode => { // qmllint disable signal-handler-parameters
-            if (exitCode !== 0) {
-                root.statusIsError = true;
-                if (!root.statusMessage)
-                    root.statusMessage = qsTr("Window setting failed");
-            } else if (!root.statusMessage) {
-                root.statusMessage = qsTr("Window setting applied");
-            }
-        }
     }
 
     ColumnLayout {
@@ -89,6 +55,40 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        Process {
+            id: settingsProc
+
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = false;
+                    }
+                }
+            }
+
+            stderr: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = true;
+                    }
+                }
+            }
+
+            onExited: exitCode => { // qmllint disable signal-handler-parameters
+                if (exitCode !== 0) {
+                    root.statusIsError = true;
+                    if (!root.statusMessage)
+                        root.statusMessage = qsTr("Window setting failed");
+                } else if (!root.statusMessage) {
+                    root.statusMessage = qsTr("Window setting applied");
+                }
+            }
+        }
 
         SectionHeader {
             first: true
@@ -295,14 +295,14 @@ PageBase {
             last: true
             label: qsTr("Opacity")
             subtext: qsTr("Active and inactive window opacity")
-            value: Math.round(root.opacity * 100)
+            value: Math.round(root.windowOpacity * 100)
             from: 50
             to: 100
             stepSize: 5
             onMoved: v => {
-                root.opacity = v / 100;
-                root.keyword("decoration:active_opacity", String(root.opacity));
-                root.keyword("decoration:inactive_opacity", String(root.opacity));
+                root.windowOpacity = v / 100;
+                root.keyword("decoration:active_opacity", String(root.windowOpacity));
+                root.keyword("decoration:inactive_opacity", String(root.windowOpacity));
             }
         }
 

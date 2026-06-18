@@ -178,51 +178,57 @@ PageBase {
         monitorProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
     }
 
-    Process {
-        id: monitorProc
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const message = text.trim();
-                if (message) {
-                    root.statusMessage = message;
-                    root.statusIsError = false;
-                }
-            }
-        }
-
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const message = text.trim();
-                if (message) {
-                    root.statusMessage = message;
-                    root.statusIsError = true;
-                }
-            }
-        }
-
-        onExited: exitCode => { // qmllint disable signal-handler-parameters
-            if (exitCode === 0) {
-                if (!root.statusMessage)
-                    root.statusMessage = qsTr("Display settings applied");
-                root.statusIsError = false;
-                Hypr.dispatch("reload");
-            } else {
-                if (!root.statusMessage)
-                    root.statusMessage = qsTr("Display change failed and was rolled back");
-                root.statusIsError = true;
-            }
-            Qt.callLater(() => {
-                Hyprland.refreshMonitors();
-            });
-        }
-    }
-
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        Process {
+            id: monitorProc
+
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = false;
+                    }
+                }
+            }
+
+            stderr: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = true;
+                    }
+                }
+            }
+
+            onExited: exitCode => { // qmllint disable signal-handler-parameters
+                if (exitCode === 0) {
+                    if (!root.statusMessage)
+                        root.statusMessage = qsTr("Display settings applied");
+                    root.statusIsError = false;
+                    Hypr.dispatch("reload");
+                } else {
+                    if (!root.statusMessage)
+                        root.statusMessage = qsTr("Display change failed and was rolled back");
+                    root.statusIsError = true;
+                }
+                Qt.callLater(() => {
+                    Hyprland.refreshMonitors();
+                });
+            }
+        }
+
+        Component {
+            id: monitorItem
+
+            MenuItem {}
+        }
 
         ConnectedRect {
             Layout.fillWidth: true
@@ -465,9 +471,4 @@ PageBase {
         }
     }
 
-    Component {
-        id: monitorItem
-
-        MenuItem {}
-    }
 }

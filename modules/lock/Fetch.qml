@@ -12,6 +12,9 @@ import qs.utils
 ColumnLayout {
     id: root
 
+    property int rootHeight: 0
+    property real fluidScale: 1
+
     anchors.fill: parent
     anchors.margins: Tokens.padding.large * 2
     anchors.topMargin: Tokens.padding.large
