@@ -22,6 +22,7 @@ CustomMouseArea {
     property bool dashboardShortcutActive
     property bool osdShortcutActive
     property bool utilitiesShortcutActive
+    readonly property real barTriggerWidth: Math.max(bar?.implicitWidth ?? 0, bar?.clampedThickness ?? 0, Config.border.minThickness ?? 0, Config.border.thickness ?? 0, 8)
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
         const panelY = root.borderThickness + panel.y;
@@ -55,13 +56,13 @@ CustomMouseArea {
         if (fullscreen)
             return;
         if (event.x < bar.implicitWidth) {
-            bar.handleWheel(event.y, event.angleDelta);
+            bar.handleWheel(event.x, event.y, event.angleDelta);
         }
     }
 
     anchors.fill: parent
     acceptedButtons: Qt.NoButton
-    hoverEnabled: false
+    hoverEnabled: true
 
     onPressed: event => dragStart = Qt.point(event.x, event.y)
     onContainsMouseChanged: {
@@ -103,11 +104,11 @@ CustomMouseArea {
         }
 
         // Show bar in non-exclusive mode on hover
-        if (!visibilities.bar && Config.bar.showOnHover && x < bar.clampedWidth)
+        if (!visibilities.bar && Config.bar.showOnHover && x < barTriggerWidth)
             bar.isHovered = true;
 
         // Show/hide bar on drag
-        if (pressed && dragStart.x < bar.clampedWidth) {
+        if (pressed && dragStart.x < barTriggerWidth) {
             if (dragX > Config.bar.dragThreshold)
                 visibilities.bar = true;
             else if (dragX < -Config.bar.dragThreshold)
@@ -215,7 +216,7 @@ CustomMouseArea {
 
         // Show popouts on hover
         if (x < bar.implicitWidth) {
-            bar.checkPopout(y);
+            bar.checkPopout(x, y);
         } else if ((!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) && !inLeftPanel(panels.popoutsWrapper, x, y)) {
             popouts.hasCurrent = false;
             bar.closeTray();

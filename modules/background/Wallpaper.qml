@@ -88,24 +88,33 @@ Item {
 
     Repeater {
         model: WallpaperEngine
-        delegate: CachingImage {
-            id: img
+        delegate: Item {
+            id: delegateRoot
+
+            required property int index
+            required property string path
 
             anchors.fill: parent
 
-            path: model.path
+            CachingImage {
+                id: img
 
-            opacity: status === Image.Ready ? 1 : 0
+                anchors.fill: parent
 
-            onStatusChanged: {
-                if (status === Image.Ready) {
-                    WallpaperEngine.markReady(index);
+                path: delegateRoot.path
+
+                opacity: status === Image.Ready ? 1 : 0
+
+                onStatusChanged: {
+                    if (status === Image.Ready) {
+                        WallpaperEngine.markReady(delegateRoot.index);
+                    }
                 }
-            }
 
-            Behavior on opacity {
-                Anim {
-                    type: Anim.SlowEffects
+                Behavior on opacity {
+                    Anim {
+                        type: Anim.SlowEffects
+                    }
                 }
             }
         }

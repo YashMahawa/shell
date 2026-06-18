@@ -14,57 +14,53 @@ Region {
 
     readonly property real borderThickness: win.contentItem.Config.border.thickness
     readonly property real clampedThickness: win.contentItem.Config.border.clampedThickness
+    readonly property real edgeThickness: Math.max(win.contentItem.Config.border.minThickness ?? 0, win.contentItem.Config.border.thickness ?? 0, 8)
+    readonly property real barWidth: Math.max(root.bar?.implicitWidth ?? 0, root.bar?.clampedThickness ?? 0, edgeThickness)
 
-    x: bar.clampedWidth + win.dragMaskPadding
-    y: clampedThickness + win.dragMaskPadding
-    width: win.width - bar.clampedWidth - clampedThickness - win.dragMaskPadding * 2
-    height: win.height - clampedThickness * 2 - win.dragMaskPadding * 2
-    intersection: Intersection.Xor
+    Region {
+        x: 0
+        y: 0
+        width: root.barWidth
+        height: root.win.height
+    }
+
+    Region {
+        x: root.barWidth
+        y: 0
+        width: root.win.width - root.barWidth
+        height: root.edgeThickness
+    }
+
+    Region {
+        x: root.barWidth
+        y: root.win.height - root.edgeThickness
+        width: root.win.width - root.barWidth
+        height: root.edgeThickness
+    }
+
+    Region {
+        x: root.win.width - width
+        y: 0
+        width: root.edgeThickness
+        height: root.win.height
+    }
 
     R {
         panel: root.panels.dashboard
         y: 0
-        height: panel.height * (1 - root.panels.dashboard.offsetScale) + root.borderThickness
+        height: Math.max(root.edgeThickness, panel.height * (1 - root.panels.dashboard.offsetScale) + root.borderThickness)
     }
 
     R {
         panel: root.panels.launcher
         y: root.win.height - height
-        height: panel.height * (1 - root.panels.launcher.offsetScale) + root.borderThickness
-    }
-
-    R {
-        id: sessionRegion
-
-        panel: root.panels.sessionWrapper
-        x: root.win.width - width
-        width: panel.width * (1 - root.panels.session.offsetScale) + root.borderThickness + sidebarRegion.width
-    }
-
-    R {
-        id: sidebarRegion
-
-        panel: root.panels.sidebar
-        x: root.win.width - width
-        width: panel.width * (1 - root.panels.sidebar.offsetScale) + root.borderThickness
-    }
-
-    R {
-        panel: root.panels.osdWrapper
-        x: root.win.width - width
-        width: panel.width * (1 - root.panels.osd.offsetScale) + root.borderThickness + sessionRegion.width
-    }
-
-    R {
-        panel: root.panels.notifications
-        y: 0
-        height: panel.height + root.borderThickness
+        height: Math.max(root.edgeThickness, panel.height * (1 - root.panels.launcher.offsetScale) + root.borderThickness)
     }
 
     R {
         panel: root.panels.utilities
         y: root.win.height - height
-        height: panel.height * (1 - root.panels.utilities.offsetScale) + root.borderThickness
+        height: Math.max(root.edgeThickness, panel.height * (1 - root.panels.utilities.offsetScale) + root.borderThickness)
     }
 
     R {
@@ -79,6 +75,5 @@ Region {
         y: panel.y + root.borderThickness
         width: panel.width
         height: panel.height
-        intersection: Intersection.Subtract
     }
 }
