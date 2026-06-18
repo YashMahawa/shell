@@ -35,6 +35,10 @@ class ServiceConfig : public ConfigObject {
     CONFIG_GLOBAL_PROPERTY(QString, lyricsBackend, u"Auto"_s)
     CONFIG_GLOBAL_PROPERTY(bool, romanizeLyrics, true)
     CONFIG_GLOBAL_PROPERTY(bool, preferHindiRomanization, true)
+    CONFIG_GLOBAL_PROPERTY(bool, showLyricsStatus, true)
+    CONFIG_GLOBAL_PROPERTY(bool, showLyricsProviderDetails, true)
+    CONFIG_GLOBAL_PROPERTY(bool, showLyricsCandidatePicker, true)
+    CONFIG_GLOBAL_PROPERTY(bool, showLyricsOffsetControls, true)
 
 public:
     explicit ServiceConfig(QObject* parent = nullptr)

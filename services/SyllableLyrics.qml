@@ -336,8 +336,9 @@ Singleton {
         if (!root.hasSyllables)
             return Lyrics.indexForTime(time);
 
+        const target = time - Lyrics.offset + 0.1;
         for (let i = lyricsModel.count - 1; i >= 0; i--) {
-            if (time >= lyricsModel.get(i).time - 0.1)
+            if (target >= lyricsModel.get(i).time)
                 return i;
         }
         return -1;
@@ -348,7 +349,7 @@ Singleton {
             return 0;
         if (!root.hasSyllables)
             return Lyrics.timeForIndex(index);
-        return lyricsModel.get(index)?.time ?? 0;
+        return (lyricsModel.get(index)?.time ?? 0) + Lyrics.offset;
     }
 
     function updatePosition(): void {

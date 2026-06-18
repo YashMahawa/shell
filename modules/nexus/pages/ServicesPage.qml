@@ -153,6 +153,38 @@ PageBase {
             onToggled: GlobalConfig.services.preferHindiRomanization = checked
         }
 
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Lyrics status")
+            subtext: qsTr("Show Paxsenix fetch and fallback status in the lyrics menu")
+            checked: GlobalConfig.services.showLyricsStatus
+            onToggled: GlobalConfig.services.showLyricsStatus = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Lyrics details")
+            subtext: qsTr("Show backend and current track details in the lyrics menu")
+            checked: GlobalConfig.services.showLyricsProviderDetails
+            onToggled: GlobalConfig.services.showLyricsProviderDetails = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Lyrics track picker")
+            subtext: qsTr("Choose between matching LRCLIB and NetEase lyric tracks")
+            checked: GlobalConfig.services.showLyricsCandidatePicker
+            onToggled: GlobalConfig.services.showLyricsCandidatePicker = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Lyrics offset controls")
+            subtext: qsTr("Show controls for nudging lyric timing earlier or later")
+            checked: GlobalConfig.services.showLyricsOffsetControls
+            onToggled: GlobalConfig.services.showLyricsOffsetControls = checked
+        }
+
         SelectRow {
             Layout.fillWidth: true
             last: true

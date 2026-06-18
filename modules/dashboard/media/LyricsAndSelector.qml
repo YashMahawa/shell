@@ -8,6 +8,13 @@ import qs.components.controls
 import qs.services
 
 Item {
+    MouseArea {
+        anchors.fill: parent
+        enabled: lyricsInfo.open
+        z: 1
+        onClicked: lyricsInfo.open = false
+    }
+
     ColumnLayout {
         id: layout
 
@@ -18,7 +25,7 @@ Item {
         RowLayout {
             Layout.bottomMargin: -Tokens.spacing.medium
             spacing: Tokens.spacing.medium
-            z: 1
+            z: 2
 
             MaterialIcon {
                 Layout.topMargin: Math.round(fontInfo.pointSize * 0.12)
@@ -32,7 +39,9 @@ Item {
                 font: Tokens.font.title.medium
             }
 
-            LyricsInfo {}
+            LyricsInfo {
+                id: lyricsInfo
+            }
         }
 
         LyricList {
