@@ -45,7 +45,7 @@ StyledRect {
 
     clip: true
     y: isVertical ? offset + mask.y : mask.y
-    x: isVertical ? mask.x : offset + mask.x
+    x: isVertical ? 0 : offset + mask.x
     implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth - Tokens.padding.small : size
     implicitHeight: isVertical ? size : Tokens.sizes.bar.innerWidth - Tokens.padding.small
     radius: Tokens.rounding.full

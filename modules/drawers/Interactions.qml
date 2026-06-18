@@ -38,6 +38,12 @@ CustomMouseArea {
         return x < bar.implicitWidth + panel.x + panel.width && withinPanelHeight(panel, x, y);
     }
 
+    function inPanelBounds(panel: Item, x: real, y: real): bool {
+        const panelX = bar.implicitWidth + panel.x;
+        const panelY = root.borderThickness + panel.y;
+        return x >= panelX - Config.border.rounding && x <= panelX + panel.width + Config.border.rounding && y >= panelY - Config.border.rounding && y <= panelY + panel.height + Config.border.rounding;
+    }
+
     function inRightPanel(panel: Item, x: real, y: real): bool {
         return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panel.x) && withinPanelHeight(panel, x, y);
     }
@@ -61,10 +67,14 @@ CustomMouseArea {
     }
 
     anchors.fill: parent
-    acceptedButtons: Qt.NoButton
+    acceptedButtons: popouts.isDetached ? Qt.LeftButton : Qt.NoButton
     hoverEnabled: true
 
     onPressed: event => dragStart = Qt.point(event.x, event.y)
+    onClicked: event => {
+        if (popouts.isDetached && !inPanelBounds(panels.popoutsWrapper, event.x, event.y))
+            popouts.close();
+    }
     onContainsMouseChanged: {
         if (!containsMouse) {
             // Only hide if not activated by shortcut

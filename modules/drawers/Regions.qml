@@ -16,11 +16,12 @@ Region {
     readonly property real clampedThickness: win.contentItem.Config.border.clampedThickness
     readonly property real edgeThickness: Math.max(win.contentItem.Config.border.minThickness ?? 0, win.contentItem.Config.border.thickness ?? 0, 8)
     readonly property real barWidth: Math.max(root.bar?.implicitWidth ?? 0, root.bar?.clampedThickness ?? 0, edgeThickness)
+    readonly property bool needsClickAwaySurface: root.panels.popouts.isDetached
 
     Region {
         x: 0
         y: 0
-        width: root.barWidth
+        width: root.needsClickAwaySurface ? root.win.width : root.barWidth
         height: root.win.height
     }
 
