@@ -23,8 +23,6 @@ Scope {
             lock.lock.locked = false;
         else if (typeof action === "string")
             Hypr.dispatch(Hypr.usingLua && ["dpms off", "dpms on"].includes(action) ? `hl.dsp.dpms({ action = "${action === "dpms off" ? "disable" : "enable"}" })` : action);
-        else if (Array.isArray(action) && action.length >= 2 && action[0] === "systemctl" && action[1] === "suspend")
-            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/caelestia-safe-suspend"]);
         else
             Quickshell.execDetached(action);
     }
