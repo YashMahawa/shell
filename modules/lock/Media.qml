@@ -13,8 +13,7 @@ Item {
 
     required property var lock
 
-    anchors.left: parent.left
-    anchors.right: parent.right
+    Layout.fillWidth: true
     implicitHeight: layout.implicitHeight
 
     Image {
@@ -76,11 +75,10 @@ Item {
 
         StyledText {
             Layout.topMargin: Tokens.padding.large
-            Layout.bottomMargin: Tokens.spacing.larger
+            Layout.bottomMargin: Tokens.spacing.largeIncreased
             text: qsTr("Now playing")
             color: Colours.palette.m3onSurfaceVariant
-            font.family: Tokens.font.family.mono
-            font.weight: 500
+            font: Tokens.font.mono.builders.small.weight(Font.Medium).build()
         }
 
         StyledText {
@@ -89,9 +87,7 @@ Item {
             text: Players.active?.trackArtist ?? qsTr("No media")
             color: Colours.palette.m3primary
             horizontalAlignment: Text.AlignHCenter
-            font.pointSize: Tokens.font.body.large.pointSize
-            font.family: Tokens.font.family.mono
-            font.weight: 600
+            font: Tokens.font.mono.builders.large.weight(Font.DemiBold).build()
             elide: Text.ElideRight
         }
 
@@ -100,8 +96,7 @@ Item {
             animate: true
             text: Players.active?.trackTitle ?? qsTr("No media")
             horizontalAlignment: Text.AlignHCenter
-            font.pointSize: Tokens.font.title.medium.pointSize
-            font.family: Tokens.font.family.mono
+            font: Tokens.font.mono.builders.medium.size(Tokens.font.title.medium.pointSize).build()
             elide: Text.ElideRight
         }
 
@@ -153,12 +148,12 @@ Item {
 
         signal clicked
 
-        Layout.preferredWidth: implicitWidth + (controlState.pressed ? Tokens.padding.normal * 2 : active ? Tokens.padding.small * 2 : 0)
+        Layout.preferredWidth: implicitWidth + (controlState.pressed ? Tokens.padding.medium * 2 : active ? Tokens.padding.small * 2 : 0)
         implicitWidth: controlIcon.implicitWidth + Tokens.padding.large * 2
-        implicitHeight: controlIcon.implicitHeight + Tokens.padding.normal * 2
+        implicitHeight: controlIcon.implicitHeight + Tokens.padding.medium * 2
 
         color: active ? Colours.palette[`m3${colour.toLowerCase()}`] : Colours.palette[`m3${colour.toLowerCase()}Container`]
-        radius: active || controlState.pressed ? Tokens.rounding.normal : Math.min(implicitWidth, implicitHeight) / 2 * Math.min(1, Tokens.rounding.scale)
+        radius: active || controlState.pressed ? Tokens.rounding.medium : Math.min(implicitWidth, implicitHeight) / 2 * Math.min(1, Tokens.rounding.scale)
 
         Elevation {
             anchors.fill: parent

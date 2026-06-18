@@ -31,27 +31,21 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: Time.hourStr
             color: Colours.palette.m3secondary
-            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
-            font.family: Tokens.font.family.clock
-            font.bold: true
+            font: Tokens.font.clock.size(Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)).weight(Font.Bold).build()
         }
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
             text: ":"
             color: Colours.palette.m3primary
-            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
-            font.family: Tokens.font.family.clock
-            font.bold: true
+            font: Tokens.font.clock.size(Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)).weight(Font.Bold).build()
         }
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
             text: Time.minuteStr
             color: Colours.palette.m3secondary
-            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
-            font.family: Tokens.font.family.clock
-            font.bold: true
+            font: Tokens.font.clock.size(Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)).weight(Font.Bold).build()
         }
 
         Loader {
@@ -65,9 +59,7 @@ ColumnLayout {
             sourceComponent: StyledText {
                 text: Time.amPmStr
                 color: Colours.palette.m3primary
-                font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 2 * root.centerScale)
-                font.family: Tokens.font.family.clock
-                font.bold: true
+                font: Tokens.font.clock.size(Math.floor(Tokens.font.headline.medium.pointSize * 2 * root.centerScale)).weight(Font.Bold).build()
             }
         }
     }
@@ -78,9 +70,7 @@ ColumnLayout {
 
         text: Time.format("dddd, d MMMM yyyy")
         color: Colours.palette.m3tertiary
-        font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * root.centerScale)
-        font.family: Tokens.font.family.mono
-        font.bold: true
+        font: Tokens.font.mono.builders.medium.size(Math.floor(Tokens.font.headline.medium.pointSize * root.centerScale)).weight(Font.Bold).build()
     }
 
     StyledClippingRect {
@@ -270,7 +260,7 @@ ColumnLayout {
             color: Colours.palette.m3onSurfaceVariant
             animate: true
 
-            font.family: Tokens.font.family.mono
+            font: Tokens.font.mono.small
             horizontalAlignment: Qt.AlignHCenter
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
             lineHeight: 1.2
@@ -325,8 +315,7 @@ ColumnLayout {
             opacity: 0
             color: Colours.palette.m3error
 
-            font.pointSize: Tokens.font.body.small.pointSize
-            font.family: Tokens.font.family.mono
+            font: Tokens.font.mono.small
             horizontalAlignment: Qt.AlignHCenter
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
 

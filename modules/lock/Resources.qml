@@ -1,52 +1,59 @@
 import QtQuick
 import QtQuick.Layouts
 import Caelestia.Config
+import Caelestia.Services
 import qs.components
 import qs.components.controls
-import qs.components.misc
 import qs.services
 
 GridLayout {
     id: root
 
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.margins: Tokens.padding.large
+    Layout.fillWidth: true
+    Layout.margins: Tokens.padding.large
 
     rowSpacing: Tokens.spacing.large
     columnSpacing: Tokens.spacing.large
     rows: 2
     columns: 2
 
-    Ref {
-        service: SystemUsage
+    ServiceRef {
+        service: Cpu
+    }
+
+    ServiceRef {
+        service: Memory
+    }
+
+    ServiceRef {
+        service: Storage
     }
 
     Resource {
         Layout.topMargin: Tokens.padding.large
         icon: "memory"
-        value: SystemUsage.cpuPerc
+        value: Cpu.percentage
         colour: Colours.palette.m3primary
     }
 
     Resource {
         Layout.topMargin: Tokens.padding.large
         icon: "thermostat"
-        value: Math.min(1, SystemUsage.cpuTemp / 90)
+        value: Math.min(1, Cpu.temperature / 90)
         colour: Colours.palette.m3secondary
     }
 
     Resource {
         Layout.bottomMargin: Tokens.padding.large
         icon: "memory_alt"
-        value: SystemUsage.memPerc
+        value: Memory.percentage
         colour: Colours.palette.m3secondary
     }
 
     Resource {
         Layout.bottomMargin: Tokens.padding.large
         icon: "hard_disk"
-        value: SystemUsage.storagePerc
+        value: Storage.percentage
         colour: Colours.palette.m3tertiary
     }
 
@@ -71,7 +78,7 @@ GridLayout {
             padding: Tokens.padding.large * 3
             fgColour: res.colour
             bgColour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 3)
-            strokeWidth: width < 200 ? Tokens.padding.smaller : Tokens.padding.normal
+            strokeWidth: width < 200 ? Tokens.padding.extraSmall : Tokens.padding.medium
         }
 
         MaterialIcon {

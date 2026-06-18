@@ -19,14 +19,13 @@ ColumnLayout {
     anchors.fill: parent
     anchors.margins: Tokens.padding.large
 
-    spacing: Tokens.spacing.smaller
+    spacing: Tokens.spacing.extraSmall
 
     StyledText {
         Layout.fillWidth: true
         text: Notifs.list.length > 0 ? qsTr("%1 notification%2").arg(Notifs.list.length).arg(Notifs.list.length === 1 ? "" : "s") : qsTr("Notifications")
         color: Colours.palette.m3outline
-        font.family: Tokens.font.family.mono
-        font.weight: 500
+        font: Tokens.font.mono.builders.small.weight(Font.Medium).build()
         elide: Text.ElideRight
     }
 
@@ -65,9 +64,7 @@ ColumnLayout {
                     Layout.alignment: Qt.AlignHCenter
                     text: Config.lock.hideNotifs ? qsTr("Unlock for Notifications") : qsTr("No Notifications")
                     color: Colours.palette.m3outlineVariant
-                    font.pointSize: Tokens.font.body.large.pointSize
-                    font.family: Tokens.font.family.mono
-                    font.weight: 500
+                    font: Tokens.font.mono.builders.large.weight(Font.Medium).build()
                 }
             }
 

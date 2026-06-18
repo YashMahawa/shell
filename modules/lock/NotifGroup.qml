@@ -46,10 +46,10 @@ StyledRect {
 
     anchors.left: parent?.left
     anchors.right: parent?.right
-    implicitHeight: content.implicitHeight + Tokens.padding.normal * 2
+    implicitHeight: content.implicitHeight + Tokens.padding.medium * 2
 
     clip: true
-    radius: Tokens.rounding.normal
+    radius: Tokens.rounding.medium
     color: root.urgency === "critical" ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
 
     RowLayout {
@@ -58,9 +58,9 @@ StyledRect {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: Tokens.padding.normal
+        anchors.margins: Tokens.padding.medium
 
-        spacing: Tokens.spacing.normal
+        spacing: Tokens.spacing.medium
 
         Item {
             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
@@ -150,7 +150,7 @@ StyledRect {
             RowLayout {
                 Layout.bottomMargin: -parent.spacing
                 Layout.fillWidth: true
-                spacing: Tokens.spacing.smaller
+                spacing: Tokens.spacing.extraSmall
 
                 StyledText {
                     Layout.fillWidth: true
@@ -168,7 +168,7 @@ StyledRect {
                 }
 
                 StyledRect {
-                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.smaller * 2
+                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.extraSmall * 2
                     implicitHeight: groupCount.implicitHeight + Tokens.padding.small
 
                     color: root.urgency === "critical" ? Colours.palette.m3error : Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)

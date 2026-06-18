@@ -12,9 +12,8 @@ ColumnLayout {
     required property int rootHeight
     property real fluidScale: 1
 
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.margins: Tokens.padding.large * 2
+    Layout.fillWidth: true
+    Layout.margins: Tokens.padding.large * 2
 
     spacing: Tokens.spacing.small
 
@@ -73,7 +72,7 @@ ColumnLayout {
 
         Loader {
             asynchronous: true
-            Layout.rightMargin: Tokens.padding.smaller
+            Layout.rightMargin: Tokens.padding.extraSmall
             active: root.width > 400
             visible: active
 
@@ -110,7 +109,7 @@ ColumnLayout {
         id: forecastLoader
 
         asynchronous: true
-        Layout.topMargin: Tokens.spacing.smaller
+        Layout.topMargin: Tokens.spacing.extraSmall
         Layout.bottomMargin: Tokens.padding.large * 2
         Layout.fillWidth: true
 

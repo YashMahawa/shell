@@ -15,9 +15,10 @@ ColumnLayout {
     property int rootHeight: 0
     property real fluidScale: 1
 
-    anchors.fill: parent
-    anchors.margins: Tokens.padding.large * 2
-    anchors.topMargin: Tokens.padding.large
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    Layout.margins: Tokens.padding.large * 2
+    Layout.topMargin: Tokens.padding.large
 
     spacing: Tokens.spacing.small
 
@@ -27,8 +28,8 @@ ColumnLayout {
         spacing: Tokens.spacing.normal
 
         StyledRect {
-            implicitWidth: prompt.implicitWidth + Tokens.padding.normal * 2
-            implicitHeight: prompt.implicitHeight + Tokens.padding.normal * 2
+            implicitWidth: prompt.implicitWidth + Tokens.padding.medium * 2
+            implicitHeight: prompt.implicitHeight + Tokens.padding.medium * 2
 
             color: Colours.palette.m3primary
             radius: Tokens.rounding.small
@@ -74,8 +75,8 @@ ColumnLayout {
 
         ColumnLayout {
             Layout.fillWidth: true
-            Layout.topMargin: Tokens.padding.normal
-            Layout.bottomMargin: Tokens.padding.normal
+            Layout.topMargin: Tokens.padding.medium
+            Layout.bottomMargin: Tokens.padding.medium
             Layout.leftMargin: iconLoader.active ? 0 : width * 0.1
             spacing: Tokens.spacing.normal
 
@@ -176,6 +177,6 @@ ColumnLayout {
     }
 
     component MonoText: StyledText {
-        font.family: Tokens.font.family.mono
+        font: root.width > 400 ? Tokens.font.mono.medium : Tokens.font.mono.small
     }
 }

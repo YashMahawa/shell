@@ -307,8 +307,8 @@ Item {
 
             required property string lyricLine
             required property string syllabus
-            required property int index
             property real effectScale: ListView.isCurrentItem ? 1 : 0
+            readonly property int lyricIndex: index
             readonly property string highlightedText: {
                 const baseText = lyric.lyricLine || ". . .";
                 let syllabusArray = [];
@@ -394,7 +394,7 @@ Item {
                 cursorShape: Qt.PointingHandCursor
                 hoverEnabled: true
                 onClicked: {
-                    SyllableLyrics.jumpTo(lyric.index);
+                    SyllableLyrics.jumpTo(lyric.lyricIndex);
                 }
             }
         }
