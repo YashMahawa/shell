@@ -149,8 +149,17 @@ Item {
                 opacity: 0
 
                 StyledText {
-                    text: qsTr("Backend: %1").arg(LyricsBackend.toString(Lyrics.backend))
+                    text: qsTr("Backend: %1").arg(SyllableLyrics.provider || LyricsBackend.toString(Lyrics.backend))
                     color: Colours.palette.m3onSurfaceVariant
+                    animate: true
+                }
+
+                StyledText {
+                    Layout.maximumWidth: Tokens.sizes.dashboard.mediaTabWidth / 2
+                    text: SyllableLyrics.status
+                    color: Colours.palette.m3onSurfaceVariant
+                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                    visible: text.length > 0
                     animate: true
                 }
 

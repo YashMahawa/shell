@@ -19,6 +19,8 @@ Singleton {
     property int requestId: 0
     property string loadedKey: ""
     property string cachePath: ""
+    property string provider: ""
+    property string status: ""
     property bool cacheLoaded: false
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
@@ -76,6 +78,25 @@ Singleton {
         root.cachePath = `${root.cacheDir}/${_safeCacheName(`${root.preferredBackend}-${key}`)}.json`;
     }
 
+    function _lyricsPlusBases() {
+        return [
+            "https://lyricsplus.binimum.org",
+            "https://lyricsplus.prjktla.workers.dev",
+            "https://lyricsplus-seven.vercel.app",
+            "https://lyrics-plus-backend.vercel.app",
+            "https://lyricsplus.prjktla.my.id"
+        ];
+    }
+
+    function _paxsenixUrl(base: string): string {
+        const p = Players.active;
+        let url = `${base}/v2/lyrics/get?title=${encodeURIComponent(p.trackTitle)}&artist=${encodeURIComponent(p.trackArtist || "")}`;
+        const duration = _trackDuration();
+        if (duration > 0)
+            url += `&duration=${duration}`;
+        return url;
+    }
+
     function _metadataMatches(meta: var): bool {
         const p = Players.active;
         if (!p || !meta)
@@ -102,12 +123,41 @@ Singleton {
         return true;
     }
 
+    function _normaliseTrackText(value: string): string {
+        return String(value || "").toLowerCase().replace(/\s*\(.*?\)/g, "").replace(/\s*\[.*?\]/g, "").trim();
+    }
+
+    function _nativeTrackMatches(): bool {
+        const p = Players.active;
+        if (!p || !p.trackTitle)
+            return false;
+
+        const activeTitle = _normaliseTrackText(p.trackTitle);
+        const nativeTitle = _normaliseTrackText(Lyrics.trackTitle);
+        if (!activeTitle || !nativeTitle || activeTitle !== nativeTitle)
+            return false;
+
+        const activeArtist = _normaliseTrackText(p.trackArtist).split(/[&,xX]/)[0].trim();
+        const nativeArtist = _normaliseTrackText(Lyrics.trackArtist).split(/[&,xX]/)[0].trim();
+        return !activeArtist || !nativeArtist || activeArtist === nativeArtist || activeArtist.includes(nativeArtist) || nativeArtist.includes(activeArtist);
+    }
+
+    function _clearDisplayedLyrics(status: string): void {
+        lyricsModel.clear();
+        root.hasSyllables = false;
+        root.currentIndex = -1;
+        root.provider = "";
+        root.status = status || "";
+        root.revision++;
+    }
+
     function _setNativeFallback(): void {
         if (root.hasSyllables)
             return;
 
         lyricsModel.clear();
-        const lines = Lyrics.lyrics;
+        const nativeReady = Lyrics.hasLyrics && _nativeTrackMatches();
+        const lines = nativeReady ? Lyrics.lyrics : [];
         for (let i = 0; i < lines.length; i++) {
             lyricsModel.append({
                 lyricLine: _cleanText(lines[i]) || ". . .",
@@ -115,8 +165,10 @@ Singleton {
                 syllabus: "[]"
             });
         }
-        root.loading = Lyrics.loading;
-        root.currentIndex = Lyrics.indexForTime(Players.active?.position ?? 0);
+        root.loading = nativeReady ? Lyrics.loading : false;
+        root.currentIndex = nativeReady ? Lyrics.indexForTime(Players.active?.position ?? 0) : -1;
+        root.provider = nativeReady ? LyricsBackend.toString(Lyrics.backend) : "";
+        root.status = nativeReady ? qsTr("Fallback: %1").arg(root.provider) : qsTr("No lyrics found");
         root.revision++;
     }
 
@@ -146,31 +198,41 @@ Singleton {
         if (key && key === root.loadedKey && lyricsModel.count > 0)
             return;
 
+        const changedTrack = key !== root.loadedKey;
         root.loadedKey = key;
         root.hasSyllables = false;
         root.loading = true;
         root.currentIndex = -1;
         root.requestId++;
         const req = root.requestId;
+        onlineTimeout.stop();
+
+        if (changedTrack)
+            _clearDisplayedLyrics(qsTr("Loading lyrics..."));
 
         if (!p || !p.trackTitle) {
-            lyricsModel.clear();
             root.loading = false;
+            _clearDisplayedLyrics(qsTr("No active track"));
             root.revision++;
             return;
         }
 
         if (!_usePaxsenix()) {
             root.loading = Lyrics.loading;
+            root.status = qsTr("Loading fallback lyrics...");
             _setNativeFallback();
             return;
         }
 
+        root.provider = "Paxsenix";
+        root.status = qsTr("Fetching Paxsenix lyrics...");
         root.cacheLoaded = false;
         _setCachePath(key);
         cacheFile.reload();
         cacheDelay.requestId = req;
         cacheDelay.restart();
+        onlineTimeout.requestId = req;
+        onlineTimeout.restart();
     }
 
     function _fetchOnline(req: int): void {
@@ -178,10 +240,25 @@ Singleton {
         if (!p || !p.trackTitle || req !== root.requestId)
             return;
 
-        let url = `https://lyricsplus.prjktla.my.id/v2/lyrics/get?title=${encodeURIComponent(p.trackTitle)}&artist=${encodeURIComponent(p.trackArtist || "")}`;
-        const duration = _trackDuration();
-        if (duration > 0)
-            url += `&duration=${duration}`;
+        _fetchOnlineFromMirror(req, 0);
+    }
+
+    function _fetchOnlineFromMirror(req: int, mirrorIndex: int): void {
+        const p = Players.active;
+        const bases = _lyricsPlusBases();
+        if (!p || !p.trackTitle || req !== root.requestId)
+            return;
+        if (mirrorIndex >= bases.length) {
+            onlineTimeout.stop();
+            root.loading = false;
+            root.status = qsTr("Paxsenix unavailable, using fallback");
+            _setNativeFallback();
+            return;
+        }
+
+        const base = bases[mirrorIndex];
+        const url = _paxsenixUrl(base);
+        root.status = qsTr("Fetching Paxsenix lyrics...");
 
         Requests.get(url, text => {
             if (req !== root.requestId)
@@ -194,17 +271,16 @@ Singleton {
                 if (!_metadataMatches(meta) || !_hasTimedSyllables(lines))
                     throw new Error("Paxsenix result did not provide timed syllables for the current track");
 
+                onlineTimeout.stop();
                 _loadLines(lines);
                 _saveCache(lines);
             } catch (e) {
-                root.loading = false;
-                _setNativeFallback();
+                _fetchOnlineFromMirror(req, mirrorIndex + 1);
             }
         }, () => {
             if (req !== root.requestId)
                 return;
-            root.loading = false;
-            _setNativeFallback();
+            _fetchOnlineFromMirror(req, mirrorIndex + 1);
         });
     }
 
@@ -239,6 +315,8 @@ Singleton {
 
         root.hasSyllables = lyricsModel.count > 0 && timedSyllableCount > 0;
         root.loading = false;
+        root.provider = "Paxsenix";
+        root.status = qsTr("Paxsenix syllable lyrics");
         root.revision++;
         updatePosition();
     }
@@ -317,6 +395,22 @@ Singleton {
         }
     }
 
+    Timer {
+        id: onlineTimeout
+
+        property int requestId: -1
+
+        interval: 8000
+        repeat: false
+        onTriggered: {
+            if (requestId !== root.requestId || root.hasLyrics)
+                return;
+            root.loading = false;
+            root.status = qsTr("Paxsenix timed out, using fallback");
+            root._setNativeFallback();
+        }
+    }
+
     FileView {
         id: cacheFile
 
@@ -328,6 +422,7 @@ Singleton {
             try {
                 const cached = JSON.parse(text());
                 if (cached.key === root.loadedKey && cached.provider === "Paxsenix" && _hasTimedSyllables(cached.lyrics)) {
+                    onlineTimeout.stop();
                     root.cacheLoaded = true;
                     root._loadLines(cached.lyrics);
                 }
