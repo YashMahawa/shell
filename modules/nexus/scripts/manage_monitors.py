@@ -13,7 +13,7 @@ def validate_monitor_name(name):
         raise ValueError(f"Invalid monitor name: {name}")
 
 def validate_res(res):
-    if not re.match(r'^\d+x\d+@[\d\.]+$', res) and res != "preferred":
+    if not re.match(r'^\d+x\d+@[\d\.]+$', res) and not re.match(r'^\d+x\d+$', res) and res not in ["preferred", "disable"]:
         raise ValueError("Invalid resolution")
 
 def validate_pos(pos):
@@ -24,13 +24,26 @@ def validate_scale(scale):
     if not re.match(r'^[\d\.]+$', str(scale)):
         raise ValueError("Invalid scale")
 
-def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale):
+def validate_transform(transform):
+    if not re.match(r'^[0-7]$', str(transform)):
+        raise ValueError("Invalid transform")
+
+def monitor_rule(name, res, pos, scale, transform=None):
+    if res == "disable":
+        return f"{name},disable"
+    if transform is None:
+        return f"{name},{res},{pos},{scale}"
+    return f"{name},{res},{pos},{scale},transform,{transform}"
+
+def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale, transform="0"):
     validate_monitor_name(name)
     validate_res(res)
-    validate_pos(pos)
-    validate_scale(scale)
+    if res != "disable":
+        validate_pos(pos)
+        validate_scale(scale)
+        validate_transform(transform)
 
-    cmd = ["hyprctl", "keyword", "monitor", f"{name},{res},{pos},{scale}"]
+    cmd = ["hyprctl", "keyword", "monitor", monitor_rule(name, res, pos, scale, transform)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         # Some versions of hyprctl return 0 but say "invalid" in output
@@ -40,7 +53,7 @@ def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale):
     except subprocess.CalledProcessError as e:
         # Rollback
         print(f"Failed to apply monitor config, rolling back. Error: {e.stdout} {e.stderr}", file=sys.stderr)
-        old_cmd = ["hyprctl", "keyword", "monitor", f"{name},{old_res},{old_pos},{old_scale}"]
+        old_cmd = ["hyprctl", "keyword", "monitor", monitor_rule(name, old_res, old_pos, old_scale)]
         subprocess.run(old_cmd, capture_output=True)
         sys.exit(1)
 
@@ -51,7 +64,8 @@ def save_monitors(monitors_json):
         print("Invalid JSON for monitors", file=sys.stderr)
         sys.exit(1)
 
-    config_dir = os.path.expanduser("~/.config/hypr")
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    config_dir = os.path.join(config_home, "hypr")
     os.makedirs(config_dir, exist_ok=True)
     monitors_conf_path = os.path.join(config_dir, "monitors.conf")
     hyprland_conf_path = os.path.join(config_dir, "hyprland.conf")
@@ -59,15 +73,17 @@ def save_monitors(monitors_json):
     for m in monitors:
         validate_monitor_name(m.get("name"))
         validate_res(m.get("res"))
-        validate_pos(m.get("pos"))
-        validate_scale(m.get("scale"))
+        if m.get("res") != "disable":
+            validate_pos(m.get("pos"))
+            validate_scale(m.get("scale"))
+            validate_transform(m.get("transform", "0"))
 
     if os.path.exists(hyprland_conf_path):
         with open(hyprland_conf_path, "r") as f:
             content = f.read()
 
-        source_line = "source = ~/.config/hypr/monitors.conf"
-        if not re.search(r'^\s*source\s*=\s*~/\.config/hypr/monitors\.conf', content, re.MULTILINE):
+        source_line = f"source = {monitors_conf_path}"
+        if source_line not in content:
             timestamp = int(time.time())
             backup_path = f"{hyprland_conf_path}.bak.{timestamp}"
             shutil.copy2(hyprland_conf_path, backup_path)
@@ -85,7 +101,7 @@ def save_monitors(monitors_json):
     try:
         with open(monitors_conf_path, "w") as f:
             for m in monitors:
-                f.write(f"monitor={m['name']},{m['res']},{m['pos']},{m['scale']}\n")
+                f.write(f"monitor={monitor_rule(m['name'], m['res'], m.get('pos', 'auto'), m.get('scale', '1'), m.get('transform', '0'))}\n")
     except Exception as e:
         print(f"Failed to write monitors.conf: {e}", file=sys.stderr)
         sys.exit(1)
@@ -97,6 +113,7 @@ def main():
     parser.add_argument("--res")
     parser.add_argument("--pos")
     parser.add_argument("--scale")
+    parser.add_argument("--transform", default="0")
     parser.add_argument("--old-res")
     parser.add_argument("--old-pos")
     parser.add_argument("--old-scale")
@@ -107,7 +124,7 @@ def main():
     args = parser.parse_args()
 
     if args.apply:
-        apply_monitor(args.name, args.res, args.pos, args.scale, args.old_res, args.old_pos, args.old_scale)
+        apply_monitor(args.name, args.res, args.pos, args.scale, args.old_res, args.old_pos, args.old_scale, args.transform)
     elif args.save:
         save_monitors(args.monitors_json)
     else:

@@ -126,6 +126,14 @@ QtObject {
             }
         },
         Component {
+            // Windows
+            StackPage {
+                Component {
+                    WindowManagementPage {}
+                }
+            }
+        },
+        Component {
             // Services
             StackPage {
                 Component {

@@ -18,7 +18,7 @@ QtObject {
         {
             label: qsTr("Display"),
             icon: "monitor",
-            description: qsTr("Output configuration"),
+            description: qsTr("Resolution, scale, arrangement"),
             category: "connectivity"
         },
         {
@@ -60,6 +60,12 @@ QtObject {
             label: qsTr("Panels"),
             icon: "dock_to_bottom",
             description: qsTr("Dashboard, taskbar, launcher, sidebar"),
+            category: "shell"
+        },
+        {
+            label: qsTr("Windows"),
+            icon: "select_window",
+            description: qsTr("Window actions, focus, gaps"),
             category: "shell"
         },
         {
