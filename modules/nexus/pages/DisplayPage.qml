@@ -20,8 +20,7 @@ PageBase {
     property bool showConfirmSave: false
     property string errorMessage: ""
 
-    Process {
-        id: monitorProc
+    property Process monitorProc: Process {
         onExited: exitCode => { // qmllint disable signal-handler-parameters
             if (exitCode !== 0) {
                 root.errorMessage = qsTr("Process failed. Please check your configuration.");

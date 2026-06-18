@@ -25,7 +25,8 @@ Item {
 
     readonly property real fadeAmount: 0.1
     property bool flag
-    property list<string> lyricList: Lyrics.lyrics
+    property int lyricRevision: SyllableLyrics.revision
+    property real smoothPosition: Players.active?.position ?? 0
 
     layer.enabled: true
     layer.effect: Mask {
@@ -64,9 +65,9 @@ Item {
 
     state: {
         flag; // For some reason it doesn't update sometimes, so use this to force an update
-        if (Lyrics.hasLyrics)
+        if (SyllableLyrics.hasLyrics)
             return "hasLyrics";
-        if (Lyrics.loading)
+        if (SyllableLyrics.loading || Lyrics.loading)
             return "loading";
         return "noLyrics";
     }
@@ -160,6 +161,51 @@ Item {
         target: Lyrics
     }
 
+    Connections {
+        function onRevisionChanged() {
+            root.flag = !root.flag;
+        }
+
+        target: SyllableLyrics
+    }
+
+    Connections {
+        target: Players.active
+        ignoreUnknownSignals: true
+
+        function onPositionChanged(): void {
+            root.smoothPosition = Players.active?.position ?? 0;
+            if (smoothTicker.running)
+                smoothTicker.lastRealTime = Date.now() / 1000;
+        }
+    }
+
+    Timer {
+        id: smoothTicker
+
+        interval: 16
+        running: SyllableLyrics.hasSyllables && !!Players.active && Players.active.isPlaying
+        repeat: true
+
+        property real lastRealTime: 0
+
+        onTriggered: {
+            const now = Date.now() / 1000;
+            if (lastRealTime > 0)
+                root.smoothPosition += now - lastRealTime;
+            lastRealTime = now;
+        }
+
+        onRunningChanged: {
+            if (running) {
+                root.smoothPosition = Players.active?.position ?? 0;
+                lastRealTime = Date.now() / 1000;
+            } else {
+                lastRealTime = 0;
+            }
+        }
+    }
+
     Loader {
         id: loadingIndicator
 
@@ -237,11 +283,11 @@ Item {
         displayMarginBeginning: anchors.topMargin
         displayMarginEnd: anchors.bottomMargin
 
-        model: root.lyricList
+        model: SyllableLyrics.model
         Component.onCompleted: {
             currentIndex = Qt.binding(() => {
                 model; // Force update when lyrics change
-                return Lyrics.indexForTime(Players.active?.position ?? 0);
+                return SyllableLyrics.hasSyllables ? SyllableLyrics.indexForTime(root.smoothPosition) : SyllableLyrics.currentIndex;
             });
             positionViewAtIndex(currentIndex, ListView.Center);
         }
@@ -259,26 +305,81 @@ Item {
         delegate: StyledText {
             id: lyric
 
-            required property string modelData
+            required property string lyricLine
+            required property string syllabus
             required property int index
             property real effectScale: ListView.isCurrentItem ? 1 : 0
+            readonly property string highlightedText: {
+                const baseText = lyric.lyricLine || ". . .";
+                let syllabusArray = [];
+                if (SyllableLyrics.hasSyllables && lyric.syllabus) {
+                    try {
+                        syllabusArray = JSON.parse(lyric.syllabus);
+                    } catch (e) {
+                        syllabusArray = [];
+                    }
+                }
+                if (!ListView.isCurrentItem || syllabusArray.length === 0)
+                    return baseText;
+
+                function colorToHex(c) {
+                    const s = c.toString();
+                    return s.length === 9 ? "#" + s.substring(3, 9) : s;
+                }
+
+                function interpolateColor(a, b, factor) {
+                    const r1 = parseInt(a.substring(1, 3), 16);
+                    const g1 = parseInt(a.substring(3, 5), 16);
+                    const b1 = parseInt(a.substring(5, 7), 16);
+                    const r2 = parseInt(b.substring(1, 3), 16);
+                    const g2 = parseInt(b.substring(3, 5), 16);
+                    const b2 = parseInt(b.substring(5, 7), 16);
+                    const r = Math.round(r1 + factor * (r2 - r1)).toString(16).padStart(2, "0");
+                    const g = Math.round(g1 + factor * (g2 - g1)).toString(16).padStart(2, "0");
+                    const bl = Math.round(b1 + factor * (b2 - b1)).toString(16).padStart(2, "0");
+                    return "#" + r + g + bl;
+                }
+
+                function escapeHtml(s) {
+                    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                }
+
+                const pos = root.smoothPosition;
+                const activeColor = colorToHex(Colours.palette.m3primary);
+                const inactiveColor = interpolateColor("#121212", activeColor, 0.28);
+                let html = "";
+
+                for (const syl of syllabusArray) {
+                    const text = escapeHtml(syl.text || "");
+                    const start = Number(syl.time || 0);
+                    const duration = Math.max(Number(syl.duration || 0.2), 0.05);
+                    if (text.length <= 1 || pos < start || pos >= start + duration) {
+                        const factor = pos >= start ? 1 : 0;
+                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${text}</span>`;
+                        continue;
+                    }
+
+                    const charDuration = duration / text.length;
+                    for (let i = 0; i < text.length; i++) {
+                        const charStart = start + i * charDuration;
+                        let factor = 0;
+                        if (pos >= charStart)
+                            factor = pos >= charStart + charDuration ? 1 : (pos - charStart) / charDuration;
+                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${text[i]}</span>`;
+                    }
+                }
+
+                return html;
+            }
 
             anchors.left: lyrics.contentItem.left
             anchors.right: lyrics.contentItem.right
 
-            text: modelData || ". . ."
+            text: highlightedText
+            textFormat: SyllableLyrics.hasSyllables ? Text.RichText : Text.PlainText
             color: ListView.isCurrentItem ? Colours.palette.m3primary : mouse.containsMouse ? Colours.palette.m3onSurface : Colours.palette.m3outline
             font: Tokens.font.body.medium
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-
-            layer.enabled: effectScale > 0
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: Colours.palette.m3primary
-                shadowOpacity: 0.5 * lyric.effectScale
-                shadowBlur: 0.6 * lyric.effectScale
-                blur: 0.4 * lyric.effectScale
-            }
 
             Behavior on effectScale {
                 Anim {
@@ -293,9 +394,7 @@ Item {
                 cursorShape: Qt.PointingHandCursor
                 hoverEnabled: true
                 onClicked: {
-                    const p = Players.active;
-                    if (p)
-                        p.position = Lyrics.timeForIndex(lyric.index);
+                    SyllableLyrics.jumpTo(lyric.index);
                 }
             }
         }
@@ -307,7 +406,7 @@ Item {
         }
     }
 
-    Behavior on lyricList {
+    Behavior on lyricRevision {
         SequentialAnimation {
             Anim {
                 target: lyrics

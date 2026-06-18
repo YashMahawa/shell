@@ -15,15 +15,17 @@ Singleton {
     id: root
 
     property list<NotifData> list: []
-    readonly property list<NotifData> notClosed: list.filter(n => !n.closed)
-    readonly property list<NotifData> popups: list.filter(n => n.popup)
+    readonly property list<NotifData> notClosed: list.filter(n => n && !n.closed)
+    readonly property list<NotifData> popups: list.filter(n => n && n.popup && !n.closed)
     property alias dnd: props.dnd
 
     property bool loaded
+    readonly property int maxPersisted: 80
+    readonly property int maxPersistedBodyChars: 1200
 
     function hasFullscreen(): bool {
         for (const monitor of Hypr.monitors.values) {
-            if (monitor?.activeWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1))
+            if (monitor?.activeWorkspace?.lastIpcObject?.hasfullscreen)
                 return true;
         }
         return false;
@@ -52,24 +54,48 @@ Singleton {
             saveTimer.restart();
     }
 
+    function serialiseNotif(n: NotifData): var {
+        return {
+            time: n.time,
+            id: n.id,
+            summary: n.summary,
+            body: n.body.length > maxPersistedBodyChars ? n.body.slice(0, maxPersistedBodyChars) + "..." : n.body,
+            appIcon: n.appIcon,
+            appName: n.appName,
+            image: n.image,
+            expireTimeout: n.expireTimeout,
+            urgency: n.urgency,
+            resident: n.resident,
+            hasActionIcons: n.hasActionIcons,
+            actions: n.actions.map(a => ({
+                identifier: a.identifier ?? "",
+                text: a.text ?? ""
+            }))
+        };
+    }
+
+    function sanitisePersisted(n: var): var {
+        return {
+            time: n.time,
+            id: n.id ?? "",
+            summary: n.summary ?? "",
+            body: (n.body ?? "").length > maxPersistedBodyChars ? (n.body ?? "").slice(0, maxPersistedBodyChars) + "..." : (n.body ?? ""),
+            appIcon: n.appIcon ?? "",
+            appName: n.appName ?? "",
+            image: n.image ?? "",
+            expireTimeout: n.expireTimeout ?? GlobalConfig.notifs.defaultExpireTimeout,
+            urgency: n.urgency ?? 1,
+            resident: n.resident ?? false,
+            hasActionIcons: n.hasActionIcons ?? false,
+            actions: []
+        };
+    }
+
     Timer {
         id: saveTimer
 
         interval: 1000
-        onTriggered: storage.setText(JSON.stringify(root.notClosed.map(n => ({
-                    time: n.time,
-                    id: n.id,
-                    summary: n.summary,
-                    body: n.body,
-                    appIcon: n.appIcon,
-                    appName: n.appName,
-                    image: n.image,
-                    expireTimeout: n.expireTimeout,
-                    urgency: n.urgency,
-                    resident: n.resident,
-                    hasActionIcons: n.hasActionIcons,
-                    actions: n.actions
-                }))))
+        onTriggered: storage.setText(JSON.stringify(root.notClosed.slice(0, root.maxPersisted).filter(n => n).map(n => root.serialiseNotif(n))))
     }
 
     PersistentProperties {
@@ -108,10 +134,15 @@ Singleton {
         printErrors: false
         path: `${Paths.state}/notifs.json`
         onLoaded: {
-            const data = JSON.parse(text());
-            for (const notif of data)
-                root.list.push(notifComp.createObject(root, notif));
-            root.list.sort((a, b) => b.time - a.time);
+            const data = JSON.parse(text()).slice(0, root.maxPersisted);
+            const loadedNotifs = [];
+            for (const notif of data) {
+                const comp = notifComp.createObject(root, root.sanitisePersisted(notif));
+                if (comp)
+                    loadedNotifs.push(comp);
+            }
+            loadedNotifs.sort((a, b) => b.time - a.time);
+            root.list = loadedNotifs;
             root.loaded = true;
         }
         onLoadFailed: err => {

@@ -53,26 +53,6 @@ StyledRect {
 
         opacity: root.expanded || !Config.bar.tray.compact ? 1 : 0
 
-        add: Transition {
-            Anim {
-                properties: "scale"
-                from: 0
-                to: 1
-                easing: Tokens.anim.standardDecel
-            }
-        }
-
-        move: Transition {
-            Anim {
-                properties: "scale"
-                to: 1
-                easing: Tokens.anim.standardDecel
-            }
-            Anim {
-                properties: "x,y"
-            }
-        }
-
         Repeater {
             id: items
 

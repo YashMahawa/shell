@@ -15,6 +15,16 @@ Item {
     implicitWidth: Hypr.activeToplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
     implicitHeight: child.implicitHeight
 
+    function openWindowInfo(): void {
+        root.popouts.detachRequested("winfo");
+    }
+
+    MouseArea {
+        anchors.fill: child
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.openWindowInfo()
+    }
+
     Column {
         id: child
 
@@ -66,7 +76,7 @@ Item {
 
                 StateLayer {
                     radius: Tokens.rounding.large
-                    onClicked: root.popouts.detachRequested("winfo")
+                    onClicked: root.openWindowInfo()
                 }
 
                 MaterialIcon {

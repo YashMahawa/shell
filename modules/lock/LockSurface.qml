@@ -143,7 +143,7 @@ WlSessionLockSurface {
                 Anim {
                     target: lockContent
                     property: "implicitWidth"
-                    to: (root.screen?.width ?? 0) * lockContent.Tokens.sizes.lock.widthMult
+                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
                 }
                 Anim {
                     target: lockContent
@@ -154,20 +154,23 @@ WlSessionLockSurface {
         }
     }
 
-    ScreencopyView {
+    Image {
         id: background
 
         anchors.fill: parent
-        captureSource: root.screen
+        source: Wallpapers.current ? `file://${Wallpapers.current}` : ""
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: true
         opacity: 0
 
-        layer.enabled: TrueLite.effectsEnabled
+        layer.enabled: true
         layer.effect: MultiEffect {
             autoPaddingEnabled: false
             blurEnabled: true
             blur: 1
             blurMax: 64
-            blurMultiplier: TrueLite.blurMultiplier
+            blurMultiplier: 1
         }
     }
 
@@ -178,11 +181,11 @@ WlSessionLockSurface {
         readonly property int radius: size / 4 * Tokens.rounding.scale
 
         anchors.centerIn: parent
-        implicitWidth: size
-        implicitHeight: size
+        implicitWidth: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio
+        implicitHeight: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult
 
-        rotation: 180
-        scale: 0
+        rotation: 360
+        scale: 1
 
         StyledRect {
             id: lockBg
@@ -207,18 +210,19 @@ WlSessionLockSurface {
             text: "lock"
             fontStyle: Tokens.font.icon.builders.extraLarge.scale(4).weight(Font.Bold).build()
             rotation: 180
+            opacity: 0
         }
 
         Content {
             id: content
 
             anchors.centerIn: parent
-            width: (root.screen?.width ?? 0) * Tokens.sizes.lock.widthMult - Tokens.padding.extraLargeIncreased
+            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
             height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
 
             lock: root
-            opacity: 0
-            scale: 0
+            opacity: 1
+            scale: 1
         }
     }
 }

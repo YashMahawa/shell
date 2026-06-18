@@ -46,10 +46,10 @@ StyledRect {
 
     anchors.left: parent?.left
     anchors.right: parent?.right
-    implicitHeight: content.implicitHeight + Tokens.padding.medium * 2
+    implicitHeight: content.implicitHeight + Tokens.padding.normal * 2
 
     clip: true
-    radius: Tokens.rounding.large
+    radius: Tokens.rounding.normal
     color: root.urgency === "critical" ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
 
     RowLayout {
@@ -58,9 +58,9 @@ StyledRect {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: Tokens.padding.medium
+        anchors.margins: Tokens.padding.normal
 
-        spacing: Tokens.spacing.medium
+        spacing: Tokens.spacing.normal
 
         Item {
             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
@@ -101,7 +101,7 @@ StyledRect {
                 MaterialIcon {
                     text: Icons.getNotifIcon(root.notifs[0]?.summary, root.urgency)
                     color: root.urgency === "critical" ? Colours.palette.m3onError : root.urgency === "low" ? Colours.palette.m3onSurface : Colours.palette.m3onSecondaryContainer
-                    fontStyle: Tokens.font.icon.large
+                    font.pointSize: Tokens.font.size.large
                 }
             }
 
@@ -142,21 +142,21 @@ StyledRect {
         }
 
         ColumnLayout {
-            Layout.topMargin: -Tokens.padding.extraSmall
-            Layout.bottomMargin: -Tokens.padding.extraSmall / 2 - (root.expanded ? 0 : spacing)
+            Layout.topMargin: -Tokens.padding.small
+            Layout.bottomMargin: -Tokens.padding.small / 2 - (root.expanded ? 0 : spacing)
             Layout.fillWidth: true
-            spacing: Math.round(Tokens.spacing.extraSmall)
+            spacing: Math.round(Tokens.spacing.small / 2)
 
             RowLayout {
                 Layout.bottomMargin: -parent.spacing
                 Layout.fillWidth: true
-                spacing: Tokens.spacing.medium
+                spacing: Tokens.spacing.smaller
 
                 StyledText {
                     Layout.fillWidth: true
                     text: root.modelData
                     color: Colours.palette.m3onSurfaceVariant
-                    font: Tokens.font.body.small
+                    font.pointSize: Tokens.font.size.small
                     elide: Text.ElideRight
                 }
 
@@ -164,12 +164,12 @@ StyledRect {
                     animate: true
                     text: root.notifs[0]?.timeStr ?? ""
                     color: Colours.palette.m3outline
-                    font: Tokens.font.body.small
+                    font.pointSize: Tokens.font.size.small
                 }
 
                 StyledRect {
-                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.large
-                    implicitHeight: groupCount.implicitHeight + Tokens.padding.extraSmall
+                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.smaller * 2
+                    implicitHeight: groupCount.implicitHeight + Tokens.padding.small
 
                     color: root.urgency === "critical" ? Colours.palette.m3error : Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
                     radius: Tokens.rounding.full
@@ -186,20 +186,20 @@ StyledRect {
                         id: expandBtn
 
                         anchors.centerIn: parent
-                        spacing: Tokens.spacing.extraSmall
+                        spacing: Tokens.spacing.small / 2
 
                         StyledText {
                             id: groupCount
 
-                            Layout.leftMargin: Tokens.padding.extraSmall / 2
+                            Layout.leftMargin: Tokens.padding.small / 2
                             animate: true
                             text: root.notifs.length
                             color: root.urgency === "critical" ? Colours.palette.m3onError : Colours.palette.m3onSurface
-                            font: Tokens.font.body.small
+                            font.pointSize: Tokens.font.size.small
                         }
 
                         MaterialIcon {
-                            Layout.rightMargin: -Tokens.padding.extraSmall / 2
+                            Layout.rightMargin: -Tokens.padding.small / 2
                             animate: true
                             text: root.expanded ? "expand_less" : "expand_more"
                             color: root.urgency === "critical" ? Colours.palette.m3onError : Colours.palette.m3onSurface
@@ -207,9 +207,7 @@ StyledRect {
                     }
 
                     Behavior on opacity {
-                        Anim {
-                            type: Anim.DefaultEffects
-                        }
+                        Anim {}
                     }
 
                     Behavior on Layout.preferredWidth {
@@ -230,7 +228,6 @@ StyledRect {
                         running: true
 
                         Anim {
-                            type: Anim.DefaultEffects
                             target: notif
                             property: "opacity"
                             from: 0
@@ -255,7 +252,6 @@ StyledRect {
                         onFinished: notif.modelData.unlock(notif)
 
                         Anim {
-                            type: Anim.DefaultEffects
                             target: notif
                             property: "opacity"
                             to: 0
@@ -293,16 +289,16 @@ StyledRect {
                 }
 
                 Behavior on opacity {
-                    Anim {
-                        type: Anim.DefaultEffects
-                    }
+                    Anim {}
                 }
             }
         }
     }
 
     Behavior on implicitHeight {
-        Anim {}
+        Anim {
+            type: Anim.DefaultSpatial
+        }
     }
 
     component NotifLine: StyledText {
@@ -335,7 +331,8 @@ StyledRect {
             id: metrics
 
             text: `${notifLine.modelData.summary} ${notifLine.modelData.body}`.replace(/\n/g, " ")
-            font: notifLine.font
+            font.pointSize: notifLine.font.pointSize
+            font.family: notifLine.font.family
             elideWidth: notifLine.width
             elide: Text.ElideRight
         }

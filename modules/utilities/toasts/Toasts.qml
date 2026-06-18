@@ -14,13 +14,7 @@ Item {
     property bool flag
 
     function shouldShowToast(toast: Toast): bool {
-        if (!Notifs.hasFullscreen())
-            return true;
-        if (Config.utilities.toasts.fullscreen === "all")
-            return true;
-        if (Config.utilities.toasts.fullscreen === "important")
-            return toast.type === Toast.Warning || toast.type === Toast.Error;
-        return false;
+        return true;
     }
 
     implicitWidth: Tokens.sizes.utilities.toastWidth - Tokens.padding.medium * 2

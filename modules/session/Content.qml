@@ -63,8 +63,8 @@ Column {
     SessionButton {
         id: hibernate
 
-        icon: Config.session.icons.hibernate
-        command: Config.session.commands.hibernate
+        icon: "bedtime"
+        command: ["systemctl", "suspend"]
 
         KeyNavigation.up: shutdown
         KeyNavigation.down: reboot

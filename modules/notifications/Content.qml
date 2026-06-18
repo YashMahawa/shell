@@ -31,9 +31,7 @@ Item {
         if (count === 0)
             return 0;
 
-        let height = (count - 1) * Tokens.spacing.medium;
-        for (let i = 0; i < count; i++)
-            height += (list.itemAtIndex(i) as NotifWrapper)?.nonAnimHeight ?? 0;
+        let height = list.contentHeight;
 
         if (visibilities.osd) {
             const h = osdPanel.y - clampedPadding;
@@ -69,7 +67,7 @@ Item {
             id: list
 
             model: ScriptModel {
-                values: Notifs.popups.filter(n => !n.closed)
+                values: [...Notifs.popups]
             }
 
             anchors.fill: parent

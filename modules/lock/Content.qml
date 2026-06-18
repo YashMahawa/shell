@@ -18,7 +18,8 @@ GridLayout {
     rows: isPortrait ? 3 : 1
     flow: isPortrait ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
-    spacing: Tokens.spacing.largeIncreased * 2
+    rowSpacing: Tokens.spacing.largeIncreased * 2
+    columnSpacing: Tokens.spacing.largeIncreased * 2
 
     // Primary priority: Center (Clock, login profile)
     Center {

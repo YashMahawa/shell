@@ -92,7 +92,7 @@ Item {
 
     HyprlandFocusGrab {
         active: root.isDetached
-        windows: [QsWindow.window]
+        Component.onCompleted: windows = [QsWindow.window]
         onCleared: root.close()
     }
 

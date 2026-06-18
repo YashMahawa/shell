@@ -83,12 +83,19 @@ Singleton {
     Process {
         id: ddcProc
 
-        command: ["ddcutil", "detect", "--brief"]
+        command: ["sh", "-c", "id -nG | grep -qw i2c && command -v ddcutil >/dev/null && ddcutil detect --brief || true"]
         stdout: StdioCollector {
-            onStreamFinished: root.ddcMonitors = text.trim().split("\n\n").filter(d => d.startsWith("Display ")).map(d => ({
-                        busNum: d.match(/I2C bus:[ ]*\/dev\/i2c-([0-9]+)/)[1],
-                        connector: d.match(/DRM connector:\s+(.*)/)[1].replace(/^card\d+-/, "") // strip "card1-"
-                    }))
+            onStreamFinished: root.ddcMonitors = text.trim().split("\n\n").filter(d => d.startsWith("Display ")).map(d => {
+                        const busMatch = d.match(/I2C bus:[ ]*\/dev\/i2c-([0-9]+)/);
+                        const connectorMatch = d.match(/DRM connector:\s+(.*)/);
+                        if (!busMatch || !connectorMatch)
+                            return null;
+
+                        return {
+                            busNum: busMatch[1],
+                            connector: connectorMatch[1].replace(/^card\d+-/, "") // strip "card1-"
+                        };
+                    }).filter(m => m !== null)
         }
     }
 

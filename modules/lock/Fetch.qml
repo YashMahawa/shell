@@ -3,148 +3,140 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Services.UPower
-import Caelestia
 import Caelestia.Config
 import qs.components
 import qs.components.effects
 import qs.services
 import qs.utils
 
-StyledRect {
+ColumnLayout {
     id: root
 
-    required property real rootHeight
-    required property real fluidScale
-    readonly property int cBoxSize: Tokens.font.body.medium.pointSize * 2
+    anchors.fill: parent
+    anchors.margins: Tokens.padding.large * 2
+    anchors.topMargin: Tokens.padding.large
 
-    implicitHeight: layout.implicitHeight + layout.anchors.topMargin + layout.anchors.margins
-    radius: Tokens.rounding.medium
-    color: Colours.tPalette.m3surfaceContainer
+    spacing: Tokens.spacing.small
 
-    ColumnLayout {
-        id: layout
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: false
+        spacing: Tokens.spacing.normal
 
-        anchors.fill: parent
-        anchors.margins: Tokens.padding.extraLarge
-        anchors.topMargin: Tokens.padding.extraLarge
-        anchors.bottomMargin: Tokens.padding.extraLarge
+        StyledRect {
+            implicitWidth: prompt.implicitWidth + Tokens.padding.normal * 2
+            implicitHeight: prompt.implicitHeight + Tokens.padding.normal * 2
 
-        spacing: Tokens.spacing.small
-
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: false
-            spacing: Tokens.spacing.medium
-
-            StyledRect {
-                implicitWidth: prompt.implicitWidth + Tokens.padding.medium * 2
-                implicitHeight: prompt.implicitHeight + Tokens.padding.small * 2
-
-                color: Colours.palette.m3primary
-                radius: Tokens.rounding.medium
-
-                MonoText {
-                    id: prompt
-
-                    anchors.centerIn: parent
-                    text: ">"
-                    color: Colours.palette.m3onPrimary
-                }
-            }
+            color: Colours.palette.m3primary
+            radius: Tokens.rounding.small
 
             MonoText {
-                Layout.fillWidth: true
-                text: "caelestiafetch.sh"
-                elide: Text.ElideRight
-            }
+                id: prompt
 
-            WrappedLoader {
-                Layout.fillHeight: true
-                Layout.preferredWidth: height
-                Layout.preferredHeight: 0
-                active: !iconLoader.active
-
-                sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+                anchors.centerIn: parent
+                text: ">"
+                font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+                color: Colours.palette.m3onPrimary
             }
         }
 
-        RowLayout {
+        MonoText {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: Tokens.spacing.extraLarge
-
-            WrappedLoader {
-                id: iconLoader
-
-                Layout.fillHeight: true
-                active: root.width > Tokens.sizes.lock.largeLogoWidth * fluidScale
-
-                sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: Tokens.padding.medium
-                Layout.bottomMargin: iconLoader.active || colourRowLoader.active ? Tokens.padding.medium : 0
-                spacing: Tokens.spacing.medium
-
-                Repeater {
-                    model: {
-                        const items = [];
-                        const hasBatt = UPower.displayDevice.isLaptopBattery;
-                        const rHeight = root.rootHeight;
-
-                        if (!hasBatt && rHeight > Tokens.sizes.lock.fetch4LinesHeight * fluidScale)
-                            items.push(`OS  : ${SysInfo.osPrettyName || SysInfo.osName}`);
-
-                        if (rHeight > (hasBatt ? Tokens.sizes.lock.fetch4LinesHeight : Tokens.sizes.lock.fetch3LinesHeight) * fluidScale)
-                            items.push(`WM  : ${SysInfo.wm}`);
-
-                        if (!hasBatt || rHeight > Tokens.sizes.lock.fetch3LinesHeight * fluidScale)
-                            items.push(`USER: ${SysInfo.user}`);
-
-                        items.push(`UP  : ${SysInfo.uptime}`);
-
-                        if (hasBatt)
-                            items.push(`BATT: ${[UPowerDeviceState.Charging, UPowerDeviceState.FullyCharged, UPowerDeviceState.PendingCharge].includes(UPower.displayDevice.state) ? "(+) " : ""}${Math.round(UPower.displayDevice.percentage * 100)}%`);
-
-                        return items;
-                    }
-
-                    MonoText {
-                        required property string modelData
-
-                        Layout.fillWidth: true
-                        text: modelData
-                        elide: Text.ElideRight
-                    }
-                }
-            }
+            text: "caelestiafetch.sh"
+            font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+            elide: Text.ElideRight
         }
 
         WrappedLoader {
-            id: colourRowLoader
+            Layout.fillHeight: true
+            active: !iconLoader.active
 
-            Layout.topMargin: iconLoader.active ? Tokens.spacing.small : 0
-            Layout.alignment: Qt.AlignHCenter
-            active: root.rootHeight > Tokens.sizes.lock.showColourBoxRowHeight * fluidScale
+            sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+        }
+    }
 
-            sourceComponent: RowLayout {
-                id: coloursRow
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: false
+        spacing: height * 0.15
 
-                spacing: Tokens.spacing.largeIncreased
+        WrappedLoader {
+            id: iconLoader
 
-                Repeater {
-                    model: CUtils.clamp(Math.floor((layout.width + coloursRow.spacing) / (root.cBoxSize + coloursRow.spacing)), 0, 8)
+            Layout.fillHeight: true
+            active: root.width > 320
 
-                    StyledRect {
-                        required property int index
+            sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+        }
 
-                        implicitWidth: implicitHeight
-                        implicitHeight: root.cBoxSize
-                        color: Colours.palette[`term${index}`]
-                        radius: Tokens.rounding.medium
-                    }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: Tokens.padding.normal
+            Layout.bottomMargin: Tokens.padding.normal
+            Layout.leftMargin: iconLoader.active ? 0 : width * 0.1
+            spacing: Tokens.spacing.normal
+
+            WrappedLoader {
+                Layout.fillWidth: true
+                active: !batLoader.active && root.height > 200
+
+                sourceComponent: FetchText {
+                    text: `OS  : ${SysInfo.osPrettyName || SysInfo.osName}`
+                }
+            }
+
+            WrappedLoader {
+                Layout.fillWidth: true
+                active: root.height > (batLoader.active ? 200 : 110)
+
+                sourceComponent: FetchText {
+                    text: `WM  : ${SysInfo.wm}`
+                }
+            }
+
+            WrappedLoader {
+                Layout.fillWidth: true
+                active: !batLoader.active || root.height > 110
+
+                sourceComponent: FetchText {
+                    text: `USER: ${SysInfo.user}`
+                }
+            }
+
+            FetchText {
+                text: `UP  : ${SysInfo.uptime}`
+            }
+
+            WrappedLoader {
+                id: batLoader
+
+                Layout.fillWidth: true
+                active: UPower.displayDevice.isLaptopBattery
+
+                sourceComponent: FetchText {
+                    text: `BATT: ${[UPowerDeviceState.Charging, UPowerDeviceState.FullyCharged, UPowerDeviceState.PendingCharge].includes(UPower.displayDevice.state) ? "(+) " : ""}${Math.round(UPower.displayDevice.percentage * 100)}%`
+                }
+            }
+        }
+    }
+
+    WrappedLoader {
+        Layout.alignment: Qt.AlignHCenter
+        active: root.height > 180
+
+        sourceComponent: RowLayout {
+            spacing: Tokens.spacing.large
+
+            Repeater {
+                model: Math.max(0, Math.min(8, root.width / (Tokens.font.size.larger * 2 + Tokens.spacing.large)))
+
+                StyledRect {
+                    required property int index
+
+                    implicitWidth: implicitHeight
+                    implicitHeight: Tokens.font.size.larger * 2
+                    color: Colours.palette[`term${index}`]
+                    radius: Tokens.rounding.small
                 }
             }
         }
@@ -174,7 +166,13 @@ StyledRect {
         visible: active
     }
 
+    component FetchText: MonoText {
+        Layout.fillWidth: true
+        font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+        elide: Text.ElideRight
+    }
+
     component MonoText: StyledText {
-        font: root.width > Tokens.sizes.lock.largeFontWidth * fluidScale ? Tokens.font.mono.medium : Tokens.font.mono.small
+        font.family: Tokens.font.family.mono
     }
 }

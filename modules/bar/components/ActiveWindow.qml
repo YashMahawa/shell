@@ -118,23 +118,15 @@ Item {
         color: root.colour
         opacity: root.current === this ? 1 : 0
 
-        transform: root.isVertical ? [
+        transform: [
             Translate {
-                x: root.Config.bar.activeWindow.inverted ? -text.implicitWidth + text.implicitHeight : 0
+                x: root.isVertical && root.Config.bar.activeWindow.inverted ? -text.implicitWidth + text.implicitHeight : 0
+                y: !root.isVertical && root.Config.bar.activeWindow.inverted ? text.implicitHeight : 0
             },
             Rotation {
-                angle: root.Config.bar.activeWindow.inverted ? 270 : 90
-                origin.x: text.implicitHeight / 2
-                origin.y: text.implicitHeight / 2
-            }
-        ] : [
-            Translate {
-                y: root.Config.bar.activeWindow.inverted ? text.implicitHeight : 0
-            },
-            Rotation {
-                angle: 0
-                origin.x: 0
-                origin.y: 0
+                angle: root.isVertical ? (root.Config.bar.activeWindow.inverted ? 270 : 90) : 0
+                origin.x: root.isVertical ? text.implicitHeight / 2 : 0
+                origin.y: root.isVertical ? text.implicitHeight / 2 : 0
             }
         ]
 

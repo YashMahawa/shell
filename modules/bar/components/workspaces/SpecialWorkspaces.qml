@@ -360,26 +360,6 @@ Item {
                 rowSpacing: 0
                 columnSpacing: 0
 
-                add: Transition {
-                    Anim {
-                        properties: "scale"
-                        from: 0
-                        to: 1
-                        easing: Tokens.anim.standardDecel
-                    }
-                }
-
-                move: Transition {
-                    Anim {
-                        properties: "scale"
-                        to: 1
-                        easing: Tokens.anim.standardDecel
-                    }
-                    Anim {
-                        properties: "x,y"
-                    }
-                }
-
                 Repeater {
                     model: ScriptModel {
                         values: {
