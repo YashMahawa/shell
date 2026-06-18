@@ -1,31 +1,24 @@
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
-import Quickshell.Services.Mpris
 import Caelestia.Config
 import qs.components
 import qs.components.controls
 import qs.services
 
 Item {
-    MouseArea {
-        anchors.fill: parent
-        enabled: lyricsInfo.open
-        z: 1
-        onClicked: lyricsInfo.open = false
-    }
+    id: root
+
+    property bool toolsOpen: false
 
     ColumnLayout {
         id: layout
 
         anchors.fill: parent
         anchors.leftMargin: Tokens.padding.medium
-        spacing: Tokens.spacing.medium
+        spacing: Tokens.spacing.small
 
         RowLayout {
-            Layout.bottomMargin: -Tokens.spacing.medium
             spacing: Tokens.spacing.medium
-            z: 2
 
             MaterialIcon {
                 Layout.topMargin: Math.round(fontInfo.pointSize * 0.12)
@@ -39,50 +32,27 @@ Item {
                 font: Tokens.font.title.medium
             }
 
-            LyricsInfo {
-                id: lyricsInfo
+            IconButton {
+                icon: root.toolsOpen ? "lyrics" : "tune"
+                type: IconButton.Text
+                onClicked: root.toolsOpen = !root.toolsOpen
             }
         }
 
-        LyricList {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-        }
 
-        SplitButton {
-            Layout.alignment: Qt.AlignHCenter
+            LyricList {
+                anchors.fill: parent
+                visible: !root.toolsOpen
+            }
 
-            type: SplitButton.Tonal
-            disabled: !Players.list.length
-            active: menuItems.find(m => m.modelData === Players.active) ?? menuItems[0] ?? null
-            menu.onItemSelected: item => Players.manualActive = (item as PlayerItem).modelData
-
-            menuItems: playerList.instances
-            fallbackIcon: "music_off"
-            fallbackText: qsTr("No players")
-
-            minLeftWidth: layout.width - expandBtn.implicitWidth - spacing
-            label.Layout.maximumWidth: minLeftWidth - iconLabel.implicitWidth - textRow.spacing - textRow.anchors.horizontalCenterOffset / 2 - horizontalPadding * 2
-            label.elide: Text.ElideRight
-
-            stateLayer.disabled: true
-            menuOnTop: true
-
-            Variants {
-                id: playerList
-
-                model: Players.list
-
-                PlayerItem {}
+            LyricsInfo {
+                anchors.fill: parent
+                visible: root.toolsOpen
+                onCloseRequested: root.toolsOpen = false
             }
         }
-    }
-
-    component PlayerItem: MenuItem {
-        required property MprisPlayer modelData
-
-        icon: modelData === Players.active ? "check" : ""
-        text: Players.getIdentity(modelData)
-        activeIcon: "animated_images"
     }
 }
