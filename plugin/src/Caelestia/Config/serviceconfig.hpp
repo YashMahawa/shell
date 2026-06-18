@@ -33,6 +33,8 @@ class ServiceConfig : public ConfigObject {
     CONFIG_GLOBAL_PROPERTY(QVariantList, playerAliases,
         { vmap({ { u"from"_s, u"com.github.th_ch.youtube_music"_s }, { u"to"_s, u"YT Music"_s } }) })
     CONFIG_GLOBAL_PROPERTY(QString, lyricsBackend, u"Auto"_s)
+    CONFIG_GLOBAL_PROPERTY(bool, romanizeLyrics, true)
+    CONFIG_GLOBAL_PROPERTY(bool, preferHindiRomanization, true)
 
 public:
     explicit ServiceConfig(QObject* parent = nullptr)

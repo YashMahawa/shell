@@ -21,10 +21,21 @@ Singleton {
     property string cachePath: ""
     property bool cacheLoaded: false
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
+    readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
     readonly property alias model: lyricsModel
     readonly property bool hasLyrics: lyricsModel.count > 0
     readonly property string cacheDir: `${Paths.state}/lyrics-plus`
+
+    onRomanizeLyricsChanged: {
+        root.loadedKey = "";
+        root.load();
+    }
+
+    onPreferredBackendChanged: {
+        root.loadedKey = "";
+        root.load();
+    }
 
     function _keyForPlayer(): string {
         const p = Players.active;
@@ -48,6 +59,11 @@ Singleton {
         return root.romanizeLyrics ? Lrc.transliterate(clean) : clean;
     }
 
+    function _usePaxsenix(): bool {
+        const backend = String(root.preferredBackend || "Auto").toLowerCase();
+        return backend === "auto" || backend === "paxsenix" || backend === "parsenix";
+    }
+
     function _shellQuote(text: string): string {
         return `'${String(text).replace(/'/g, "'\\''")}'`;
     }
@@ -57,7 +73,7 @@ Singleton {
     }
 
     function _setCachePath(key: string): void {
-        root.cachePath = `${root.cacheDir}/${_safeCacheName(key)}.json`;
+        root.cachePath = `${root.cacheDir}/${_safeCacheName(`${root.preferredBackend}-${key}`)}.json`;
     }
 
     function _metadataMatches(meta: var): bool {
@@ -104,6 +120,22 @@ Singleton {
         root.revision++;
     }
 
+    function _hasTimedSyllables(lines: var): bool {
+        if (!lines || lines.length === 0)
+            return false;
+
+        for (const line of lines) {
+            const syllables = line.syllabus || [];
+            if (!syllables.length)
+                continue;
+            for (const syl of syllables) {
+                if (Number(syl.duration || 0) > 0 || Number(syl.time || 0) > 0)
+                    return true;
+            }
+        }
+        return false;
+    }
+
     function load(): void {
         loadDebounce.restart();
     }
@@ -125,6 +157,12 @@ Singleton {
             lyricsModel.clear();
             root.loading = false;
             root.revision++;
+            return;
+        }
+
+        if (!_usePaxsenix()) {
+            root.loading = Lyrics.loading;
+            _setNativeFallback();
             return;
         }
 
@@ -153,8 +191,8 @@ Singleton {
                 const res = JSON.parse(text);
                 const meta = res.cachedMeta || res.metadata || {};
                 const lines = res.lyrics || [];
-                if (!_metadataMatches(meta) || lines.length === 0)
-                    throw new Error("LyricsPlus result did not match current track");
+                if (!_metadataMatches(meta) || !_hasTimedSyllables(lines))
+                    throw new Error("Paxsenix result did not provide timed syllables for the current track");
 
                 _loadLines(lines);
                 _saveCache(lines);
@@ -171,10 +209,20 @@ Singleton {
     }
 
     function _loadLines(lines: var): void {
+        if (!_hasTimedSyllables(lines)) {
+            root.hasSyllables = false;
+            root.loading = false;
+            _setNativeFallback();
+            return;
+        }
+
         lyricsModel.clear();
+        let timedSyllableCount = 0;
         for (const line of lines) {
             const syllables = [];
             for (const syl of line.syllabus || []) {
+                if (Number(syl.duration || 0) > 0 || Number(syl.time || 0) > 0)
+                    timedSyllableCount++;
                 syllables.push({
                     time: Number(syl.time || 0) / 1000,
                     duration: Number(syl.duration || 0) / 1000,
@@ -189,7 +237,7 @@ Singleton {
             });
         }
 
-        root.hasSyllables = lyricsModel.count > 0;
+        root.hasSyllables = lyricsModel.count > 0 && timedSyllableCount > 0;
         root.loading = false;
         root.revision++;
         updatePosition();
@@ -198,6 +246,7 @@ Singleton {
     function _saveCache(lines: var): void {
         const payload = JSON.stringify({
             key: root.loadedKey,
+            provider: "Paxsenix",
             romanized: root.romanizeLyrics,
             lyrics: lines
         });
@@ -278,7 +327,7 @@ Singleton {
                 return;
             try {
                 const cached = JSON.parse(text());
-                if (cached.key === root.loadedKey && cached.lyrics?.length > 0) {
+                if (cached.key === root.loadedKey && cached.provider === "Paxsenix" && _hasTimedSyllables(cached.lyrics)) {
                     root.cacheLoaded = true;
                     root._loadLines(cached.lyrics);
                 }

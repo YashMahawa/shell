@@ -30,7 +30,10 @@ Scope {
         // qmllint enable unresolved-type
         name: "lock"
         description: "Lock the current session"
-        onPressed: lock.locked = true
+        onPressed: {
+            if (!lock.locked)
+                lock.locked = true;
+        }
     }
 
     // qmllint disable unresolved-type
@@ -42,12 +45,20 @@ Scope {
     }
 
     IpcHandler {
-        function lock(): void {
+        function safeLock(): bool {
+            if (lock.locked)
+                return true;
             lock.locked = true;
+            return lock.locked;
+        }
+
+        function lock(): void {
+            safeLock();
         }
 
         function unlock(): void {
-            lock.unlock();
+            if (lock.locked)
+                lock.unlock();
         }
 
         function isLocked(): bool {

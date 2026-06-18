@@ -6,6 +6,8 @@ QString LyricsBackend::toString(Backend b) {
     switch (b) {
     case LyricsBackend::Auto:
         return QStringLiteral("Auto");
+    case LyricsBackend::Paxsenix:
+        return QStringLiteral("Paxsenix");
     case LyricsBackend::Local:
         return QStringLiteral("Local");
     case LyricsBackend::LRCLIB:

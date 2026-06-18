@@ -404,6 +404,9 @@ void Lyrics::doLoad() {
     case LyricsBackend::Local:
         tryLocal(reqId);
         break;
+    case LyricsBackend::Paxsenix:
+        tryLocal(reqId);
+        break;
     case LyricsBackend::LRCLIB:
         tryLrclib(reqId);
         break;
@@ -418,7 +421,7 @@ void Lyrics::doLoad() {
 }
 
 void Lyrics::chainNext(LyricsBackend::Backend just_failed, int reqId) {
-    if (m_preferredBackend != LyricsBackend::Auto) {
+    if (m_preferredBackend != LyricsBackend::Auto && m_preferredBackend != LyricsBackend::Paxsenix) {
         // Non-auto modes don't chain
         setLoading(false);
         return;
@@ -874,6 +877,8 @@ QString Lyrics::trackKey() const {
 
 QString Lyrics::backendKey(LyricsBackend::Backend value) {
     switch (value) {
+    case LyricsBackend::Paxsenix:
+        return u"Paxsenix"_s;
     case LyricsBackend::Local:
         return u"Local"_s;
     case LyricsBackend::LRCLIB:
@@ -889,6 +894,9 @@ QString Lyrics::backendKey(LyricsBackend::Backend value) {
 LyricsBackend::Backend Lyrics::backendFromKey(const QString& key) {
     if (key.compare(u"Local"_s, Qt::CaseInsensitive) == 0) {
         return LyricsBackend::Local;
+    }
+    if (key.compare(u"Paxsenix"_s, Qt::CaseInsensitive) == 0 || key.compare(u"Parsenix"_s, Qt::CaseInsensitive) == 0) {
+        return LyricsBackend::Paxsenix;
     }
     if (key.compare(u"LRCLIB"_s, Qt::CaseInsensitive) == 0) {
         return LyricsBackend::LRCLIB;

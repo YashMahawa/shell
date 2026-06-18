@@ -708,7 +708,9 @@ For example, to disable the bar on DP-1:
         "smartScheme": true,
         "defaultPlayer": "Spotify",
         "playerAliases": [{ "from": "com.github.th_ch.youtube_music", "to": "YT Music" }],
-        "lyricsBackend": "Auto"
+        "lyricsBackend": "Paxsenix",
+        "romanizeLyrics": true,
+        "preferHindiRomanization": true
     },
     "session": {
         "enabled": true,

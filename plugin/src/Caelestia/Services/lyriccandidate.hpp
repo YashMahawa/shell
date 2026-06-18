@@ -12,6 +12,7 @@ class LyricsBackend : public QObject {
 public:
     enum Backend {
         Auto = 0,
+        Paxsenix,
         Local,
         LRCLIB,
         NetEase

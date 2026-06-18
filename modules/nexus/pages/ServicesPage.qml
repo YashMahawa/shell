@@ -11,10 +11,13 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    // Lyrics backends, ordered to match LyricsBackend::Backend (Auto, Local, LRCLIB, NetEase)
+    // Lyrics backends, ordered to match LyricsBackend::Backend (Auto, Paxsenix, Local, LRCLIB, NetEase)
     readonly property list<MenuItem> lyricsItems: [
         MenuItem {
             text: qsTr("Auto")
+        },
+        MenuItem {
+            text: "Paxsenix"
         },
         MenuItem {
             text: "Local"
@@ -132,6 +135,22 @@ PageBase {
             menuItems: root.lyricsItems
             active: root.lyricsItems[Lyrics.preferredBackend] ?? root.lyricsItems[0]
             onSelected: item => Lyrics.preferredBackend = root.lyricsItems.indexOf(item)
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Romanise lyrics")
+            subtext: qsTr("Convert native-script lyrics to Latin text")
+            checked: GlobalConfig.services.romanizeLyrics
+            onToggled: GlobalConfig.services.romanizeLyrics = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Hindi precision mode")
+            subtext: qsTr("Use tuned Hindi schwa handling before generic romanisation")
+            checked: GlobalConfig.services.preferHindiRomanization
+            onToggled: GlobalConfig.services.preferHindiRomanization = checked
         }
 
         SelectRow {
