@@ -31,7 +31,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: Time.hourStr
             color: Colours.palette.m3secondary
-            font.pointSize: Math.floor(Tokens.font.size.extraLarge * 3 * root.centerScale)
+            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
             font.family: Tokens.font.family.clock
             font.bold: true
         }
@@ -40,7 +40,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: ":"
             color: Colours.palette.m3primary
-            font.pointSize: Math.floor(Tokens.font.size.extraLarge * 3 * root.centerScale)
+            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
             font.family: Tokens.font.family.clock
             font.bold: true
         }
@@ -49,7 +49,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: Time.minuteStr
             color: Colours.palette.m3secondary
-            font.pointSize: Math.floor(Tokens.font.size.extraLarge * 3 * root.centerScale)
+            font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 3 * root.centerScale)
             font.family: Tokens.font.family.clock
             font.bold: true
         }
@@ -65,7 +65,7 @@ ColumnLayout {
             sourceComponent: StyledText {
                 text: Time.amPmStr
                 color: Colours.palette.m3primary
-                font.pointSize: Math.floor(Tokens.font.size.extraLarge * 2 * root.centerScale)
+                font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * 2 * root.centerScale)
                 font.family: Tokens.font.family.clock
                 font.bold: true
             }
@@ -78,7 +78,7 @@ ColumnLayout {
 
         text: Time.format("dddd, d MMMM yyyy")
         color: Colours.palette.m3tertiary
-        font.pointSize: Math.floor(Tokens.font.size.extraLarge * root.centerScale)
+        font.pointSize: Math.floor(Tokens.font.headline.medium.pointSize * root.centerScale)
         font.family: Tokens.font.family.mono
         font.bold: true
     }
@@ -325,7 +325,7 @@ ColumnLayout {
             opacity: 0
             color: Colours.palette.m3error
 
-            font.pointSize: Tokens.font.size.small
+            font.pointSize: Tokens.font.body.small.pointSize
             font.family: Tokens.font.family.mono
             horizontalAlignment: Qt.AlignHCenter
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere

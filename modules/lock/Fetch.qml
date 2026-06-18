@@ -38,7 +38,7 @@ ColumnLayout {
 
                 anchors.centerIn: parent
                 text: ">"
-                font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+                font.pointSize: root.width > 400 ? Tokens.font.title.medium.pointSize : Tokens.font.body.medium.pointSize
                 color: Colours.palette.m3onPrimary
             }
         }
@@ -46,7 +46,7 @@ ColumnLayout {
         MonoText {
             Layout.fillWidth: true
             text: "caelestiafetch.sh"
-            font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+            font.pointSize: root.width > 400 ? Tokens.font.title.medium.pointSize : Tokens.font.body.medium.pointSize
             elide: Text.ElideRight
         }
 
@@ -131,13 +131,13 @@ ColumnLayout {
             spacing: Tokens.spacing.large
 
             Repeater {
-                model: Math.max(0, Math.min(8, root.width / (Tokens.font.size.larger * 2 + Tokens.spacing.large)))
+                model: Math.max(0, Math.min(8, root.width / (Tokens.font.title.medium.pointSize * 2 + Tokens.spacing.large)))
 
                 StyledRect {
                     required property int index
 
                     implicitWidth: implicitHeight
-                    implicitHeight: Tokens.font.size.larger * 2
+                    implicitHeight: Tokens.font.title.medium.pointSize * 2
                     color: Colours.palette[`term${index}`]
                     radius: Tokens.rounding.small
                 }
@@ -171,7 +171,7 @@ ColumnLayout {
 
     component FetchText: MonoText {
         Layout.fillWidth: true
-        font.pointSize: root.width > 400 ? Tokens.font.size.larger : Tokens.font.size.normal
+        font.pointSize: root.width > 400 ? Tokens.font.title.medium.pointSize : Tokens.font.body.medium.pointSize
         elide: Text.ElideRight
     }
 

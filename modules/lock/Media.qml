@@ -89,7 +89,7 @@ Item {
             text: Players.active?.trackArtist ?? qsTr("No media")
             color: Colours.palette.m3primary
             horizontalAlignment: Text.AlignHCenter
-            font.pointSize: Tokens.font.size.large
+            font.pointSize: Tokens.font.body.large.pointSize
             font.family: Tokens.font.family.mono
             font.weight: 600
             elide: Text.ElideRight
@@ -100,7 +100,7 @@ Item {
             animate: true
             text: Players.active?.trackTitle ?? qsTr("No media")
             horizontalAlignment: Text.AlignHCenter
-            font.pointSize: Tokens.font.size.larger
+            font.pointSize: Tokens.font.title.medium.pointSize
             font.family: Tokens.font.family.mono
             elide: Text.ElideRight
         }
@@ -179,7 +179,7 @@ Item {
 
             anchors.centerIn: parent
             color: control.active ? Colours.palette[`m3on${control.colour}`] : Colours.palette[`m3on${control.colour}Container`]
-            font.pointSize: Tokens.font.size.large
+            font.pointSize: Tokens.font.body.large.pointSize
             fill: control.active ? 1 : 0
 
             Behavior on fill {

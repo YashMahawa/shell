@@ -30,7 +30,7 @@ ColumnLayout {
         sourceComponent: StyledText {
             text: qsTr("Weather")
             color: Colours.palette.m3primary
-            font.pointSize: Tokens.font.size.extraLarge
+            font.pointSize: Tokens.font.headline.medium.pointSize
             font.weight: 500
         }
     }
@@ -43,7 +43,7 @@ ColumnLayout {
             animate: true
             text: Weather.icon
             color: Colours.palette.m3secondary
-            font.pointSize: Tokens.font.size.extraLarge * 2.5
+            font.pointSize: Tokens.font.headline.medium.pointSize * 2.5
         }
 
         ColumnLayout {
@@ -55,7 +55,7 @@ ColumnLayout {
                 animate: true
                 text: Weather.description
                 color: Colours.palette.m3secondary
-                font.pointSize: Tokens.font.size.large
+                font.pointSize: Tokens.font.body.large.pointSize
                 font.weight: 500
                 elide: Text.ElideRight
             }
@@ -66,7 +66,7 @@ ColumnLayout {
                 animate: true
                 text: qsTr("Humidity: %1%").arg(Weather.humidity)
                 color: Colours.palette.m3onSurfaceVariant
-                font.pointSize: Tokens.font.size.normal
+                font.pointSize: Tokens.font.body.medium.pointSize
                 elide: Text.ElideRight
             }
         }
@@ -87,7 +87,7 @@ ColumnLayout {
                     text: Weather.temp
                     color: Colours.palette.m3primary
                     horizontalAlignment: Text.AlignRight
-                    font.pointSize: Tokens.font.size.extraLarge
+                    font.pointSize: Tokens.font.headline.medium.pointSize
                     font.weight: 500
                     elide: Text.ElideLeft
                 }
@@ -99,7 +99,7 @@ ColumnLayout {
                     text: qsTr("Feels like: %1").arg(Weather.feelsLike)
                     color: Colours.palette.m3outline
                     horizontalAlignment: Text.AlignRight
-                    font.pointSize: Tokens.font.size.smaller
+                    font.pointSize: (Tokens.font.body.small.pointSize * 0.9)
                     elide: Text.ElideLeft
                 }
             }
@@ -148,13 +148,13 @@ ColumnLayout {
                         }
                         color: Colours.palette.m3outline
                         horizontalAlignment: Text.AlignHCenter
-                        font.pointSize: Tokens.font.size.larger
+                        font.pointSize: Tokens.font.title.medium.pointSize
                     }
 
                     MaterialIcon {
                         Layout.alignment: Qt.AlignHCenter
                         text: forecastHour.modelData?.icon ?? "cloud_alert"
-                        font.pointSize: Tokens.font.size.extraLarge * 1.5
+                        font.pointSize: Tokens.font.headline.medium.pointSize * 1.5
                         font.weight: 500
                     }
 
@@ -162,7 +162,7 @@ ColumnLayout {
                         Layout.alignment: Qt.AlignHCenter
                         text: GlobalConfig.services.useFahrenheit ? `${forecastHour.modelData?.tempF ?? 0}°F` : `${forecastHour.modelData?.tempC ?? 0}°C`
                         color: Colours.palette.m3secondary
-                        font.pointSize: Tokens.font.size.larger
+                        font.pointSize: Tokens.font.title.medium.pointSize
                     }
                 }
             }

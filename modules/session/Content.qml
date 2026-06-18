@@ -64,7 +64,7 @@ Column {
         id: hibernate
 
         icon: "bedtime"
-        command: ["systemctl", "suspend"]
+        command: [Quickshell.env("HOME") + "/.local/bin/caelestia-safe-suspend"]
 
         KeyNavigation.up: shutdown
         KeyNavigation.down: reboot

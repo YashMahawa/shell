@@ -65,7 +65,7 @@ ColumnLayout {
                     Layout.alignment: Qt.AlignHCenter
                     text: Config.lock.hideNotifs ? qsTr("Unlock for Notifications") : qsTr("No Notifications")
                     color: Colours.palette.m3outlineVariant
-                    font.pointSize: Tokens.font.size.large
+                    font.pointSize: Tokens.font.body.large.pointSize
                     font.family: Tokens.font.family.mono
                     font.weight: 500
                 }
