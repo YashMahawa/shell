@@ -69,6 +69,11 @@ Region {
         width: panel.width * (1 - root.panels.popoutsWrapper.offsetScale)
     }
 
+    R {
+        panel: root.panels.osdWrapper
+        width: panel.width
+    }
+
     component R: Region {
         required property Item panel
 

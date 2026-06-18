@@ -25,36 +25,43 @@ CustomMouseArea {
     readonly property real barTriggerWidth: Math.max(bar?.implicitWidth ?? 0, bar?.clampedThickness ?? 0, Config.border.minThickness ?? 0, Config.border.thickness ?? 0, 8)
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
+        const panelHeight = panel.height || panel.implicitHeight;
         const panelY = root.borderThickness + panel.y;
-        return y >= panelY - Config.border.rounding && y <= panelY + panel.height + Config.border.rounding;
+        return y >= panelY - Config.border.rounding && y <= panelY + panelHeight + Config.border.rounding;
     }
 
     function withinPanelWidth(panel: Item, x: real, y: real): bool {
-        const panelX = bar.implicitWidth + panel.x;
-        return x >= panelX - Config.border.rounding && x <= panelX + panel.width + Config.border.rounding;
+        const panelWidth = panel.width || panel.implicitWidth;
+        const panelX = bar.implicitWidth + (panel.width ? panel.x : (panel.x - panel.implicitWidth / 2));
+        return x >= panelX - Config.border.rounding && x <= panelX + panelWidth + Config.border.rounding;
     }
 
     function inLeftPanel(panel: Item, x: real, y: real): bool {
-        return x < bar.implicitWidth + panel.x + panel.width && withinPanelHeight(panel, x, y);
+        const panelWidth = panel.width || panel.implicitWidth;
+        return x < bar.implicitWidth + panel.x + panelWidth && withinPanelHeight(panel, x, y);
     }
 
     function inPanelBounds(panel: Item, x: real, y: real): bool {
-        const panelX = bar.implicitWidth + panel.x;
+        const panelWidth = panel.width || panel.implicitWidth;
+        const panelHeight = panel.height || panel.implicitHeight;
+        const panelX = bar.implicitWidth + (panel.width ? panel.x : (panel.x - panel.implicitWidth));
         const panelY = root.borderThickness + panel.y;
-        return x >= panelX - Config.border.rounding && x <= panelX + panel.width + Config.border.rounding && y >= panelY - Config.border.rounding && y <= panelY + panel.height + Config.border.rounding;
+        return x >= panelX - Config.border.rounding && x <= panelX + panelWidth + Config.border.rounding && y >= panelY - Config.border.rounding && y <= panelY + panelHeight + Config.border.rounding;
     }
 
     function inRightPanel(panel: Item, x: real, y: real): bool {
-        return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panel.x) && withinPanelHeight(panel, x, y);
+        const panelWidth = panel.width || panel.implicitWidth;
+        const panelX = panel.width ? panel.x : (panel.x - panel.implicitWidth);
+        return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panelX) && withinPanelHeight(panel, x, y);
     }
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
-        const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
+        const panelHeight = (panel.height || panel.implicitHeight) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
         return y < Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) && withinPanelWidth(panel, x, y);
     }
 
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
-        const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
+        const panelHeight = (panel.height || panel.implicitHeight) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
         return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
     }
 

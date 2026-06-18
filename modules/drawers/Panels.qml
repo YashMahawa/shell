@@ -41,6 +41,9 @@ Item {
     Item {
         id: osdWrapper
 
+        width: implicitWidth
+        height: implicitHeight
+
         anchors.verticalCenter: parent.verticalCenter
         anchors.right: parent.right
         anchors.rightMargin: sessionWrapper.anchors.rightMargin + session.width * (1 - session.offsetScale)
@@ -76,6 +79,9 @@ Item {
 
     Item {
         id: sessionWrapper
+
+        width: implicitWidth
+        height: implicitHeight
 
         anchors.verticalCenter: parent.verticalCenter
         anchors.right: parent.right
