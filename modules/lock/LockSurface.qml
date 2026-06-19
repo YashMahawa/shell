@@ -154,14 +154,11 @@ WlSessionLockSurface {
         }
     }
 
-    Image {
+    ScreencopyView {
         id: background
 
         anchors.fill: parent
-        source: Wallpapers.current ? `file://${Wallpapers.current}` : ""
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        cache: true
+        captureSource: root.screen
         opacity: 0
 
         layer.enabled: true
@@ -181,11 +178,11 @@ WlSessionLockSurface {
         readonly property int radius: size / 4 * Tokens.rounding.scale
 
         anchors.centerIn: parent
-        implicitWidth: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio
-        implicitHeight: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult
+        implicitWidth: size
+        implicitHeight: size
 
-        rotation: 360
-        scale: 1
+        rotation: 180
+        scale: 0
 
         StyledRect {
             id: lockBg
@@ -210,7 +207,6 @@ WlSessionLockSurface {
             text: "lock"
             fontStyle: Tokens.font.icon.builders.extraLarge.scale(4).weight(Font.Bold).build()
             rotation: 180
-            opacity: 0
         }
 
         Content {
@@ -221,8 +217,8 @@ WlSessionLockSurface {
             height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
 
             lock: root
-            opacity: 1
-            scale: 1
+            opacity: 0
+            scale: 0
         }
     }
 }

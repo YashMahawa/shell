@@ -6,6 +6,7 @@ USER_ID="${CAELESTIA_UID:-1000}"
 RUNTIME_DIR="/run/user/${USER_ID}"
 BUS="unix:path=${RUNTIME_DIR}/bus"
 LOG="/var/log/caelestia-resume-recover.log"
+IPC="${CAELESTIA_IPC:-/home/yash/.local/bin/caelestia-qs-ipc}"
 
 log() {
     printf '%s %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG" 2>/dev/null || true
@@ -19,7 +20,7 @@ run_user() {
 }
 
 qs_ipc() {
-    run_user /usr/bin/timeout 3 /usr/sbin/qs ipc -c caelestia call "$@"
+    run_user /usr/bin/timeout 3 "$IPC" "$@"
 }
 
 log "resume recovery: restarting Caelestia Quickshell"
