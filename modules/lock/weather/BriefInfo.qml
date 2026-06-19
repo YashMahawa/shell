@@ -8,7 +8,6 @@ ColumnLayout {
     id: root
 
     required property int rootHeight
-    required property real fluidScale
 
     spacing: Tokens.spacing.extraSmall
 
@@ -42,7 +41,7 @@ ColumnLayout {
     }
 
     StyledText {
-        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight * fluidScale
+        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight
         Layout.alignment: Qt.AlignHCenter
         animate: true
         text: qsTr("Feels like %1").arg(Weather.temp)
@@ -51,7 +50,7 @@ ColumnLayout {
     }
 
     StyledText {
-        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight * fluidScale
+        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight
         Layout.alignment: Qt.AlignHCenter
         animate: true
         text: {

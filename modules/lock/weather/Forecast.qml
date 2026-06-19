@@ -9,8 +9,6 @@ import qs.services
 StyledRect {
     id: root
 
-    required property real fluidScale
-
     color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
     radius: Tokens.rounding.extraLargeIncreased
     implicitHeight: header.anchors.margins + header.implicitHeight + Tokens.spacing.medium + layout.implicitHeight + layout.anchors.bottomMargin
@@ -50,7 +48,7 @@ StyledRect {
         spacing: Tokens.spacing.small
 
         Repeater {
-            model: CUtils.clamp(Math.floor((layout.width + layout.spacing) / (Tokens.sizes.lock.forecastItemWidth * root.fluidScale + layout.spacing)), 0, Weather.hourlyForecast.length)
+            model: CUtils.clamp(Math.floor((layout.width + layout.spacing) / (Tokens.sizes.lock.forecastItemWidth + layout.spacing)), 0, Weather.hourlyForecast.length)
 
             ColumnLayout {
                 id: hour

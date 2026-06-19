@@ -228,7 +228,7 @@ WlSessionLockSurface {
         readonly property int size: lockIcon.implicitHeight + Tokens.padding.large * 4
         readonly property int radius: size / 4 * Tokens.rounding.scale
         readonly property real screenHeight: root.screen?.height ?? (root.height || 1080)
-        readonly property real expandedRatio: Number.isFinite(Tokens.sizes.lock.ratio) ? Tokens.sizes.lock.ratio : 2.15
+        readonly property real expandedRatio: Number.isFinite(Tokens.sizes.lock.ratio) ? Tokens.sizes.lock.ratio : 16 / 9
         readonly property real expandedWidth: screenHeight * Tokens.sizes.lock.heightMult * expandedRatio
         readonly property real expandedHeight: screenHeight * Tokens.sizes.lock.heightMult
 
@@ -269,8 +269,8 @@ WlSessionLockSurface {
             id: content
 
             anchors.centerIn: parent
-            width: Math.max(0, lockContent.expandedWidth - Tokens.padding.large * 2)
-            height: Math.max(0, lockContent.expandedHeight - Tokens.padding.large * 2)
+            width: Math.max(0, lockContent.expandedWidth - Tokens.padding.extraLargeIncreased)
+            height: Math.max(0, lockContent.expandedHeight - Tokens.padding.extraLargeIncreased)
 
             lock: root
             opacity: 0

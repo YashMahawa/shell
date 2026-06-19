@@ -19,7 +19,7 @@ ColumnLayout {
     anchors.fill: parent
     anchors.margins: Tokens.padding.large
 
-    spacing: Tokens.spacing.extraSmall
+    spacing: Tokens.spacing.medium
 
     StyledText {
         Layout.fillWidth: true
@@ -35,7 +35,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
 
-        radius: Tokens.rounding.small
+        radius: Tokens.rounding.medium
         color: "transparent"
 
         Loader {
@@ -45,7 +45,7 @@ ColumnLayout {
             opacity: Notifs.list.length > 0 && !Config.lock.hideNotifs ? 0 : 1
 
             sourceComponent: ColumnLayout {
-                spacing: Tokens.spacing.large
+                spacing: Tokens.spacing.largeIncreased
 
                 Image {
                     asynchronous: true
@@ -92,6 +92,7 @@ ColumnLayout {
 
             add: Transition {
                 Anim {
+                    type: Anim.DefaultEffects
                     property: "opacity"
                     from: 0
                     to: 1
@@ -100,12 +101,12 @@ ColumnLayout {
                     property: "scale"
                     from: 0
                     to: 1
-                    type: Anim.DefaultSpatial
                 }
             }
 
             remove: Transition {
                 Anim {
+                    type: Anim.DefaultEffects
                     property: "opacity"
                     to: 0
                 }
@@ -117,23 +118,23 @@ ColumnLayout {
 
             move: Transition {
                 Anim {
+                    type: Anim.DefaultEffects
                     properties: "opacity,scale"
                     to: 1
                 }
                 Anim {
                     property: "y"
-                    type: Anim.DefaultSpatial
                 }
             }
 
             displaced: Transition {
                 Anim {
+                    type: Anim.DefaultEffects
                     properties: "opacity,scale"
                     to: 1
                 }
                 Anim {
                     property: "y"
-                    type: Anim.DefaultSpatial
                 }
             }
         }

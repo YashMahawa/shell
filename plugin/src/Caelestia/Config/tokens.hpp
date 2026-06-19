@@ -283,7 +283,7 @@ class LockTokens : public ConfigObject {
     QML_ANONYMOUS
 
     CONFIG_PROPERTY(qreal, heightMult, 0.7)
-    CONFIG_PROPERTY(qreal, widthMult, 0.7)
+    CONFIG_PROPERTY(qreal, ratio, 16.0 / 9.0)
     CONFIG_PROPERTY(int, centerWidth, 600)
     CONFIG_PROPERTY(int, showWeatherDetailsHeight, 550)
     CONFIG_PROPERTY(int, showForecastHeight, 975)
@@ -316,10 +316,14 @@ class NexusTokens : public ConfigObject {
     QML_ANONYMOUS
 
     CONFIG_PROPERTY(qreal, heightMult, 0.7)
-    CONFIG_PROPERTY(qreal, widthMult, 0.7)
+    CONFIG_PROPERTY(qreal, ratio, 16.0 / 9.0)
     CONFIG_PROPERTY(int, minWidth, 800)
     CONFIG_PROPERTY(int, minHeight, 500)
     CONFIG_PROPERTY(int, maxNavWidth, 600)
+    CONFIG_PROPERTY(int, maxContentWidth, 800)
+    CONFIG_PROPERTY(int, popupWidth, 300)
+    CONFIG_PROPERTY(int, minPopupHeight, 200)
+    CONFIG_PROPERTY(int, maxPopupHeight, 800)
 
 public:
     explicit NexusTokens(QObject* parent = nullptr)
