@@ -14,11 +14,27 @@ WlSessionLockSurface {
     required property Pam pam
 
     readonly property alias unlocking: unlockAnim.running
+    readonly property real lockScreenHeight: root.screen?.height ?? (root.height || 1080)
+    readonly property real lockExpandedWidth: lockScreenHeight * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio
+    readonly property real lockExpandedHeight: lockScreenHeight * Tokens.sizes.lock.heightMult
 
     contentItem.Config.screen: screen.name
     contentItem.Tokens.screen: screen.name
 
     color: "transparent"
+
+    function revealContent(): void {
+        background.opacity = 1;
+        lockContent.opacity = 1;
+        lockContent.scale = 1;
+        lockContent.rotation = 360;
+        lockContent.implicitWidth = root.lockExpandedWidth;
+        lockContent.implicitHeight = root.lockExpandedHeight;
+        lockBg.radius = Tokens.rounding.extraLarge * 1.5;
+        lockIcon.opacity = 0;
+        content.opacity = 1;
+        content.scale = 1;
+    }
 
     Connections {
         function onUnlock(): void {
@@ -88,6 +104,7 @@ WlSessionLockSurface {
         id: initAnim
 
         running: true
+        onStopped: root.revealContent()
 
         Anim {
             target: background
@@ -143,15 +160,24 @@ WlSessionLockSurface {
                 Anim {
                     target: lockContent
                     property: "implicitWidth"
-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
+                    to: root.lockExpandedWidth
                 }
                 Anim {
                     target: lockContent
                     property: "implicitHeight"
-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult
+                    to: root.lockExpandedHeight
                 }
             }
         }
+    }
+
+    Timer {
+        id: revealFallback
+
+        interval: 1800
+        running: true
+        repeat: false
+        onTriggered: root.revealContent()
     }
 
     ScreencopyView {
@@ -213,8 +239,8 @@ WlSessionLockSurface {
             id: content
 
             anchors.centerIn: parent
-            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
-            height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
+            width: Math.max(0, root.lockExpandedWidth - Tokens.padding.extraLargeIncreased)
+            height: Math.max(0, root.lockExpandedHeight - Tokens.padding.extraLargeIncreased)
 
             lock: root
             opacity: 0
