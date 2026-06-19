@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -u
+
+USER_NAME="${CAELESTIA_USER:-yash}"
+USER_ID="${CAELESTIA_UID:-1000}"
+RUNTIME_DIR="/run/user/${USER_ID}"
+BUS="unix:path=${RUNTIME_DIR}/bus"
+IPC="${CAELESTIA_IPC:-/home/yash/.local/bin/caelestia-qs-ipc}"
+LOG="/var/log/caelestia-sleep-guard.log"
+
+log() {
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG" 2>/dev/null || true
+}
+
+run_user() {
+    /usr/bin/runuser -u "$USER_NAME" -- env \
+        XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+        DBUS_SESSION_BUS_ADDRESS="$BUS" \
+        "$@"
+}
+
+qs_ipc() {
+    run_user /usr/bin/timeout 4 "$IPC" "$@"
+}
+
+log "pre-sleep: requesting Caelestia lock before suspend"
+if qs_ipc lock safeLock >> "$LOG" 2>&1; then
+    log "pre-sleep: lock request accepted; waiting for lock animation"
+    /usr/bin/sleep 2.2
+else
+    log "pre-sleep: lock request failed; allowing suspend without restart"
+fi
