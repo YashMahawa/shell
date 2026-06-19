@@ -14,29 +14,53 @@ WlSessionLockSurface {
     required property Pam pam
 
     readonly property alias unlocking: unlockAnim.running
-    readonly property real lockScreenHeight: root.screen?.height ?? (root.height || 1080)
-    readonly property real lockExpandedWidth: lockScreenHeight * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio
-    readonly property real lockExpandedHeight: lockScreenHeight * Tokens.sizes.lock.heightMult
 
     contentItem.Config.screen: screen.name
     contentItem.Tokens.screen: screen.name
+    contentItem.implicitWidth: root.screen?.width ?? 1920
+    contentItem.implicitHeight: root.screen?.height ?? 1080
+    contentItem.width: root.screen?.width ?? 1920
+    contentItem.height: root.screen?.height ?? 1080
 
     color: "transparent"
+
+    function prepareContent(): void {
+        background.opacity = 0;
+        lockContent.opacity = 1;
+        lockContent.scale = 0;
+        lockContent.rotation = 180;
+        lockContent.implicitWidth = lockContent.size;
+        lockContent.implicitHeight = lockContent.size;
+        lockBg.radius = lockContent.radius;
+        lockIcon.opacity = 1;
+        lockIcon.rotation = 180;
+        content.opacity = 0;
+        content.scale = 0;
+    }
 
     function revealContent(): void {
         background.opacity = 1;
         lockContent.opacity = 1;
         lockContent.scale = 1;
         lockContent.rotation = 360;
-        lockContent.implicitWidth = root.lockExpandedWidth;
-        lockContent.implicitHeight = root.lockExpandedHeight;
-        lockBg.radius = Tokens.rounding.extraLarge * 1.5;
+        lockContent.implicitWidth = lockContent.expandedWidth;
+        lockContent.implicitHeight = lockContent.expandedHeight;
+        lockBg.radius = lockContent.Tokens.rounding.extraLarge * 1.5;
         lockIcon.opacity = 0;
         content.opacity = 1;
         content.scale = 1;
     }
 
     Connections {
+        function onLockedChanged(): void {
+            if (!root.lock.locked)
+                return;
+
+            root.prepareContent();
+            initAnim.restart();
+            revealFallback.restart();
+        }
+
         function onUnlock(): void {
             unlockAnim.start();
         }
@@ -160,12 +184,12 @@ WlSessionLockSurface {
                 Anim {
                     target: lockContent
                     property: "implicitWidth"
-                    to: root.lockExpandedWidth
+                    to: lockContent.expandedWidth
                 }
                 Anim {
                     target: lockContent
                     property: "implicitHeight"
-                    to: root.lockExpandedHeight
+                    to: lockContent.expandedHeight
                 }
             }
         }
@@ -186,6 +210,7 @@ WlSessionLockSurface {
         anchors.fill: parent
         captureSource: root.screen
         opacity: 0
+        z: -1
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -202,10 +227,15 @@ WlSessionLockSurface {
 
         readonly property int size: lockIcon.implicitHeight + Tokens.padding.large * 4
         readonly property int radius: size / 4 * Tokens.rounding.scale
+        readonly property real screenHeight: root.screen?.height ?? (root.height || 1080)
+        readonly property real expandedRatio: Number.isFinite(Tokens.sizes.lock.ratio) ? Tokens.sizes.lock.ratio : 2.15
+        readonly property real expandedWidth: screenHeight * Tokens.sizes.lock.heightMult * expandedRatio
+        readonly property real expandedHeight: screenHeight * Tokens.sizes.lock.heightMult
 
         anchors.centerIn: parent
         implicitWidth: size
         implicitHeight: size
+        z: 1
 
         rotation: 180
         scale: 0
@@ -239,8 +269,8 @@ WlSessionLockSurface {
             id: content
 
             anchors.centerIn: parent
-            width: Math.max(0, root.lockExpandedWidth - Tokens.padding.extraLargeIncreased)
-            height: Math.max(0, root.lockExpandedHeight - Tokens.padding.extraLargeIncreased)
+            width: Math.max(0, lockContent.expandedWidth - Tokens.padding.large * 2)
+            height: Math.max(0, lockContent.expandedHeight - Tokens.padding.large * 2)
 
             lock: root
             opacity: 0
