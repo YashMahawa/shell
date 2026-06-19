@@ -18,7 +18,7 @@ PageBase {
 
     property var selectedMonitor: Hypr.focusedMonitor ?? (Hypr.monitors.values[0] ?? null)
     property string selectedResolution: "preferred"
-    property real selectedRefresh: Math.round((selectedMonitor?.refreshRate ?? 60000) / 1000)
+    property real selectedRefresh: Math.round(refreshHz(selectedMonitor))
     property real selectedScale: selectedMonitor?.scale ?? 1
     property int selectedX: selectedMonitor?.x ?? 0
     property int selectedY: selectedMonitor?.y ?? 0
@@ -28,6 +28,7 @@ PageBase {
     property bool showConfirmSave: false
     property string statusMessage: ""
     property bool statusIsError: false
+    property bool saveAfterApply: false
 
     readonly property list<MenuItem> resolutionItems: [
         MenuItem {
@@ -114,10 +115,24 @@ PageBase {
         return best;
     }
 
+    function refreshHz(m: var): real {
+        const refresh = Number(m?.refreshRate ?? 60);
+        if (!Number.isFinite(refresh) || refresh <= 0)
+            return 60;
+        return refresh > 1000 ? refresh / 1000 : refresh;
+    }
+
+    function refreshLabel(refresh: real): string {
+        const value = Number(refresh);
+        if (!Number.isFinite(value) || value <= 0)
+            return "60";
+        return Math.abs(value - Math.round(value)) < 0.01 ? String(Math.round(value)) : value.toFixed(2);
+    }
+
     function selectMonitor(m: var): void {
         selectedMonitor = m;
         selectedResolution = currentResolutionLabel();
-        selectedRefresh = Math.round((m?.refreshRate ?? 60000) / 1000);
+        selectedRefresh = Math.round(refreshHz(m));
         selectedScale = m?.scale ?? 1;
         selectedX = m?.x ?? 0;
         selectedY = m?.y ?? 0;
@@ -131,7 +146,7 @@ PageBase {
         if (selectedResolution === qsTr("Preferred") || selectedResolution === "preferred")
             return "preferred";
         const base = selectedResolution === qsTr("Current") ? currentResolutionLabel() : selectedResolution;
-        return `${base}@${selectedRefresh}`;
+        return `${base}@${refreshLabel(selectedRefresh)}`;
     }
 
     function focusedMirrorPosition(): string {
@@ -145,11 +160,14 @@ PageBase {
         if (!selectedMonitor)
             return;
 
-        const oldRes = `${selectedMonitor.width}x${selectedMonitor.height}@${Math.round((selectedMonitor.refreshRate ?? 60000) / 1000)}`;
+        const oldRes = `${selectedMonitor.width}x${selectedMonitor.height}@${refreshLabel(refreshHz(selectedMonitor))}`;
         const oldPos = `${selectedMonitor.x}x${selectedMonitor.y}`;
         const oldScale = String(selectedMonitor.scale ?? 1);
         const pos = mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`;
 
+        saveAfterApply = save;
+        statusMessage = save ? qsTr("Applying and saving display settings...") : qsTr("Applying display settings...");
+        statusIsError = false;
         monitorProc.exec([
             Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"),
             "--apply",
@@ -162,20 +180,17 @@ PageBase {
             "--old-pos", oldPos,
             "--old-scale", oldScale
         ]);
-
-        if (save)
-            saveAll();
     }
 
     function saveAll(): void {
         const monitorsData = Hypr.monitors.values.map(m => ({
             name: m.name,
-            res: m.name === selectedMonitor?.name && selectedEnabled ? resolutionWithRefresh() : `${m.width}x${m.height}@${Math.round((m.refreshRate ?? 60000) / 1000)}`,
+            res: m.name === selectedMonitor?.name && selectedEnabled ? resolutionWithRefresh() : `${m.width}x${m.height}@${refreshLabel(refreshHz(m))}`,
             pos: m.name === selectedMonitor?.name ? (mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`) : `${m.x}x${m.y}`,
             scale: m.name === selectedMonitor?.name ? selectedScale : m.scale,
             transform: m.name === selectedMonitor?.name ? selectedTransform : (m.transform ?? 0)
         }));
-        monitorProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
+        saveProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
     }
 
     ColumnLayout {
@@ -213,14 +228,54 @@ PageBase {
                         root.statusMessage = qsTr("Display settings applied");
                     root.statusIsError = false;
                     Hypr.dispatch("reload");
+                    if (root.saveAfterApply)
+                        root.saveAll();
                 } else {
                     if (!root.statusMessage)
                         root.statusMessage = qsTr("Display change failed and was rolled back");
                     root.statusIsError = true;
                 }
+                root.saveAfterApply = false;
                 Qt.callLater(() => {
                     Hyprland.refreshMonitors();
                 });
+            }
+        }
+
+        Process {
+            id: saveProc
+
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = false;
+                    }
+                }
+            }
+
+            stderr: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = true;
+                    }
+                }
+            }
+
+            onExited: exitCode => { // qmllint disable signal-handler-parameters
+                if (exitCode === 0) {
+                    if (!root.statusMessage)
+                        root.statusMessage = qsTr("Display settings saved");
+                    root.statusIsError = false;
+                    Hypr.dispatch("reload");
+                } else {
+                    if (!root.statusMessage)
+                        root.statusMessage = qsTr("Display settings could not be saved");
+                    root.statusIsError = true;
+                }
             }
         }
 

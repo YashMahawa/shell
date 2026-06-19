@@ -20,7 +20,7 @@ Item {
 
     signal close
 
-    implicitWidth: nState.screen.width * Tokens.sizes.nexus.widthMult
+    implicitWidth: implicitHeight * Tokens.sizes.nexus.ratio
     implicitHeight: nState.screen.height * Tokens.sizes.nexus.heightMult
 
     Behavior on blobColour {
@@ -31,7 +31,6 @@ Item {
         id: blobGroup
 
         smoothing: root.Tokens.rounding.medium
-        lod: GameMode.enabled || !nState.window.active
         color: root.blobColour
     }
 

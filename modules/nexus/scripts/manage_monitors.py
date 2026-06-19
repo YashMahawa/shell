@@ -35,6 +35,9 @@ def monitor_rule(name, res, pos, scale, transform=None):
         return f"{name},{res},{pos},{scale}"
     return f"{name},{res},{pos},{scale},transform,{transform}"
 
+def reload_hyprland():
+    subprocess.run(["hyprctl", "reload"], capture_output=True, text=True)
+
 def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale, transform="0"):
     validate_monitor_name(name)
     validate_res(res)
@@ -49,6 +52,7 @@ def apply_monitor(name, res, pos, scale, old_res, old_pos, old_scale, transform=
         # Some versions of hyprctl return 0 but say "invalid" in output
         if "invalid" in result.stdout.lower() or "error" in result.stdout.lower() or "fail" in result.stdout.lower():
             raise subprocess.CalledProcessError(1, cmd, result.stdout, result.stderr)
+        print(f"Applied monitor {name}: {monitor_rule(name, res, pos, scale, transform)}")
         return True
     except subprocess.CalledProcessError as e:
         # Rollback
@@ -101,7 +105,9 @@ def save_monitors(monitors_json):
     try:
         with open(monitors_conf_path, "w") as f:
             for m in monitors:
-                f.write(f"monitor={monitor_rule(m['name'], m['res'], m.get('pos', 'auto'), m.get('scale', '1'), m.get('transform', '0'))}\n")
+                f.write(f"monitor = {monitor_rule(m['name'], m['res'], m.get('pos', 'auto'), m.get('scale', '1'), m.get('transform', '0'))}\n")
+        reload_hyprland()
+        print(f"Saved monitor layout to {monitors_conf_path}")
     except Exception as e:
         print(f"Failed to write monitors.conf: {e}", file=sys.stderr)
         sys.exit(1)
