@@ -25,7 +25,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Layout.fillHeight: false
-        spacing: Tokens.spacing.normal
+        spacing: Tokens.spacing.medium
 
         StyledRect {
             implicitWidth: prompt.implicitWidth + Tokens.padding.medium * 2
@@ -78,7 +78,7 @@ ColumnLayout {
             Layout.topMargin: Tokens.padding.medium
             Layout.bottomMargin: Tokens.padding.medium
             Layout.leftMargin: iconLoader.active ? 0 : width * 0.1
-            spacing: Tokens.spacing.normal
+            spacing: Tokens.spacing.medium
 
             WrappedLoader {
                 Layout.fillWidth: true

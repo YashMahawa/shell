@@ -29,6 +29,7 @@ class GeneralIdle : public ConfigObject {
     QML_ANONYMOUS
 
     CONFIG_GLOBAL_PROPERTY(bool, lockBeforeSleep, true)
+    CONFIG_GLOBAL_PROPERTY(bool, lockAfterSleep, false)
     CONFIG_GLOBAL_PROPERTY(bool, inhibitWhenAudio, true)
     CONFIG_GLOBAL_PROPERTY(QVariantList, timeouts,
         {

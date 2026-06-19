@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -u
+
+LOG="/var/log/caelestia-sleep-guard.log"
+
+log() {
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG" 2>/dev/null || true
+}
+
+case "${1:-}/${2:-}" in
+    pre/*)
+        log "pre-sleep: no lock before suspend"
+        ;;
+    post/*)
+        unit="caelestia-resume-recover-$(date +%s)"
+        log "post-resume: scheduling delayed Caelestia recovery unit ${unit}"
+        /usr/bin/systemd-run --quiet --unit="$unit" --on-active=6s /usr/local/bin/caelestia-resume-recover >> "$LOG" 2>&1 || \
+            log "post-resume: failed to schedule delayed recovery"
+        ;;
+esac

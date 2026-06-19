@@ -139,7 +139,7 @@ ColumnLayout {
 
             anchors.fill: parent
             anchors.margins: Tokens.padding.small
-            spacing: Tokens.spacing.normal
+            spacing: Tokens.spacing.medium
 
             Item {
                 implicitWidth: implicitHeight
