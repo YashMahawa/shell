@@ -74,6 +74,10 @@ Region {
         width: panel.width
     }
 
+    R {
+        panel: root.panels.notifications
+    }
+
     component R: Region {
         required property Item panel
 
