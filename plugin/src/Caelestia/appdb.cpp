@@ -1,127 +1,13 @@
-#include <algorithm>
 #include "appdb.hpp"
 
 #include <qloggingcategory.h>
 #include <qsqldatabase.h>
 #include <qsqlquery.h>
 #include <quuid.h>
-#include <QRunnable>
-#include <QThreadPool>
-#include <QMetaObject>
-
 
 Q_LOGGING_CATEGORY(lcAppDb, "caelestia.appdb", QtInfoMsg)
 
 namespace caelestia {
-
-struct AppSnapshot {
-    QObject* entry;
-    bool runInTerminal;
-    QList<QString> values;
-};
-
-class SearchTask : public QRunnable {
-public:
-    SearchTask(const QString& query, const QString& cacheKey, quint64 generation, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy, const QList<AppSnapshot>& apps, AppDb* db)
-        : m_query(query), m_cacheKey(cacheKey), m_generation(generation), m_weights(weights), m_isTerminalOnly(isTerminalOnly), m_useFuzzy(useFuzzy), m_apps(apps), m_db(db) {}
-
-    void run() override {
-        QObjectList results;
-        if (m_query.isEmpty() && !m_isTerminalOnly) {
-            for (const auto& app : m_apps) {
-                results.append(app.entry);
-            }
-        } else {
-            QList<QPair<double, QObject*>> scoredApps;
-            for (const auto& app : m_apps) {
-                if (m_isTerminalOnly && !app.runInTerminal) {
-                    continue;
-                }
-                if (m_query.isEmpty()) {
-                    scoredApps.append({0.0, app.entry});
-                    continue;
-                }
-
-                double totalScore = 0;
-                bool matched = false;
-                for (int i = 0; i < app.values.size(); ++i) {
-                    QString val = app.values[i];
-                    double score = m_useFuzzy ? fuzzyMatchScore(m_query, val) : exactMatchScore(m_query, val);
-                    if (score > -10000.0) {
-                        matched = true;
-                        double w = i < m_weights.size() ? m_weights[i] : 1.0;
-                        totalScore += score * w;
-                    }
-                }
-                if (matched) {
-                    scoredApps.append({totalScore, app.entry});
-                }
-            }
-
-            std::stable_sort(scoredApps.begin(), scoredApps.end(), [](const auto& a, const auto& b) {
-                return a.first > b.first;
-            });
-
-            for (const auto& p : scoredApps) {
-                results.append(p.second);
-            }
-        }
-
-        QMetaObject::invokeMethod(m_db, [db = m_db, gen = m_generation, key = m_cacheKey, res = results]() {
-            db->setSearchResults(gen, key, res);
-        });
-    }
-
-private:
-    QString m_query;
-    QString m_cacheKey;
-    quint64 m_generation;
-    QList<qreal> m_weights;
-    bool m_isTerminalOnly;
-    bool m_useFuzzy;
-    QList<AppSnapshot> m_apps;
-    AppDb* m_db;
-
-    double fuzzyMatchScore(const QString& query, const QString& target) const {
-        if (query.isEmpty()) return 10000.0;
-        if (target.isEmpty()) return -10000.0;
-        QString q = query.toLower();
-        QString t = target.toLower();
-        int qIdx = 0;
-        double score = 0.0;
-        int consec = 0;
-        for (int i = 0; i < t.length(); ++i) {
-            if (qIdx < q.length() && t[i] == q[qIdx]) {
-                qIdx++;
-                score += 10.0 + consec * 5.0;
-                consec++;
-            } else {
-                consec = 0;
-                score -= 1.0;
-            }
-        }
-        if (qIdx == q.length()) {
-            score -= t.length();
-            if (t.startsWith(q)) score += 50.0;
-            return score;
-        }
-        return -10000.0;
-    }
-
-    double exactMatchScore(const QString& query, const QString& target) const {
-        if (query.isEmpty()) return 10000.0;
-        QString t = target.toLower();
-        QString q = query.toLower();
-        int idx = t.indexOf(q);
-        if (idx != -1) {
-            double score = 100.0 - t.length();
-            if (idx == 0) score += 50.0;
-            return score;
-        }
-        return -10000.0;
-    }
-};
-
 
 AppEntry::AppEntry(QObject* entry, unsigned int frequency, QObject* parent)
     : QObject(parent)
@@ -433,68 +319,6 @@ void AppDb::updateApps() {
     if (dirty) {
         emit appsChanged();
     }
-}
-
-
-
-
-
-QString AppDb::generateCacheKey(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) const {
-    QStringList parts;
-    parts << query << keys.join(",");
-    QStringList weightStrs;
-    for (qreal w : weights) {
-        weightStrs << QString::number(w);
-    }
-    parts << weightStrs.join(",");
-    parts << (isTerminalOnly ? "1" : "0") << (useFuzzy ? "1" : "0");
-    return parts.join("|");
-}
-
-void AppDb::searchAsync(const QString& query, const QStringList& keys, const QList<qreal>& weights, bool isTerminalOnly, bool useFuzzy) {
-    QString cacheKey = generateCacheKey(query, keys, weights, isTerminalOnly, useFuzzy);
-    m_searchGeneration++;
-    quint64 currentGen = m_searchGeneration;
-
-    if (m_searchCache.contains(cacheKey)) {
-        setSearchResults(currentGen, cacheKey, m_searchCache.value(cacheKey));
-        return;
-    }
-
-    QList<AppSnapshot> snapshot;
-    snapshot.reserve(m_sortedApps.size());
-    for (auto* app : m_sortedApps) {
-        AppSnapshot s;
-        s.entry = app->entry();
-        s.runInTerminal = s.entry->property("runInTerminal").toBool();
-        for (const QString& key : keys) {
-            s.values.append(app->property(key.toUtf8().constData()).toString());
-        }
-        snapshot.append(s);
-    }
-
-    auto* task = new SearchTask(query, cacheKey, currentGen, weights, isTerminalOnly, useFuzzy, snapshot, this);
-    QThreadPool::globalInstance()->start(task);
-}
-
-QObjectList AppDb::searchResults() const {
-    return m_searchResults;
-}
-
-void AppDb::setSearchResults(quint64 generation, const QString& cacheKey, const QObjectList& results) {
-    if (generation != m_searchGeneration) {
-        return;
-    }
-
-    if (!m_searchCache.contains(cacheKey)) {
-        m_searchCache.insert(cacheKey, results);
-        m_searchCacheOrder.append(cacheKey);
-        if (m_searchCacheOrder.size() > 50) {
-            m_searchCache.remove(m_searchCacheOrder.takeFirst());
-        }
-    }
-    m_searchResults = results;
-    emit searchResultsChanged();
 }
 
 } // namespace caelestia
