@@ -93,6 +93,7 @@ Dependencies:
 -   [`swappy`](https://github.com/jtheoof/swappy)
 -   [`libqalculate`](https://github.com/Qalculate/libqalculate)
 -   [`bash`](https://www.gnu.org/software/bash)
+-   [`python`](https://www.python.org) and [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) for the optional YouTube lyrics fallback
 -   `qt6-base`
 -   `qt6-declarative`
 

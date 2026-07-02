@@ -28,6 +28,8 @@ Singleton {
     property bool muxFinished: false
     property var muxLyrics: []
     property string muxSource: ""
+    property bool youtubePending: false
+    property bool youtubeStarted: false
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
@@ -171,6 +173,15 @@ Singleton {
         root.revision++;
     }
 
+    function _resetYoutubeFallback(): void {
+        youtubeFallbackDelay.stop();
+        youtubeTimeout.stop();
+        root.youtubePending = false;
+        root.youtubeStarted = false;
+        if (youtubeProcess.running)
+            youtubeProcess.running = false;
+    }
+
     function _setNativeFallback(): void {
         if (root.ownsTiming)
             return;
@@ -223,6 +234,7 @@ Singleton {
         const p = Players.active;
         if (!p || _isPlaceholderTitle(p.trackTitle)) {
             root.requestId++;
+            _resetYoutubeFallback();
             root.loadedKey = "";
             root.cachePath = "";
             root.cacheLoaded = false;
@@ -249,6 +261,7 @@ Singleton {
         root.loading = true;
         root.currentIndex = -1;
         root.requestId++;
+        _resetYoutubeFallback();
         const req = root.requestId;
         root.networkSettled = false;
         root.paxFinished = false;
@@ -404,6 +417,7 @@ Singleton {
         if (req !== root.requestId || root.networkSettled)
             return;
         root.networkSettled = true;
+        _resetYoutubeFallback();
         paxPreferenceTimeout.stop();
         onlineTimeout.stop();
         _loadLines(lines, source, message);
@@ -417,13 +431,76 @@ Singleton {
         paxPreferenceTimeout.stop();
         onlineTimeout.stop();
         if (root.cacheLoaded && root.hasLyrics) {
+            _resetYoutubeFallback();
             root.loading = false;
             root.status = qsTr("Cached %1 lyrics; providers unavailable").arg(root.provider || "timed");
             return;
         }
-        root.status = qsTr("Paxsenix and word-sync fallback unavailable; trying LRCLIB and NetEase");
+        root.youtubePending = true;
+        root.youtubeStarted = false;
+        youtubeFallbackDelay.requestId = req;
+        youtubeFallbackDelay.restart();
+        root.status = qsTr("Trying LRCLIB and NetEase before YouTube captions...");
         Lyrics.refresh();
         _setNativeFallback();
+        if (root.ownsTiming)
+            _resetYoutubeFallback();
+        else
+            root.loading = true;
+    }
+
+    function _startYoutubeFallback(req: int): void {
+        const p = Players.active;
+        const duration = _trackDuration();
+        if (req !== root.requestId || root.ownsTiming || !p || !p.trackArtist || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
+            _resetYoutubeFallback();
+            root.loading = Lyrics.loading;
+            if (!root.ownsTiming)
+                root.status = qsTr("No lyrics found");
+            return;
+        }
+
+        root.youtubePending = false;
+        root.youtubeStarted = true;
+        root.loading = true;
+        root.provider = "YouTube";
+        root.status = qsTr("Last fallback: searching YouTube captions...");
+        youtubeProcess.requestId = req;
+        youtubeProcess.command = [
+            "python3",
+            `${Quickshell.shellDir}/utils/scripts/youtube_lyrics.py`,
+            "--title",
+            _queryTitle(),
+            "--artist",
+            p.trackArtist || "",
+            "--duration",
+            String(_trackDuration())
+        ];
+        youtubeProcess.running = true;
+        youtubeTimeout.requestId = req;
+        youtubeTimeout.restart();
+    }
+
+    function _finishYoutubeFallback(req: int, output: string, errorOutput: string): void {
+        if (req !== root.requestId)
+            return;
+
+        youtubeTimeout.stop();
+        root.youtubePending = false;
+        root.youtubeStarted = false;
+        try {
+            const result = JSON.parse(output || "{}");
+            if (!result.success || !_hasTimedLines(result.lyrics || []))
+                throw new Error(result.error || errorOutput || "No usable YouTube captions");
+            const language = result.language ? ` (${result.language})` : "";
+            _loadLines(result.lyrics, "YouTube captions", qsTr("Last fallback: YouTube captions%1").arg(language));
+            _saveCache(result.lyrics, "YouTube captions");
+        } catch (e) {
+            root.loading = Lyrics.loading;
+            _setNativeFallback();
+            if (!root.ownsTiming)
+                root.status = qsTr("No lyrics found; YouTube captions unavailable");
+        }
     }
 
     function _loadLines(lines: var, source: string, message: string): void {
@@ -572,6 +649,37 @@ Singleton {
         }
     }
 
+    Timer {
+        id: youtubeFallbackDelay
+
+        property int requestId: -1
+
+        interval: 9000
+        repeat: false
+        onTriggered: root._startYoutubeFallback(requestId)
+    }
+
+    Timer {
+        id: youtubeTimeout
+
+        property int requestId: -1
+
+        interval: 38000
+        repeat: false
+        onTriggered: {
+            if (requestId !== root.requestId)
+                return;
+            if (youtubeProcess.running)
+                youtubeProcess.running = false;
+            root.youtubePending = false;
+            root.youtubeStarted = false;
+            root.loading = Lyrics.loading;
+            root._setNativeFallback();
+            if (!root.ownsTiming)
+                root.status = qsTr("No lyrics found; YouTube captions timed out");
+        }
+    }
+
     FileView {
         id: cacheFile
 
@@ -594,6 +702,20 @@ Singleton {
 
     Process {
         id: saveCache
+    }
+
+    Process {
+        id: youtubeProcess
+
+        property int requestId: -1
+
+        stdout: StdioCollector {
+            id: youtubeOutput
+        }
+        stderr: StdioCollector {
+            id: youtubeError
+        }
+        onExited: _code => root._finishYoutubeFallback(requestId, youtubeOutput.text, youtubeError.text) // qmllint disable signal-handler-parameters
     }
 
     Connections {
@@ -620,12 +742,15 @@ Singleton {
     Connections {
         target: Lyrics
         function onLyricsChanged(): void {
-            if (root.networkSettled || !root._usePaxsenix())
+            if (root.networkSettled || !root._usePaxsenix()) {
                 root._setNativeFallback();
+                if (root.ownsTiming)
+                    root._resetYoutubeFallback();
+            }
         }
         function onLoadingChanged(): void {
             if (!root.ownsTiming && (root.networkSettled || !root._usePaxsenix()))
-                root.loading = Lyrics.loading;
+                root.loading = Lyrics.loading || root.youtubePending || root.youtubeStarted;
         }
     }
 

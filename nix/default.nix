@@ -14,6 +14,8 @@
   wl-clipboard,
   libqalculate,
   bash,
+  python3,
+  yt-dlp,
   hyprland,
   material-symbols,
   rubik,
@@ -48,6 +50,8 @@
       wl-clipboard
       libqalculate
       bash
+      python3
+      yt-dlp
       hyprland
     ]
     ++ extraRuntimeDeps
