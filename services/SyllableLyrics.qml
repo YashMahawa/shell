@@ -222,6 +222,18 @@ Singleton {
     function _doLoad(): void {
         const p = Players.active;
         if (!p || _isPlaceholderTitle(p.trackTitle)) {
+            root.requestId++;
+            root.loadedKey = "";
+            root.cachePath = "";
+            root.cacheLoaded = false;
+            root.networkSettled = true;
+            root.paxFinished = true;
+            root.muxFinished = true;
+            root.muxLyrics = [];
+            root.muxSource = "";
+            cacheDelay.stop();
+            paxPreferenceTimeout.stop();
+            onlineTimeout.stop();
             root.loading = false;
             _clearDisplayedLyrics(p ? qsTr("Waiting for track metadata...") : qsTr("No active track"));
             return;
