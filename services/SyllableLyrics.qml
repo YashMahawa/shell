@@ -22,6 +22,12 @@ Singleton {
     property string provider: ""
     property string status: ""
     property bool cacheLoaded: false
+    property bool ownsTiming: false
+    property bool networkSettled: false
+    property bool paxFinished: false
+    property bool muxFinished: false
+    property var muxLyrics: []
+    property string muxSource: ""
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
@@ -78,19 +84,32 @@ Singleton {
         root.cachePath = `${root.cacheDir}/${_safeCacheName(`${root.preferredBackend}-${key}`)}.json`;
     }
 
-    function _lyricsPlusBases() {
-        return [
-            "https://lyricsplus.binimum.org",
-            "https://lyricsplus.prjktla.workers.dev",
-            "https://lyricsplus-seven.vercel.app",
-            "https://lyrics-plus-backend.vercel.app",
-            "https://lyricsplus.prjktla.my.id"
-        ];
+    function _queryTitle(): string {
+        const p = Players.active;
+        return String(p?.trackTitle || "")
+            .replace(/\s*[\[(](official\s+)?(music\s+)?(video|audio|lyrics?|visuali[sz]er).*?[\])]/ig, "")
+            .replace(/\s+-\s+topic$/i, "")
+            .trim();
     }
 
-    function _paxsenixUrl(base: string): string {
+    function _isPlaceholderTitle(title: string): bool {
+        const value = String(title || "").trim().toLowerCase();
+        return !value || value === "a site is playing media" || value === "playing media" || value === "unknown title";
+    }
+
+    function _paxsenixUrl(): string {
         const p = Players.active;
-        let url = `${base}/v2/lyrics/get?title=${encodeURIComponent(p.trackTitle)}&artist=${encodeURIComponent(p.trackArtist || "")}`;
+        const query = `${_queryTitle()} ${p?.trackArtist || ""}`.trim();
+        let url = `https://lyrics.paxsenix.org/musixmatch/lyrics?type=word&q=${encodeURIComponent(query)}&t=${encodeURIComponent(_queryTitle())}&a=${encodeURIComponent(p?.trackArtist || "")}&enchanted=true&alt=true&parse=true&v=2`;
+        const duration = _trackDuration();
+        if (duration > 0)
+            url += `&d=${duration}`;
+        return url;
+    }
+
+    function _lrcMuxUrl(): string {
+        const p = Players.active;
+        let url = `https://api.lrcmux.dev/compat/kpoe/v2/lyrics/get?title=${encodeURIComponent(_queryTitle())}&artist=${encodeURIComponent(p?.trackArtist || "")}`;
         const duration = _trackDuration();
         if (duration > 0)
             url += `&duration=${duration}`;
@@ -145,6 +164,7 @@ Singleton {
     function _clearDisplayedLyrics(status: string): void {
         lyricsModel.clear();
         root.hasSyllables = false;
+        root.ownsTiming = false;
         root.currentIndex = -1;
         root.provider = "";
         root.status = status || "";
@@ -152,7 +172,7 @@ Singleton {
     }
 
     function _setNativeFallback(): void {
-        if (root.hasSyllables)
+        if (root.ownsTiming)
             return;
 
         lyricsModel.clear();
@@ -166,6 +186,7 @@ Singleton {
             });
         }
         root.loading = nativeReady ? Lyrics.loading : false;
+        root.ownsTiming = nativeReady;
         root.currentIndex = nativeReady ? Lyrics.indexForTime(Players.active?.position ?? 0) : -1;
         root.provider = nativeReady ? LyricsBackend.toString(Lyrics.backend) : "";
         root.status = nativeReady ? qsTr("Fallback: %1").arg(root.provider) : qsTr("No lyrics found");
@@ -188,12 +209,24 @@ Singleton {
         return false;
     }
 
+    function _hasTimedLines(lines: var): bool {
+        if (!lines || lines.length === 0)
+            return false;
+        return lines.some(line => Number(line.time ?? line.start ?? line.startTimeMs ?? 0) > 0 && String(line.text ?? line.words ?? line.x ?? "").trim().length > 0);
+    }
+
     function load(): void {
         loadDebounce.restart();
     }
 
     function _doLoad(): void {
         const p = Players.active;
+        if (!p || _isPlaceholderTitle(p.trackTitle)) {
+            root.loading = false;
+            _clearDisplayedLyrics(p ? qsTr("Waiting for track metadata...") : qsTr("No active track"));
+            return;
+        }
+
         const key = _keyForPlayer();
         if (key && key === root.loadedKey && lyricsModel.count > 0)
             return;
@@ -205,17 +238,16 @@ Singleton {
         root.currentIndex = -1;
         root.requestId++;
         const req = root.requestId;
+        root.networkSettled = false;
+        root.paxFinished = false;
+        root.muxFinished = false;
+        root.muxLyrics = [];
+        root.muxSource = "";
+        paxPreferenceTimeout.stop();
         onlineTimeout.stop();
 
         if (changedTrack)
             _clearDisplayedLyrics(qsTr("Loading lyrics..."));
-
-        if (!p || !p.trackTitle) {
-            root.loading = false;
-            _clearDisplayedLyrics(qsTr("No active track"));
-            root.revision++;
-            return;
-        }
 
         if (!_usePaxsenix()) {
             root.loading = Lyrics.loading;
@@ -231,8 +263,6 @@ Singleton {
         cacheFile.reload();
         cacheDelay.requestId = req;
         cacheDelay.restart();
-        onlineTimeout.requestId = req;
-        onlineTimeout.restart();
     }
 
     function _fetchOnline(req: int): void {
@@ -240,53 +270,154 @@ Singleton {
         if (!p || !p.trackTitle || req !== root.requestId)
             return;
 
-        _fetchOnlineFromMirror(req, 0);
-    }
+        root.networkSettled = false;
+        root.paxFinished = false;
+        root.muxFinished = false;
+        root.muxLyrics = [];
+        root.muxSource = "";
+        root.status = root.cacheLoaded ? qsTr("Refreshing Paxsenix lyrics...") : qsTr("Fetching Paxsenix lyrics...");
 
-    function _fetchOnlineFromMirror(req: int, mirrorIndex: int): void {
-        const p = Players.active;
-        const bases = _lyricsPlusBases();
-        if (!p || !p.trackTitle || req !== root.requestId)
-            return;
-        if (mirrorIndex >= bases.length) {
-            onlineTimeout.stop();
-            root.loading = false;
-            root.status = qsTr("Paxsenix unavailable, using fallback");
-            _setNativeFallback();
-            return;
-        }
+        paxPreferenceTimeout.requestId = req;
+        paxPreferenceTimeout.restart();
+        onlineTimeout.requestId = req;
+        onlineTimeout.restart();
 
-        const base = bases[mirrorIndex];
-        const url = _paxsenixUrl(base);
-        root.status = qsTr("Fetching Paxsenix lyrics...");
-
-        Requests.get(url, text => {
-            if (req !== root.requestId)
+        Requests.get(_paxsenixUrl(), text => {
+            if (req !== root.requestId || root.networkSettled)
                 return;
-
             try {
                 const res = JSON.parse(text);
-                const meta = res.cachedMeta || res.metadata || {};
-                const lines = res.lyrics || [];
+                const meta = res.cachedMeta || res.metadata || res.track || res.data?.track || {};
+                const lines = _extractPaxsenixLines(res);
                 if (!_metadataMatches(meta) || !_hasTimedSyllables(lines))
-                    throw new Error("Paxsenix result did not provide timed syllables for the current track");
-
-                onlineTimeout.stop();
-                _loadLines(lines);
-                _saveCache(lines);
+                    throw new Error("Paxsenix did not return word-timed lyrics");
+                _settleOnline(req, lines, "Paxsenix", qsTr("Paxsenix word-synced lyrics"));
             } catch (e) {
-                _fetchOnlineFromMirror(req, mirrorIndex + 1);
+                root.paxFinished = true;
+                _maybeSettleOnline(req);
             }
         }, () => {
-            if (req !== root.requestId)
+            if (req !== root.requestId || root.networkSettled)
                 return;
-            _fetchOnlineFromMirror(req, mirrorIndex + 1);
-        });
+            root.paxFinished = true;
+            _maybeSettleOnline(req);
+        }, {}, 7000);
+
+        Requests.get(_lrcMuxUrl(), text => {
+            if (req !== root.requestId || root.networkSettled)
+                return;
+            try {
+                const res = JSON.parse(text);
+                const lines = res.lyrics || [];
+                if (!_hasTimedLines(lines))
+                    throw new Error("LrcMux did not return timed lyrics");
+                root.muxLyrics = lines;
+                root.muxSource = res.metadata?.source || "LrcMux";
+            } catch (e) {
+                root.muxLyrics = [];
+            }
+            root.muxFinished = true;
+            _maybeSettleOnline(req);
+        }, () => {
+            if (req !== root.requestId || root.networkSettled)
+                return;
+            root.muxFinished = true;
+            _maybeSettleOnline(req);
+        }, {}, 12000);
     }
 
-    function _loadLines(lines: var): void {
-        if (!_hasTimedSyllables(lines)) {
+    function _extractPaxsenixLines(res: var): var {
+        let rich = res?.richsync ?? res?.data?.richsync ?? res?.lyrics?.richsync ?? res?.data?.lyrics?.richsync;
+        if (typeof rich === "string") {
+            try {
+                rich = JSON.parse(rich);
+            } catch (e) {
+                rich = undefined;
+            }
+        }
+
+        let lines = Array.isArray(rich) ? rich : res?.lyrics;
+        if (!Array.isArray(lines))
+            lines = res?.data?.lyrics?.lines ?? res?.data?.lines ?? res?.lyrics?.lines ?? res?.lines ?? [];
+        if (!Array.isArray(lines))
+            return [];
+        if (_hasTimedSyllables(lines))
+            return lines;
+
+        const normalised = [];
+        for (const line of lines) {
+            const richLine = line?.ts !== undefined;
+            const start = richLine ? Number(line.ts || 0) * 1000 : Number(line.time ?? line.startTimeMs ?? line.start ?? 0);
+            const end = richLine ? Number(line.te || line.ts || 0) * 1000 : Number(line.endTimeMs ?? line.end ?? 0);
+            const rawWords = Array.isArray(line.syllabus) ? line.syllabus : Array.isArray(line.syllables) ? line.syllables : Array.isArray(line.words) ? line.words : Array.isArray(line.l) ? line.l : [];
+            const syllables = [];
+            for (let i = 0; i < rawWords.length; i++) {
+                const word = rawWords[i];
+                let wordStart = Number(word.time ?? word.startTimeMs ?? word.start ?? 0);
+                let wordEnd = Number(word.endTimeMs ?? word.end ?? 0);
+                if (richLine && word.o !== undefined) {
+                    wordStart = start + Number(word.o || 0) * 1000;
+                    const next = rawWords[i + 1];
+                    wordEnd = next?.o !== undefined ? start + Number(next.o) * 1000 : end;
+                }
+                const duration = Number(word.duration ?? Math.max(0, wordEnd - wordStart));
+                syllables.push({
+                    time: wordStart,
+                    duration,
+                    text: String(word.text ?? word.words ?? word.c ?? "")
+                });
+            }
+            normalised.push({
+                time: start,
+                duration: Math.max(0, end - start),
+                text: String(line.text ?? line.x ?? (typeof line.words === "string" ? line.words : "")),
+                syllabus: syllables
+            });
+        }
+        return normalised;
+    }
+
+    function _maybeSettleOnline(req: int): void {
+        if (req !== root.requestId || root.networkSettled)
+            return;
+        if (root.paxFinished && _hasTimedLines(root.muxLyrics)) {
+            _settleOnline(req, root.muxLyrics, "LrcMux", qsTr("Fallback: %1").arg(root.muxSource));
+            return;
+        }
+        if (root.paxFinished && root.muxFinished)
+            _finishOnlineWithNative(req);
+    }
+
+    function _settleOnline(req: int, lines: var, source: string, message: string): void {
+        if (req !== root.requestId || root.networkSettled)
+            return;
+        root.networkSettled = true;
+        paxPreferenceTimeout.stop();
+        onlineTimeout.stop();
+        _loadLines(lines, source, message);
+        _saveCache(lines, source);
+    }
+
+    function _finishOnlineWithNative(req: int): void {
+        if (req !== root.requestId || root.networkSettled)
+            return;
+        root.networkSettled = true;
+        paxPreferenceTimeout.stop();
+        onlineTimeout.stop();
+        if (root.cacheLoaded && root.hasLyrics) {
+            root.loading = false;
+            root.status = qsTr("Cached %1 lyrics; providers unavailable").arg(root.provider || "timed");
+            return;
+        }
+        root.status = qsTr("Paxsenix and word-sync fallback unavailable; trying LRCLIB and NetEase");
+        Lyrics.refresh();
+        _setNativeFallback();
+    }
+
+    function _loadLines(lines: var, source: string, message: string): void {
+        if (!_hasTimedLines(lines)) {
             root.hasSyllables = false;
+            root.ownsTiming = false;
             root.loading = false;
             _setNativeFallback();
             return;
@@ -314,17 +445,18 @@ Singleton {
         }
 
         root.hasSyllables = lyricsModel.count > 0 && timedSyllableCount > 0;
+        root.ownsTiming = lyricsModel.count > 0;
         root.loading = false;
-        root.provider = "Paxsenix";
-        root.status = qsTr("Paxsenix syllable lyrics");
+        root.provider = source || "Timed";
+        root.status = message || qsTr("%1 timed lyrics").arg(root.provider);
         root.revision++;
         updatePosition();
     }
 
-    function _saveCache(lines: var): void {
+    function _saveCache(lines: var, source: string): void {
         const payload = JSON.stringify({
             key: root.loadedKey,
-            provider: "Paxsenix",
+            provider: source || root.provider,
             romanized: root.romanizeLyrics,
             lyrics: lines
         });
@@ -333,7 +465,7 @@ Singleton {
     }
 
     function indexForTime(time: real): int {
-        if (!root.hasSyllables)
+        if (!root.ownsTiming)
             return Lyrics.indexForTime(time);
 
         const target = time - Lyrics.offset + 0.1;
@@ -347,7 +479,7 @@ Singleton {
     function timeForIndex(index: int): real {
         if (index < 0)
             return 0;
-        if (!root.hasSyllables)
+        if (!root.ownsTiming)
             return Lyrics.timeForIndex(index);
         return (lyricsModel.get(index)?.time ?? 0) + Lyrics.offset;
     }
@@ -391,8 +523,24 @@ Singleton {
         interval: 120
         repeat: false
         onTriggered: {
-            if (requestId === root.requestId && !root.cacheLoaded)
+            if (requestId === root.requestId)
                 root._fetchOnline(requestId);
+        }
+    }
+
+    Timer {
+        id: paxPreferenceTimeout
+
+        property int requestId: -1
+
+        interval: 7000
+        repeat: false
+        onTriggered: {
+            if (requestId !== root.requestId || root.networkSettled)
+                return;
+            root.paxFinished = true;
+            root.status = qsTr("Paxsenix timed out; using word-sync fallback");
+            root._maybeSettleOnline(requestId);
         }
     }
 
@@ -401,14 +549,14 @@ Singleton {
 
         property int requestId: -1
 
-        interval: 8000
+        interval: 15000
         repeat: false
         onTriggered: {
-            if (requestId !== root.requestId || root.hasLyrics)
+            if (requestId !== root.requestId || root.networkSettled)
                 return;
-            root.loading = false;
-            root.status = qsTr("Paxsenix timed out, using fallback");
-            root._setNativeFallback();
+            root.paxFinished = true;
+            root.muxFinished = true;
+            root._maybeSettleOnline(requestId);
         }
     }
 
@@ -422,10 +570,9 @@ Singleton {
                 return;
             try {
                 const cached = JSON.parse(text());
-                if (cached.key === root.loadedKey && cached.provider === "Paxsenix" && _hasTimedSyllables(cached.lyrics)) {
-                    onlineTimeout.stop();
+                if (cached.key === root.loadedKey && _hasTimedLines(cached.lyrics)) {
                     root.cacheLoaded = true;
-                    root._loadLines(cached.lyrics);
+                    root._loadLines(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"));
                 }
             } catch (e) {
                 root.cacheLoaded = false;
@@ -461,10 +608,11 @@ Singleton {
     Connections {
         target: Lyrics
         function onLyricsChanged(): void {
-            root._setNativeFallback();
+            if (root.networkSettled || !root._usePaxsenix())
+                root._setNativeFallback();
         }
         function onLoadingChanged(): void {
-            if (!root.hasSyllables)
+            if (!root.ownsTiming && (root.networkSettled || !root._usePaxsenix()))
                 root.loading = Lyrics.loading;
         }
     }

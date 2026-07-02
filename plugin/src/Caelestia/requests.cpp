@@ -15,7 +15,7 @@ Requests::Requests(QObject* parent)
     : QObject(parent)
     , m_manager(new QNetworkAccessManager(this)) {}
 
-void Requests::get(const QUrl& url, QJSValue onSuccess, QJSValue onError, QJSValue headers) const {
+void Requests::get(const QUrl& url, QJSValue onSuccess, QJSValue onError, QJSValue headers, int timeoutMs) const {
     if (!onSuccess.isCallable()) {
         qCWarning(lcRequests) << "get: onSuccess is not callable";
         return;
@@ -27,6 +27,9 @@ void Requests::get(const QUrl& url, QJSValue onSuccess, QJSValue onError, QJSVal
     request.setRawHeader("Cache-Control", "no-cache, no-store");
     request.setRawHeader("Pragma", "no-cache");
     request.setRawHeader("Connection", "close");
+    if (timeoutMs > 0) {
+        request.setTransferTimeout(timeoutMs);
+    }
 
     if (headers.isObject()) {
         QJSValueIterator it(headers);

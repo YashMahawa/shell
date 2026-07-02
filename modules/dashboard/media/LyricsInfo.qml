@@ -118,6 +118,7 @@ StyledRect {
             delegate: Item {
                 id: delegateRoot
 
+                required property int index
                 readonly property var candidate: Lyrics.lyricCandidates[index]
 
                 width: ListView.view.width

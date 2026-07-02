@@ -119,11 +119,13 @@ LyricCandidate Lyrics::selectedCandidate() const {
 }
 
 void Lyrics::setSelectedCandidate(const LyricCandidate& value) {
-    if (m_selected == value) {
+    if (m_selected == value && m_hasLyrics) {
         return;
     }
-    m_selected = value;
-    emit selectedCandidateChanged();
+    if (m_selected != value) {
+        m_selected = value;
+        emit selectedCandidateChanged();
+    }
 
     if (!value.isValid()) {
         return;
@@ -164,7 +166,7 @@ void Lyrics::setSelectedCandidate(const LyricCandidate& value) {
             setLoading(false);
         } else {
             qCWarning(lcLyrics) << "selectedCandidate: cannot open local file" << value.id();
-            setLoading(false);
+            fallbackAfterCandidateFailure(LyricsBackend::Local, reqId);
         }
     }
 
@@ -437,6 +439,29 @@ void Lyrics::chainNext(LyricsBackend::Backend just_failed, int reqId) {
     default:
         setLoading(false);
         return;
+    }
+}
+
+void Lyrics::fallbackAfterCandidateFailure(LyricsBackend::Backend failed, int reqId) {
+    if (reqId != m_currentRequestId) {
+        return;
+    }
+
+    m_selected = {};
+    emit selectedCandidateChanged();
+    persistTrackPrefs();
+
+    switch (failed) {
+    case LyricsBackend::LRCLIB:
+        tryNetEase(reqId);
+        break;
+    case LyricsBackend::NetEase:
+        tryLocal(reqId);
+        break;
+    case LyricsBackend::Local:
+    default:
+        tryLrclib(reqId);
+        break;
     }
 }
 
@@ -715,18 +740,23 @@ void Lyrics::fetchLrclibById(const QString& id, int reqId) {
         }
         if (reply->error() != QNetworkReply::NoError) {
             qCWarning(lcLyrics) << "lrclib /get/{id} error:" << reply->errorString();
-            setLoading(false);
+            fallbackAfterCandidateFailure(LyricsBackend::LRCLIB, reqId);
             return;
         }
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         const QString synced = doc.object().value(u"syncedLyrics"_s).toString();
         if (synced.isEmpty()) {
             qCDebug(lcLyrics) << "lrclib /get/{id}: no syncedLyrics";
-            setLoading(false);
+            fallbackAfterCandidateFailure(LyricsBackend::LRCLIB, reqId);
+            return;
+        }
+        const auto lines = parseLrc(synced);
+        if (lines.isEmpty()) {
+            fallbackAfterCandidateFailure(LyricsBackend::LRCLIB, reqId);
             return;
         }
         writeCachedLrc(LyricsBackend::LRCLIB, id, synced);
-        setLines(parseLrc(synced), LyricsBackend::LRCLIB);
+        setLines(lines, LyricsBackend::LRCLIB);
         setLoading(false);
     });
 }
@@ -750,18 +780,23 @@ void Lyrics::fetchNetEaseLyricsById(const QString& id, int reqId) {
         }
         if (reply->error() != QNetworkReply::NoError) {
             qCWarning(lcLyrics) << "netease /lyric error:" << reply->errorString();
-            setLoading(false);
+            fallbackAfterCandidateFailure(LyricsBackend::NetEase, reqId);
             return;
         }
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         const QString lrc = doc.object().value(u"lrc"_s).toObject().value(u"lyric"_s).toString();
         if (lrc.isEmpty()) {
             qCDebug(lcLyrics) << "netease /lyric: empty for id" << id;
-            setLoading(false);
+            fallbackAfterCandidateFailure(LyricsBackend::NetEase, reqId);
+            return;
+        }
+        const auto lines = parseLrc(lrc);
+        if (lines.isEmpty()) {
+            fallbackAfterCandidateFailure(LyricsBackend::NetEase, reqId);
             return;
         }
         writeCachedLrc(LyricsBackend::NetEase, id, lrc);
-        setLines(parseLrc(lrc), LyricsBackend::NetEase);
+        setLines(lines, LyricsBackend::NetEase);
         setLoading(false);
     });
 }
@@ -773,6 +808,7 @@ QNetworkReply* Lyrics::getJson(const QUrl& url, const QHash<QByteArray, QByteArr
     req.setRawHeader("Pragma"_ba, "no-cache"_ba);
     req.setRawHeader("Connection"_ba, "close"_ba);
     req.setRawHeader("Accept"_ba, "application/json"_ba);
+    req.setTransferTimeout(10000);
     for (auto it = headers.constBegin(); it != headers.constEnd(); ++it) {
         req.setRawHeader(it.key(), it.value());
     }
@@ -827,6 +863,9 @@ void Lyrics::persistTrackPrefs() {
     if (m_selected.isValid()) {
         entry.insert(u"backend"_s, backendKey(m_selected.backend()));
         entry.insert(u"id"_s, m_selected.id());
+    } else {
+        entry.remove(u"backend"_s);
+        entry.remove(u"id"_s);
     }
     m_lyricsMap.insert(key, entry);
 

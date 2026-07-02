@@ -85,6 +85,7 @@ private:
     void tryLrclib(int reqId);
     void tryNetEase(int reqId);
     void chainNext(LyricsBackend::Backend just_failed, int reqId);
+    void fallbackAfterCandidateFailure(LyricsBackend::Backend failed, int reqId);
 
     void searchLrclibCandidates(int reqId);
     void searchNetEaseCandidates(int reqId);

@@ -307,6 +307,7 @@ Item {
 
             required property string lyricLine
             required property string syllabus
+            required property int index
             property real effectScale: ListView.isCurrentItem ? 1 : 0
             readonly property int lyricIndex: index
             readonly property string highlightedText: {
