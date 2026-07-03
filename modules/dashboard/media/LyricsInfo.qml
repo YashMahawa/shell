@@ -13,6 +13,28 @@ StyledRect {
 
     signal closeRequested()
 
+    property int nativeRevision: 0
+    readonly property var candidates: {
+        SyllableLyrics.sourceRevision;
+        root.nativeRevision;
+        const combined = SyllableLyrics.sourceCandidates.slice();
+        for (const native of Lyrics.lyricCandidates) {
+            const id = SyllableLyrics.nativeSourceId(native);
+            if (combined.some(candidate => candidate.id === id))
+                continue;
+            combined.push({
+                kind: "native",
+                id,
+                native,
+                provider: LyricsBackend.toString(native.backend),
+                title: native.title || Players.active?.trackTitle || qsTr("Untitled lyrics"),
+                artist: native.artist || Players.active?.trackArtist || qsTr("Unknown artist"),
+                language: ""
+            });
+        }
+        return combined;
+    }
+
     color: Colours.tPalette.m3surfaceContainer
     radius: Tokens.rounding.large
     clip: true
@@ -26,16 +48,31 @@ StyledRect {
     function candidateArtist(candidate: var): string {
         if (!candidate)
             return "";
-        const backend = LyricsBackend.toString(candidate.backend);
+        const backend = candidate.provider || LyricsBackend.toString(candidate.native?.backend);
         const artist = candidate.artist || Players.active?.trackArtist || qsTr("Unknown artist");
-        return `${artist}  -  ${backend}`;
+        const language = candidate.language ? ` (${candidate.language})` : "";
+        return `${artist}  -  ${backend}${language}`;
     }
 
     function selectedCandidateMatches(candidate: var): bool {
-        const selected = Lyrics.selectedCandidate;
-        if (!selected || !candidate)
+        if (!candidate)
             return false;
-        return selected === candidate || (selected.title === candidate.title && selected.artist === candidate.artist && selected.backend === candidate.backend);
+        if (candidate.kind === "external")
+            return SyllableLyrics.selectedSourceId === candidate.id;
+        if (SyllableLyrics.pendingNativeSourceId)
+            return SyllableLyrics.pendingNativeSourceId === candidate.id;
+        const selected = Lyrics.selectedCandidate;
+        return selected === candidate.native || (selected?.id === candidate.native?.id && selected?.backend === candidate.native?.backend);
+    }
+
+    Connections {
+        target: Lyrics
+        function onLyricCandidatesChanged(): void {
+            root.nativeRevision++;
+        }
+        function onSelectedCandidateChanged(): void {
+            root.nativeRevision++;
+        }
     }
 
     ColumnLayout {
@@ -111,7 +148,7 @@ StyledRect {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: GlobalConfig.services.showLyricsCandidatePicker
-            model: Lyrics.lyricCandidates.length
+            model: root.candidates.length
             clip: true
             spacing: Tokens.spacing.small
 
@@ -119,7 +156,7 @@ StyledRect {
                 id: delegateRoot
 
                 required property int index
-                readonly property var candidate: Lyrics.lyricCandidates[index]
+                readonly property var candidate: root.candidates[index]
 
                 width: ListView.view.width
                 height: Math.max(candidateText.implicitHeight + Tokens.padding.medium * 2, 62)
@@ -184,7 +221,12 @@ StyledRect {
                     onPressed: delegateRoot.pressed = true
                     onReleased: delegateRoot.pressed = false
                     onCanceled: delegateRoot.pressed = false
-                    onClicked: Lyrics.setSelectedCandidate(delegateRoot.candidate)
+                    onClicked: {
+                        if (delegateRoot.candidate.kind === "external")
+                            SyllableLyrics.selectSource(delegateRoot.candidate.id);
+                        else
+                            SyllableLyrics.selectNativeCandidate(delegateRoot.candidate.native);
+                    }
                 }
             }
 

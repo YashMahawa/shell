@@ -38,6 +38,7 @@ StyledWindow {
     readonly property real borderRounding: contentItem.Config.border.rounding * (1 - fsTransitionProg)
     readonly property real shadowOpacity: 0.7 * (1 - fsTransitionProg)
     readonly property real borderLayoutThickness: hasFullscreen ? 0 : contentItem.Config.border.thickness
+    readonly property real panelOutlineWidth: 3
 
     property color surfaceColour: Colours.tPalette.m3surface
 
@@ -139,11 +140,63 @@ StyledWindow {
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
-            blurMax: 10
-            shadowBlur: 0.22
-            shadowOpacity: Math.max(0, root.shadowOpacity)
-            shadowColor: Qt.lighter(Colours.palette.m3outlineVariant, 1.25)
-            shadowScale: 1.002
+            blurMax: 15
+            shadowColor: Qt.alpha(Colours.palette.m3shadow, Math.max(0, root.shadowOpacity))
+        }
+
+        BlobGroup {
+            id: outlineGroup
+
+            color: Qt.alpha(Colours.palette.m3outline, 0.48)
+            smoothing: root.contentItem.Config.border.smoothing
+        }
+
+        PanelOutline {
+            panel: panels.dashboard
+            deformAmount: 0.1
+        }
+
+        PanelOutline {
+            panel: panels.launcher
+            deformAmount: 0.1
+        }
+
+        PanelOutline {
+            panel: panels.sessionWrapper
+            deformAmount: 0.2
+            x: panels.sessionWrapper.x + panels.session.x + bar.implicitWidth - root.panelOutlineWidth
+            implicitWidth: panels.session.width + root.panelOutlineWidth * 2
+        }
+
+        PanelOutline {
+            panel: panels.sidebar
+            deformAmount: 0.03
+            implicitHeight: panel.height * (1 / rawDeformMatrix.m22) + root.panelOutlineWidth * 2
+        }
+
+        PanelOutline {
+            panel: panels.osdWrapper
+            deformAmount: 0.25
+            x: panels.osdWrapper.x + panels.osd.x + bar.implicitWidth - root.panelOutlineWidth
+            implicitWidth: panels.osd.width + root.panelOutlineWidth * 2
+        }
+
+        PanelOutline {
+            panel: panels.notifications
+        }
+
+        PanelOutline {
+            panel: panels.utilities
+            deformAmount: panels.sidebar.visible ? 0.1 : 0.15
+        }
+
+        PanelOutline {
+            property real extraWidth: panels.popouts.isDetached ? 0 : 0.2
+
+            panel: panels.popoutsWrapper
+            deformAmount: panels.popouts.isDetached ? 0.05 : panels.popouts.hasCurrent ? 0.15 : 0.1
+            x: panels.popoutsWrapper.x + panels.popouts.x + bar.implicitWidth - panels.popouts.width * extraWidth - root.panelOutlineWidth
+            implicitWidth: panels.popouts.width * (1 + extraWidth) + root.panelOutlineWidth * 2
         }
 
         BlobGroup {
@@ -318,6 +371,20 @@ StyledWindow {
         implicitWidth: panel.width
         implicitHeight: panel.height
         radius: Tokens.rounding.extraLarge
+        deformScale: (deformAmount * Config.appearance.deformScale) / 10000
+    }
+
+    component PanelOutline: BlobRect {
+        required property Item panel
+        property real deformAmount: 0.15
+
+        group: outlineGroup
+        visible: panel.visible
+        x: panel.x + bar.implicitWidth - root.panelOutlineWidth
+        y: panel.y + root.borderThickness - root.panelOutlineWidth
+        implicitWidth: panel.width + root.panelOutlineWidth * 2
+        implicitHeight: panel.height + root.panelOutlineWidth * 2
+        radius: Tokens.rounding.extraLarge + root.panelOutlineWidth
         deformScale: (deformAmount * Config.appearance.deformScale) / 10000
     }
 }

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Services
 import qs.components.misc
 import qs.services
 import qs.modules.nexus
@@ -11,6 +12,7 @@ Scope {
 
     property bool launcherInterrupted
     readonly property bool hasFullscreen: Hypr.focusedWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1) ?? false
+    readonly property bool lyricsServiceActive: SyllableLyrics.loading || SyllableLyrics.hasLyrics
 
     // qmllint disable unresolved-type
     CustomShortcut {
@@ -106,6 +108,41 @@ Scope {
             const visibilities = Visibilities.getForActive();
             visibilities.utilities = !visibilities.utilities;
         }
+    }
+
+    IpcHandler {
+        function listSources(): string {
+            return JSON.stringify(SyllableLyrics.sourceCandidates);
+        }
+
+        function selectedSource(): string {
+            return SyllableLyrics.selectedSourceId;
+        }
+
+        function status(): string {
+            return JSON.stringify({
+                key: SyllableLyrics.loadedKey,
+                provider: SyllableLyrics.provider,
+                message: SyllableLyrics.status,
+                youtubeStarted: SyllableLyrics.youtubeStarted,
+                youtubeFinished: SyllableLyrics.youtubeFinished,
+                youtubeEligible: SyllableLyrics.youtubeEligible,
+                youtubeFailure: SyllableLyrics.youtubeFailure
+            });
+        }
+
+        function selectSource(sourceId: string): bool {
+            SyllableLyrics.selectSource(sourceId);
+            return SyllableLyrics.selectedSourceId === sourceId;
+        }
+
+        function refresh(): void {
+            SyllableLyrics.loadedKey = "";
+            Lyrics.refresh();
+            SyllableLyrics.load();
+        }
+
+        target: "lyrics"
     }
 
     IpcHandler {

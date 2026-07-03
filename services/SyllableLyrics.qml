@@ -34,12 +34,27 @@ Singleton {
     property bool youtubeEligible: false
     property var youtubeResult: null
     property string youtubeFailure: ""
+    property var sourceCandidates: []
+    property var sourceRecords: ({})
+    property int sourceRevision: 0
+    property string selectedSourceId: ""
+    property string pendingNativeSourceId: ""
+    property bool userSelectedSource: false
+    property bool restoringSources: false
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
     readonly property alias model: lyricsModel
     readonly property bool hasLyrics: lyricsModel.count > 0
     readonly property string cacheDir: `${Paths.state}/lyrics-plus`
+    readonly property var trackSync: {
+        const p = Players.active;
+        if (p)
+            Lyrics.setTrack(p.trackArtist, p.trackTitle, p.trackAlbum, p.length);
+        else
+            Lyrics.clearTrack();
+        return p ? `${p.trackArtist || ""} - ${p.trackTitle || ""}` : "";
+    }
 
     onRomanizeLyricsChanged: {
         root.loadedKey = "";
@@ -88,6 +103,151 @@ Singleton {
 
     function _setCachePath(key: string): void {
         root.cachePath = `${root.cacheDir}/${_safeCacheName(`${root.preferredBackend}-${key}`)}.json`;
+    }
+
+    function _sourcePriority(source: string): int {
+        const value = String(source || "").toLowerCase();
+        if (value.includes("paxsenix") || value === "local")
+            return 0;
+        if (value.includes("lrclib"))
+            return 1;
+        if (value.includes("lrcmux") || value.includes("netease"))
+            return 2;
+        if (value.includes("youtube"))
+            return 4;
+        return 3;
+    }
+
+    function _sourceId(source: string, meta: var): string {
+        const provider = String(source || "timed").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const rawId = String(meta?.id || meta?.videoId || meta?.sourceTitle || provider || "timed");
+        const id = rawId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+        return `${provider}:${id || provider}`;
+    }
+
+    function _resetSources(): void {
+        root.sourceCandidates = [];
+        root.sourceRecords = ({});
+        root.sourceRevision++;
+        root.selectedSourceId = "";
+        root.pendingNativeSourceId = "";
+        root.userSelectedSource = false;
+        root.restoringSources = false;
+    }
+
+    function _addSource(lines: var, source: string, message: string, meta: var): string {
+        if (!_hasTimedLines(lines))
+            return "";
+
+        const details = meta || {};
+        const id = details.sourceId || _sourceId(source, details);
+        const record = {
+            id,
+            provider: source || "Timed",
+            title: details.title || details.sourceTitle || _queryTitle(),
+            artist: details.artist || Players.active?.trackArtist || "",
+            detail: message || qsTr("%1 timed lyrics").arg(source || "Timed"),
+            language: details.language || "",
+            priority: _sourcePriority(source),
+            lyrics: lines
+        };
+
+        const records = Object.assign({}, root.sourceRecords);
+        records[id] = record;
+        root.sourceRecords = records;
+
+        const candidates = root.sourceCandidates.filter(candidate => candidate.id !== id);
+        candidates.push({
+            kind: "external",
+            id,
+            provider: record.provider,
+            title: record.title,
+            artist: record.artist,
+            detail: record.detail,
+            language: record.language,
+            priority: record.priority
+        });
+        candidates.sort((a, b) => a.priority - b.priority || String(a.provider).localeCompare(String(b.provider)));
+        root.sourceCandidates = candidates;
+        root.sourceRevision++;
+        _scheduleCacheSave();
+        return id;
+    }
+
+    function _selectSource(id: string, byUser: bool): bool {
+        const record = root.sourceRecords[id];
+        if (!record)
+            return false;
+
+        root.selectedSourceId = id;
+        root.pendingNativeSourceId = "";
+        if (byUser)
+            root.userSelectedSource = true;
+        root.networkSettled = true;
+        _loadLines(record.lyrics, record.provider, record.detail);
+        _scheduleCacheSave();
+        return true;
+    }
+
+    function _autoSelectSource(id: string): bool {
+        if (!id || root.userSelectedSource)
+            return false;
+        const candidate = root.sourceRecords[id];
+        const selected = root.sourceRecords[root.selectedSourceId];
+        if (!selected || candidate.priority < selected.priority)
+            return _selectSource(id, false);
+        return false;
+    }
+
+    function selectSource(id: string): void {
+        _selectSource(id, true);
+    }
+
+    function nativeSourceId(candidate: var): string {
+        if (!candidate)
+            return "";
+        return `native:${Number(candidate.backend)}:${String(candidate.id || "")}`;
+    }
+
+    function selectNativeCandidate(candidate: var): void {
+        if (!candidate)
+            return;
+        root.userSelectedSource = true;
+        root.pendingNativeSourceId = nativeSourceId(candidate);
+        root.status = qsTr("Loading selected lyric track...");
+        Lyrics.setSelectedCandidate(candidate);
+        Qt.callLater(() => _captureNativeSource());
+    }
+
+    function _captureNativeSource(): string {
+        if (!Lyrics.hasLyrics || !_nativeTrackMatches())
+            return "";
+
+        const selected = Lyrics.selectedCandidate;
+        const backend = LyricsBackend.toString(Lyrics.backend);
+        const lines = [];
+        for (let i = 0; i < Lyrics.lyrics.length; i++) {
+            lines.push({
+                time: Math.max(0, Lyrics.timeForIndex(i) - Lyrics.offset) * 1000,
+                duration: 0,
+                text: Lyrics.lyrics[i],
+                syllabus: []
+            });
+        }
+        const selectedId = selected?.id ? nativeSourceId(selected) : `native:${Number(Lyrics.backend)}:${_safeCacheName(root.loadedKey)}`;
+        const id = _addSource(lines, backend, qsTr("%1 synced lyrics").arg(backend), {
+            sourceId: selectedId,
+            id: selected?.id || selectedId,
+            title: selected?.title || _queryTitle(),
+            artist: selected?.artist || Players.active?.trackArtist || ""
+        });
+        if (!id)
+            return "";
+        if (root.pendingNativeSourceId && root.pendingNativeSourceId === id)
+            _selectSource(id, true);
+        else
+            _autoSelectSource(id);
+        return id;
     }
 
     function _queryTitle(): string {
@@ -178,6 +338,7 @@ Singleton {
     }
 
     function _resetYoutubeFallback(): void {
+        youtubeStartDelay.stop();
         youtubeFallbackDelay.stop();
         youtubeTimeout.stop();
         root.youtubePending = false;
@@ -244,6 +405,7 @@ Singleton {
         if (!p || _isPlaceholderTitle(p.trackTitle)) {
             root.requestId++;
             _resetYoutubeFallback();
+            _resetSources();
             root.loadedKey = "";
             root.cachePath = "";
             root.cacheLoaded = false;
@@ -271,6 +433,8 @@ Singleton {
         root.currentIndex = -1;
         root.requestId++;
         _resetYoutubeFallback();
+        if (changedTrack)
+            _resetSources();
         const req = root.requestId;
         root.networkSettled = false;
         root.paxFinished = false;
@@ -309,7 +473,8 @@ Singleton {
         root.muxFinished = false;
         root.muxLyrics = [];
         root.muxSource = "";
-        root.status = root.cacheLoaded ? qsTr("Refreshing Paxsenix lyrics...") : qsTr("Fetching Paxsenix lyrics...");
+        if (!root.selectedSourceId)
+            root.status = root.cacheLoaded ? qsTr("Refreshing Paxsenix lyrics...") : qsTr("Fetching Paxsenix lyrics...");
         _prepareYoutubeFallback(req);
 
         paxPreferenceTimeout.requestId = req;
@@ -318,7 +483,7 @@ Singleton {
         onlineTimeout.restart();
 
         Requests.get(_paxsenixUrl(), text => {
-            if (req !== root.requestId || root.networkSettled)
+            if (req !== root.requestId)
                 return;
             try {
                 const res = JSON.parse(text);
@@ -326,20 +491,22 @@ Singleton {
                 const lines = _extractPaxsenixLines(res);
                 if (!_metadataMatches(meta) || !_hasTimedSyllables(lines))
                     throw new Error("Paxsenix did not return word-timed lyrics");
+                root.paxFinished = true;
                 _settleOnline(req, lines, "Paxsenix", qsTr("Paxsenix word-synced lyrics"));
+                _maybeSettleOnline(req);
             } catch (e) {
                 root.paxFinished = true;
                 _maybeSettleOnline(req);
             }
         }, () => {
-            if (req !== root.requestId || root.networkSettled)
+            if (req !== root.requestId)
                 return;
             root.paxFinished = true;
             _maybeSettleOnline(req);
         }, {}, 7000);
 
         Requests.get(_lrcMuxUrl(), text => {
-            if (req !== root.requestId || root.networkSettled)
+            if (req !== root.requestId)
                 return;
             try {
                 const res = JSON.parse(text);
@@ -354,7 +521,7 @@ Singleton {
             root.muxFinished = true;
             _maybeSettleOnline(req);
         }, () => {
-            if (req !== root.requestId || root.networkSettled)
+            if (req !== root.requestId)
                 return;
             root.muxFinished = true;
             _maybeSettleOnline(req);
@@ -413,47 +580,37 @@ Singleton {
     }
 
     function _maybeSettleOnline(req: int): void {
-        if (req !== root.requestId || root.networkSettled)
+        if (req !== root.requestId)
             return;
-        if (root.paxFinished && _hasTimedLines(root.muxLyrics)) {
+        if (root.paxFinished && _hasTimedLines(root.muxLyrics))
             _settleOnline(req, root.muxLyrics, "LrcMux", qsTr("Fallback: %1").arg(root.muxSource));
-            return;
-        }
         if (root.paxFinished && root.muxFinished)
             _finishOnlineWithNative(req);
     }
 
     function _settleOnline(req: int, lines: var, source: string, message: string): void {
-        if (req !== root.requestId || root.networkSettled)
+        if (req !== root.requestId)
             return;
-        root.networkSettled = true;
-        _resetYoutubeFallback();
-        paxPreferenceTimeout.stop();
-        onlineTimeout.stop();
-        _loadLines(lines, source, message);
-        _saveCache(lines, source);
+        const id = _addSource(lines, source, message, {
+            title: _queryTitle(),
+            artist: Players.active?.trackArtist || ""
+        });
+        if (source === "Paxsenix")
+            paxPreferenceTimeout.stop();
+        _autoSelectSource(id);
     }
 
     function _finishOnlineWithNative(req: int): void {
-        if (req !== root.requestId || root.networkSettled)
+        if (req !== root.requestId)
             return;
-        root.networkSettled = true;
         paxPreferenceTimeout.stop();
         onlineTimeout.stop();
-        if (root.cacheLoaded && root.hasLyrics) {
-            _resetYoutubeFallback();
-            root.loading = false;
-            root.status = qsTr("Cached %1 lyrics; providers unavailable").arg(root.provider || "timed");
-            return;
-        }
-        root.status = qsTr("Paxsenix and LrcMux unavailable; checking native lyrics...");
-        Lyrics.refresh();
-        _setNativeFallback();
-        if (root.ownsTiming)
-            _resetYoutubeFallback();
-        else if (root.youtubeEligible && root.youtubeFinished)
+        const nativeId = _captureNativeSource();
+        if (!nativeId && !Lyrics.loading)
+            Lyrics.refresh();
+        if (root.youtubeEligible && root.youtubeFinished)
             _useYoutubeResult(req);
-        else {
+        else if (!root.selectedSourceId) {
             root.loading = true;
             if (root.youtubeStarted || root.youtubePending)
                 root.status = qsTr("Waiting for YouTube captions...");
@@ -463,7 +620,7 @@ Singleton {
     function _prepareYoutubeFallback(req: int): void {
         const p = Players.active;
         const duration = _trackDuration();
-        if (req !== root.requestId || root.ownsTiming || !p || !p.trackArtist || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
+        if (req !== root.requestId || !p || !p.trackArtist || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
             return;
         }
 
@@ -473,6 +630,23 @@ Singleton {
         root.youtubeEligible = false;
         root.youtubeResult = null;
         root.youtubeFailure = "";
+        youtubeStartDelay.requestId = req;
+        youtubeStartDelay.restart();
+        youtubeFallbackDelay.requestId = req;
+        youtubeFallbackDelay.restart();
+    }
+
+    function _startYoutubeFallback(req: int): void {
+        const p = Players.active;
+        if (req !== root.requestId || !p)
+            return;
+        if (youtubeProcess.running) {
+            youtubeProcess.requestId = -1;
+            youtubeProcess.running = false;
+            youtubeStartDelay.requestId = req;
+            youtubeStartDelay.restart();
+            return;
+        }
         youtubeProcess.requestId = req;
         youtubeProcess.command = [
             "python3",
@@ -485,8 +659,6 @@ Singleton {
             String(_trackDuration())
         ];
         youtubeProcess.running = true;
-        youtubeFallbackDelay.requestId = req;
-        youtubeFallbackDelay.restart();
         youtubeTimeout.requestId = req;
         youtubeTimeout.restart();
     }
@@ -495,21 +667,14 @@ Singleton {
         if (req !== root.requestId)
             return;
 
-        _setNativeFallback();
-        if (root.ownsTiming) {
-            root.networkSettled = true;
-            paxPreferenceTimeout.stop();
-            onlineTimeout.stop();
-            _resetYoutubeFallback();
-            return;
-        }
-
+        _captureNativeSource();
         root.youtubeEligible = true;
-        root.loading = true;
         if (root.youtubeFinished)
             _useYoutubeResult(req);
-        else if (root.youtubeStarted)
+        else if (root.youtubeStarted && !root.selectedSourceId) {
+            root.loading = true;
             root.status = qsTr("Waiting for parallel YouTube captions...");
+        }
     }
 
     function _finishYoutubeFallback(req: int, output: string, errorOutput: string): void {
@@ -525,6 +690,14 @@ Singleton {
                 throw new Error(result.error || errorOutput || "No usable YouTube captions");
             root.youtubeResult = result;
             root.youtubeFailure = "";
+            const language = result.language ? ` (${result.language})` : "";
+            result.sourceId = _addSource(result.lyrics, "YouTube captions", qsTr("YouTube captions%1").arg(language), {
+                videoId: result.videoId || "",
+                sourceTitle: result.sourceTitle || _queryTitle(),
+                title: result.sourceTitle || _queryTitle(),
+                artist: Players.active?.trackArtist || "",
+                language: result.language || ""
+            });
         } catch (e) {
             root.youtubeResult = null;
             root.youtubeFailure = String(e);
@@ -538,33 +711,17 @@ Singleton {
         if (req !== root.requestId)
             return;
 
-        _setNativeFallback();
-        if (root.ownsTiming) {
-            root.networkSettled = true;
-            paxPreferenceTimeout.stop();
-            onlineTimeout.stop();
-            _resetYoutubeFallback();
-            return;
-        }
-
         const result = root.youtubeResult;
         if (result) {
-            root.networkSettled = true;
-            paxPreferenceTimeout.stop();
-            onlineTimeout.stop();
-            _resetYoutubeFallback();
-            const language = result.language ? ` (${result.language})` : "";
-            _loadLines(result.lyrics, "YouTube captions", qsTr("Fallback: YouTube captions%1").arg(language));
-            _saveCache(result.lyrics, "YouTube captions");
-        } else if (root.networkSettled) {
+            _autoSelectSource(result.sourceId || "");
             root.youtubePending = false;
-            root.loading = Lyrics.loading;
-            _setNativeFallback();
-            if (!root.ownsTiming)
-                root.status = qsTr("No lyrics found; YouTube captions unavailable");
+        } else if (root.selectedSourceId) {
+            root.youtubePending = false;
+            root.loading = false;
         } else {
             root.youtubePending = false;
-            root.status = qsTr("YouTube captions unavailable; waiting for other providers...");
+            root.loading = Lyrics.loading;
+            root.status = qsTr("No lyrics found; YouTube captions unavailable");
         }
     }
 
@@ -607,13 +764,33 @@ Singleton {
         updatePosition();
     }
 
-    function _saveCache(lines: var, source: string): void {
+    function _scheduleCacheSave(): void {
+        if (root.restoringSources || !root.loadedKey || !root.cachePath)
+            return;
+        cacheSaveDelay.restart();
+    }
+
+    function _writeSourcesCache(): void {
+        if (!root.loadedKey || !root.cachePath)
+            return;
+        if (saveCache.running) {
+            cacheSaveDelay.restart();
+            return;
+        }
+
+        const sources = [];
+        for (const candidate of root.sourceCandidates) {
+            const record = root.sourceRecords[candidate.id];
+            if (record)
+                sources.push(record);
+        }
         const payload = JSON.stringify({
-            formatVersion: 2,
+            formatVersion: 3,
             key: root.loadedKey,
-            provider: source || root.provider,
             romanized: root.romanizeLyrics,
-            lyrics: lines
+            selectedSourceId: root.selectedSourceId,
+            userSelected: root.userSelectedSource,
+            sources
         });
         saveCache.command = ["sh", "-c", `mkdir -p ${_shellQuote(root.cacheDir)} && printf %s ${_shellQuote(payload)} > ${_shellQuote(root.cachePath)}`];
         saveCache.running = true;
@@ -691,10 +868,11 @@ Singleton {
         interval: 7000
         repeat: false
         onTriggered: {
-            if (requestId !== root.requestId || root.networkSettled)
+            if (requestId !== root.requestId)
                 return;
             root.paxFinished = true;
-            root.status = qsTr("Paxsenix timed out; using word-sync fallback");
+            if (!root.selectedSourceId)
+                root.status = qsTr("Paxsenix timed out; using word-sync fallback");
             root._maybeSettleOnline(requestId);
         }
     }
@@ -707,7 +885,7 @@ Singleton {
         interval: 15000
         repeat: false
         onTriggered: {
-            if (requestId !== root.requestId || root.networkSettled)
+            if (requestId !== root.requestId)
                 return;
             root.paxFinished = true;
             root.muxFinished = true;
@@ -716,11 +894,21 @@ Singleton {
     }
 
     Timer {
+        id: youtubeStartDelay
+
+        property int requestId: -1
+
+        interval: 180
+        repeat: false
+        onTriggered: root._startYoutubeFallback(requestId)
+    }
+
+    Timer {
         id: youtubeFallbackDelay
 
         property int requestId: -1
 
-        interval: 2000
+        interval: 7000
         repeat: false
         onTriggered: root._makeYoutubeEligible(requestId)
     }
@@ -757,15 +945,49 @@ Singleton {
                 return;
             try {
                 const cached = JSON.parse(text());
-                const currentFormat = cached.provider !== "YouTube captions" || cached.formatVersion === 2;
-                if (currentFormat && cached.key === root.loadedKey && _hasTimedLines(cached.lyrics)) {
+                if (cached.key !== root.loadedKey)
+                    return;
+
+                root.restoringSources = true;
+                let selectedId = "";
+                if (cached.formatVersion === 3 && Array.isArray(cached.sources)) {
+                    for (const source of cached.sources || []) {
+                        const id = root._addSource(source.lyrics || [], source.provider || "Cached", source.detail || qsTr("Cached timed lyrics"), {
+                            sourceId: source.id || "",
+                            title: source.title || root._queryTitle(),
+                            artist: source.artist || Players.active?.trackArtist || "",
+                            language: source.language || ""
+                        });
+                        if (!selectedId)
+                            selectedId = id;
+                    }
+                    if (cached.selectedSourceId && root.sourceRecords[cached.selectedSourceId])
+                        selectedId = cached.selectedSourceId;
+                    root.userSelectedSource = !!cached.userSelected;
+                } else if (root._hasTimedLines(cached.lyrics)) {
+                    selectedId = root._addSource(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"), {
+                        title: root._queryTitle(),
+                        artist: Players.active?.trackArtist || ""
+                    });
+                }
+                root.restoringSources = false;
+                if (selectedId) {
                     root.cacheLoaded = true;
-                    root._loadLines(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"));
+                    root._selectSource(selectedId, false);
                 }
             } catch (e) {
+                root.restoringSources = false;
                 root.cacheLoaded = false;
             }
         }
+    }
+
+    Timer {
+        id: cacheSaveDelay
+
+        interval: 180
+        repeat: false
+        onTriggered: root._writeSourcesCache()
     }
 
     Process {
@@ -810,14 +1032,10 @@ Singleton {
     Connections {
         target: Lyrics
         function onLyricsChanged(): void {
-            if (root.networkSettled || !root._usePaxsenix()) {
-                root._setNativeFallback();
-                if (root.ownsTiming)
-                    root._resetYoutubeFallback();
-            }
+            root._captureNativeSource();
         }
         function onLoadingChanged(): void {
-            if (!root.ownsTiming && (root.networkSettled || !root._usePaxsenix()))
+            if (!root.selectedSourceId)
                 root.loading = Lyrics.loading || root.youtubePending || root.youtubeStarted;
         }
     }

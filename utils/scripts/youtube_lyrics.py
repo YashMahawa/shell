@@ -18,6 +18,16 @@ _cue_re = re.compile(
     re.IGNORECASE,
 )
 
+_title_aliases = {
+    "sally kim": {
+        "never leave my mind": [
+            "a song I wrote for my crush in high school",
+            "I wrote a song for my crush",
+            "Be Mine",
+        ],
+    },
+}
+
 
 def _stop_child(*_args):
     for child in list(_children):
@@ -56,6 +66,17 @@ def _tokens(value):
         "topic",
     }
     return {word for word in re.findall(r"[\w]+", str(value or "").casefold()) if len(word) > 1 and word not in ignored}
+
+
+def _normalise_lookup(value):
+    return " ".join(re.findall(r"[\w]+", str(value or "").casefold()))
+
+
+def _search_titles(title, artist):
+    artist_key = _normalise_lookup(artist)
+    title_key = _normalise_lookup(title)
+    aliases = _title_aliases.get(artist_key, {}).get(title_key, [])
+    return list(dict.fromkeys([*aliases, title]))
 
 
 def _caption_sets(entry):
@@ -293,14 +314,26 @@ def main():
     parser.add_argument("--duration", type=int, default=0)
     args = parser.parse_args()
 
-    query = " ".join(part for part in (args.artist, args.title, "lyrics") if part).strip()
     try:
         if not args.artist.strip() or args.duration > 900:
             raise RuntimeError("The active media does not look like a song")
-        candidate = _run_fast_search(query, args.title, args.artist, args.duration)
+        searches = _search_titles(args.title, args.artist)
+        candidate = None
+        matched_title = args.title
+        for search_title in searches:
+            query = " ".join(part for part in (args.artist, search_title, "lyrics") if part).strip()
+            candidate = _run_fast_search(query, search_title, args.artist, args.duration)
+            if candidate:
+                matched_title = search_title
+                break
         if not candidate:
-            entries = _run_search(query, args.title, args.artist, args.duration)
-            candidate = _pick_candidate(entries, args.title, args.artist, args.duration)
+            for search_title in searches:
+                query = " ".join(part for part in (args.artist, search_title, "lyrics") if part).strip()
+                entries = _run_search(query, search_title, args.artist, args.duration)
+                candidate = _pick_candidate(entries, search_title, args.artist, args.duration)
+                if candidate:
+                    matched_title = search_title
+                    break
         if not candidate:
             raise RuntimeError("No duration-matched YouTube captions found")
         url, language, source_type = _pick_caption(candidate)
@@ -313,6 +346,7 @@ def main():
             "success": True,
             "provider": "YouTube captions",
             "sourceTitle": candidate.get("title") or "",
+            "matchedTitle": matched_title,
             "videoId": candidate.get("id") or "",
             "language": language,
             "captionType": source_type,

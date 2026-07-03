@@ -14,15 +14,6 @@ import qs.services
 Item {
     id: root
 
-    // Funny binding hack to make lyrics update
-    readonly property var _: {
-        const p = Players.active;
-        if (p)
-            Lyrics.setTrack(p.trackArtist, p.trackTitle, p.trackAlbum, p.length);
-        else
-            Lyrics.clearTrack();
-    }
-
     readonly property real fadeAmount: 0.1
     property bool flag
     property int lyricRevision: SyllableLyrics.revision
@@ -345,7 +336,7 @@ Item {
                     return "#" + r + g + bl;
                 }
 
-                const pos = root.smoothPosition;
+                const pos = root.smoothPosition - Lyrics.offset + 0.1;
                 const activeColor = colorToHex(Colours.palette.m3primary);
                 const inactiveColor = interpolateColor("#121212", activeColor, 0.28);
                 let html = "";
