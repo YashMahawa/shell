@@ -178,6 +178,31 @@ def _load_video(entry):
         return None
 
 
+def _run_fast_search(query, title, artist, duration):
+    command = [
+        "yt-dlp",
+        "--ignore-config",
+        "--no-warnings",
+        "--socket-timeout",
+        "8",
+        "--no-check-formats",
+        "--extractor-args",
+        "youtube:skip=hls,dash",
+        "--playlist-items",
+        "1",
+        "--dump-single-json",
+        f"ytsearch1:{query}",
+    ]
+    try:
+        entries = json.loads(_run_process(command, 10)).get("entries") or []
+    except Exception:
+        return None
+    candidate = entries[0] if entries else None
+    if candidate and _candidate_score(candidate, title, artist, duration) is not None:
+        return candidate
+    return None
+
+
 def _run_search(query, title, artist, duration):
     command = [
         "yt-dlp",
@@ -272,8 +297,10 @@ def main():
     try:
         if not args.artist.strip() or args.duration > 900:
             raise RuntimeError("The active media does not look like a song")
-        entries = _run_search(query, args.title, args.artist, args.duration)
-        candidate = _pick_candidate(entries, args.title, args.artist, args.duration)
+        candidate = _run_fast_search(query, args.title, args.artist, args.duration)
+        if not candidate:
+            entries = _run_search(query, args.title, args.artist, args.duration)
+            candidate = _pick_candidate(entries, args.title, args.artist, args.duration)
         if not candidate:
             raise RuntimeError("No duration-matched YouTube captions found")
         url, language, source_type = _pick_caption(candidate)

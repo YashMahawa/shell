@@ -509,7 +509,7 @@ Singleton {
         if (root.youtubeFinished)
             _useYoutubeResult(req);
         else if (root.youtubeStarted)
-            root.status = qsTr("Other providers took over 10 seconds; waiting for YouTube captions...");
+            root.status = qsTr("Waiting for parallel YouTube captions...");
     }
 
     function _finishYoutubeFallback(req: int, output: string, errorOutput: string): void {
@@ -720,7 +720,7 @@ Singleton {
 
         property int requestId: -1
 
-        interval: 10000
+        interval: 2000
         repeat: false
         onTriggered: root._makeYoutubeEligible(requestId)
     }
