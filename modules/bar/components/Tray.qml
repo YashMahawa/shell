@@ -16,7 +16,7 @@ StyledRect {
     readonly property alias expandIcon: expandIcon
 
     readonly property int padding: Config.bar.tray.background ? Tokens.padding.medium : Tokens.padding.extraSmall
-    readonly property int spacing: Config.bar.tray.background ? Tokens.spacing.small : 0
+    readonly property int spacing: Config.bar.tray.background ? Tokens.spacing.medium : Tokens.spacing.extraSmall
     readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     property bool expanded
@@ -26,7 +26,10 @@ StyledRect {
             return (isVertical ? layout.implicitHeight : layout.implicitWidth) + padding * 2;
         const expandIconSize = isVertical ? expandIcon.implicitHeight : expandIcon.implicitWidth;
         const layoutSize = isVertical ? layout.implicitHeight : layout.implicitWidth;
-        return (expanded ? expandIconSize + layoutSize + spacing : expandIconSize) + padding * 2;
+        const pad = (Config.bar.tray.background ? Tokens.padding.extraSmall : 0) + padding;
+        if (expanded)
+            return expandIconSize + layoutSize + spacing + pad;
+        return Math.max(Config.bar.tray.background ? (isVertical ? width : height) : 0, expandIconSize + pad);
     }
 
     clip: true
@@ -93,10 +96,11 @@ StyledRect {
                 anchors.verticalCenter: !root.isVertical ? parent.verticalCenter : undefined
                 anchors.bottom: root.isVertical ? parent.bottom : undefined
                 anchors.right: !root.isVertical ? parent.right : undefined
-                anchors.bottomMargin: root.isVertical ? (Config.bar.tray.background ? Tokens.padding.extraSmall : -Tokens.padding.extraSmall) : 0
-                anchors.rightMargin: !root.isVertical ? (Config.bar.tray.background ? Tokens.padding.extraSmall : -Tokens.padding.extraSmall) : 0
+                anchors.bottomMargin: root.isVertical ? (Config.bar.tray.background ? Tokens.padding.extraSmall : -Tokens.padding.small) : 0
+                anchors.rightMargin: !root.isVertical ? (Config.bar.tray.background ? Tokens.padding.extraSmall : -Tokens.padding.small) : 0
                 text: "expand_less"
-                fontStyle: Tokens.font.icon.large
+                color: Colours.palette.m3onSurfaceVariant
+                fontStyle: Tokens.font.icon.medium
                 rotation: root.expanded ? (root.isVertical ? 180 : -90) : (root.isVertical ? 0 : 90)
 
                 Behavior on rotation {
