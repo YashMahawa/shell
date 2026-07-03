@@ -312,6 +312,10 @@ Item {
             readonly property int lyricIndex: index
             readonly property string highlightedText: {
                 const baseText = lyric.lyricLine || ". . .";
+                function escapeHtml(s) {
+                    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                }
+
                 let syllabusArray = [];
                 if (SyllableLyrics.hasSyllables && lyric.syllabus) {
                     try {
@@ -321,7 +325,7 @@ Item {
                     }
                 }
                 if (!ListView.isCurrentItem || syllabusArray.length === 0)
-                    return baseText;
+                    return escapeHtml(baseText);
 
                 function colorToHex(c) {
                     const s = c.toString();
@@ -341,23 +345,25 @@ Item {
                     return "#" + r + g + bl;
                 }
 
-                function escapeHtml(s) {
-                    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                }
-
                 const pos = root.smoothPosition;
                 const activeColor = colorToHex(Colours.palette.m3primary);
                 const inactiveColor = interpolateColor("#121212", activeColor, 0.28);
                 let html = "";
+                let cursor = 0;
+                let matched = 0;
+                let lastEnd = -1;
+                const lowerBase = baseText.toLocaleLowerCase();
 
-                for (const syl of syllabusArray) {
-                    const text = escapeHtml(syl.text || "");
-                    const start = Number(syl.time || 0);
-                    const duration = Math.max(Number(syl.duration || 0.2), 0.05);
+                function appendStatic(text, factor) {
+                    if (text)
+                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${escapeHtml(text)}</span>`;
+                }
+
+                function appendTimed(text, start, duration) {
                     if (text.length <= 1 || pos < start || pos >= start + duration) {
                         const factor = pos >= start ? 1 : 0;
-                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${text}</span>`;
-                        continue;
+                        appendStatic(text, factor);
+                        return;
                     }
 
                     const charDuration = duration / text.length;
@@ -366,10 +372,30 @@ Item {
                         let factor = 0;
                         if (pos >= charStart)
                             factor = pos >= charStart + charDuration ? 1 : (pos - charStart) / charDuration;
-                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${text[i]}</span>`;
+                        html += `<span style="color: ${interpolateColor(inactiveColor, activeColor, factor)}">${escapeHtml(text[i])}</span>`;
                     }
                 }
 
+                for (const syl of syllabusArray) {
+                    const rawText = String(syl.text || "").trim();
+                    if (!rawText)
+                        continue;
+                    const start = Number(syl.time || 0);
+                    const duration = Math.max(Number(syl.duration || 0.2), 0.05);
+                    const matchIndex = lowerBase.indexOf(rawText.toLocaleLowerCase(), cursor);
+                    if (matchIndex < 0)
+                        continue;
+                    appendStatic(baseText.slice(cursor, matchIndex), pos >= start ? 1 : 0);
+                    const matchedText = baseText.slice(matchIndex, matchIndex + rawText.length);
+                    appendTimed(matchedText, start, duration);
+                    cursor = matchIndex + rawText.length;
+                    lastEnd = start + duration;
+                    matched++;
+                }
+
+                if (matched === 0)
+                    return escapeHtml(baseText);
+                appendStatic(baseText.slice(cursor), pos >= lastEnd ? 1 : 0);
                 return html;
             }
 

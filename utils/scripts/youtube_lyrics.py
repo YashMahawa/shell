@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import concurrent.futures
 import html
 import json
 import os
@@ -11,14 +12,19 @@ import sys
 import urllib.request
 
 
-_child = None
+_children = set()
+_cue_re = re.compile(
+    r"\[(?:music(?:\s+playing|\s+and\s+singing)?|singing(?:\s+and\s+music)?|instrumental|applause|cheering|laughter|humming|vocalizing)\s*\]",
+    re.IGNORECASE,
+)
 
 
 def _stop_child(*_args):
-    global _child
-    if _child is not None and _child.poll() is None:
+    for child in list(_children):
+        if child.poll() is not None:
+            continue
         try:
-            os.killpg(_child.pid, signal.SIGTERM)
+            os.killpg(child.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
     raise SystemExit(1)
@@ -28,6 +34,13 @@ def _clean(value):
     value = html.unescape(str(value or ""))
     value = re.sub(r"<[^>]+>", "", value)
     return re.sub(r"\s+", " ", value.replace("\n", " ")).strip()
+
+
+def _clean_caption(value):
+    value = re.sub(r"^(?:>>\s*)+", "", _clean(value))
+    value = _cue_re.sub(" ", value)
+    value = re.sub(r"^[\s♪♫]+|[\s♪♫]+$", "", value)
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _tokens(value):
@@ -60,10 +73,7 @@ def _has_captions(entry):
     )
 
 
-def _candidate_score(entry, title, artist, duration):
-    if not _has_captions(entry):
-        return None
-
+def _metadata_score(entry, title, artist, duration):
     candidate_title = str(entry.get("title") or "")
     candidate_meta = " ".join(
         str(entry.get(key) or "") for key in ("title", "track", "artist", "uploader", "channel")
@@ -86,6 +96,12 @@ def _candidate_score(entry, title, artist, duration):
     lyric_bonus = 4 if "lyric" in candidate_title.casefold() else 0
     official_bonus = 2 if "official" in candidate_title.casefold() else 0
     return title_overlap * 55 + artist_overlap * 30 + manual_bonus + lyric_bonus + official_bonus - duration_delta
+
+
+def _candidate_score(entry, title, artist, duration):
+    if not _has_captions(entry):
+        return None
+    return _metadata_score(entry, title, artist, duration)
 
 
 def _pick_candidate(entries, title, artist, duration):
@@ -118,37 +134,81 @@ def _pick_caption(entry):
     return None, "", ""
 
 
-def _run_search(query):
-    global _child
-    command = [
-        "yt-dlp",
-        "--ignore-config",
-        "--no-warnings",
-        "--socket-timeout",
-        "8",
-        "--playlist-items",
-        "1:5",
-        "--dump-single-json",
-        f"ytsearch5:{query}",
-    ]
-    _child = subprocess.Popen(
+def _run_process(command, timeout):
+    child = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
     )
+    _children.add(child)
     try:
-        stdout, stderr = _child.communicate(timeout=26)
+        stdout, stderr = child.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(_child.pid, signal.SIGTERM)
-        _child.communicate()
-        raise RuntimeError("YouTube search timed out")
+        os.killpg(child.pid, signal.SIGTERM)
+        child.communicate()
+        raise RuntimeError("YouTube request timed out")
     finally:
-        _child = None
+        _children.discard(child)
     if not stdout.strip():
-        raise RuntimeError(_clean(stderr) or "YouTube search returned no results")
-    return json.loads(stdout).get("entries") or []
+        raise RuntimeError(_clean(stderr) or "YouTube returned no data")
+    return stdout
+
+
+def _load_video(entry):
+    video_id = entry.get("id")
+    if not video_id:
+        return None
+    command = [
+        "yt-dlp",
+        "--ignore-config",
+        "--no-warnings",
+        "--socket-timeout",
+        "8",
+        "--no-check-formats",
+        "--extractor-args",
+        "youtube:skip=hls,dash",
+        "--dump-single-json",
+        f"https://www.youtube.com/watch?v={video_id}",
+    ]
+    try:
+        return json.loads(_run_process(command, 14))
+    except Exception:
+        return None
+
+
+def _run_search(query, title, artist, duration):
+    command = [
+        "yt-dlp",
+        "--ignore-config",
+        "--no-warnings",
+        "--socket-timeout",
+        "8",
+        "--flat-playlist",
+        "--playlist-items",
+        "1:8",
+        "--dump-single-json",
+        f"ytsearch8:{query}",
+    ]
+    entries = json.loads(_run_process(command, 12)).get("entries") or []
+    ranked = []
+    for entry in entries:
+        score = _metadata_score(entry, title, artist, duration)
+        if score is not None:
+            ranked.append((score, entry))
+    candidates = [entry for _score, entry in sorted(ranked, key=lambda item: item[0], reverse=True)[:6]]
+    if not candidates:
+        return []
+
+    loaded = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(candidates))) as executor:
+        futures = [executor.submit(_load_video, entry) for entry in candidates]
+        for future in concurrent.futures.as_completed(futures):
+            entry = future.result()
+            if entry:
+                loaded.append(entry)
+    return loaded
 
 
 def _fetch_json(url):
@@ -161,7 +221,7 @@ def _parse_events(payload):
     lines = []
     for event in payload.get("events") or []:
         segments = event.get("segs") or []
-        text = _clean("".join(str(segment.get("utf8") or "") for segment in segments))
+        text = _clean_caption("".join(str(segment.get("utf8") or "") for segment in segments))
         if not text:
             continue
 
@@ -175,7 +235,11 @@ def _parse_events(payload):
             continue
 
         syllables = []
-        timed = [segment for segment in segments if segment.get("tOffsetMs") is not None and _clean(segment.get("utf8"))]
+        timed = [
+            segment
+            for segment in segments
+            if segment.get("tOffsetMs") is not None and _clean_caption(segment.get("utf8"))
+        ]
         for index, segment in enumerate(timed):
             word_start = start + int(segment.get("tOffsetMs") or 0)
             if index + 1 < len(timed):
@@ -186,7 +250,7 @@ def _parse_events(payload):
                 {
                     "time": word_start,
                     "duration": max(1, word_end - word_start),
-                    "text": _clean(segment.get("utf8")),
+                    "text": _clean_caption(segment.get("utf8")),
                 }
             )
 
@@ -208,7 +272,7 @@ def main():
     try:
         if not args.artist.strip() or args.duration > 900:
             raise RuntimeError("The active media does not look like a song")
-        entries = _run_search(query)
+        entries = _run_search(query, args.title, args.artist, args.duration)
         candidate = _pick_candidate(entries, args.title, args.artist, args.duration)
         if not candidate:
             raise RuntimeError("No duration-matched YouTube captions found")

@@ -30,6 +30,10 @@ Singleton {
     property string muxSource: ""
     property bool youtubePending: false
     property bool youtubeStarted: false
+    property bool youtubeFinished: false
+    property bool youtubeEligible: false
+    property var youtubeResult: null
+    property string youtubeFailure: ""
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
@@ -178,6 +182,11 @@ Singleton {
         youtubeTimeout.stop();
         root.youtubePending = false;
         root.youtubeStarted = false;
+        root.youtubeFinished = false;
+        root.youtubeEligible = false;
+        root.youtubeResult = null;
+        root.youtubeFailure = "";
+        youtubeProcess.requestId = -1;
         if (youtubeProcess.running)
             youtubeProcess.running = false;
     }
@@ -301,6 +310,7 @@ Singleton {
         root.muxLyrics = [];
         root.muxSource = "";
         root.status = root.cacheLoaded ? qsTr("Refreshing Paxsenix lyrics...") : qsTr("Fetching Paxsenix lyrics...");
+        _prepareYoutubeFallback(req);
 
         paxPreferenceTimeout.requestId = req;
         paxPreferenceTimeout.restart();
@@ -436,35 +446,33 @@ Singleton {
             root.status = qsTr("Cached %1 lyrics; providers unavailable").arg(root.provider || "timed");
             return;
         }
-        root.youtubePending = true;
-        root.youtubeStarted = false;
-        youtubeFallbackDelay.requestId = req;
-        youtubeFallbackDelay.restart();
-        root.status = qsTr("Trying LRCLIB and NetEase before YouTube captions...");
+        root.status = qsTr("Paxsenix and LrcMux unavailable; checking native lyrics...");
         Lyrics.refresh();
         _setNativeFallback();
         if (root.ownsTiming)
             _resetYoutubeFallback();
-        else
+        else if (root.youtubeEligible && root.youtubeFinished)
+            _useYoutubeResult(req);
+        else {
             root.loading = true;
+            if (root.youtubeStarted || root.youtubePending)
+                root.status = qsTr("Waiting for YouTube captions...");
+        }
     }
 
-    function _startYoutubeFallback(req: int): void {
+    function _prepareYoutubeFallback(req: int): void {
         const p = Players.active;
         const duration = _trackDuration();
         if (req !== root.requestId || root.ownsTiming || !p || !p.trackArtist || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
-            _resetYoutubeFallback();
-            root.loading = Lyrics.loading;
-            if (!root.ownsTiming)
-                root.status = qsTr("No lyrics found");
             return;
         }
 
-        root.youtubePending = false;
+        root.youtubePending = true;
         root.youtubeStarted = true;
-        root.loading = true;
-        root.provider = "YouTube";
-        root.status = qsTr("Last fallback: searching YouTube captions...");
+        root.youtubeFinished = false;
+        root.youtubeEligible = false;
+        root.youtubeResult = null;
+        root.youtubeFailure = "";
         youtubeProcess.requestId = req;
         youtubeProcess.command = [
             "python3",
@@ -477,8 +485,31 @@ Singleton {
             String(_trackDuration())
         ];
         youtubeProcess.running = true;
+        youtubeFallbackDelay.requestId = req;
+        youtubeFallbackDelay.restart();
         youtubeTimeout.requestId = req;
         youtubeTimeout.restart();
+    }
+
+    function _makeYoutubeEligible(req: int): void {
+        if (req !== root.requestId)
+            return;
+
+        _setNativeFallback();
+        if (root.ownsTiming) {
+            root.networkSettled = true;
+            paxPreferenceTimeout.stop();
+            onlineTimeout.stop();
+            _resetYoutubeFallback();
+            return;
+        }
+
+        root.youtubeEligible = true;
+        root.loading = true;
+        if (root.youtubeFinished)
+            _useYoutubeResult(req);
+        else if (root.youtubeStarted)
+            root.status = qsTr("Other providers took over 10 seconds; waiting for YouTube captions...");
     }
 
     function _finishYoutubeFallback(req: int, output: string, errorOutput: string): void {
@@ -486,20 +517,54 @@ Singleton {
             return;
 
         youtubeTimeout.stop();
-        root.youtubePending = false;
         root.youtubeStarted = false;
+        root.youtubeFinished = true;
         try {
             const result = JSON.parse(output || "{}");
             if (!result.success || !_hasTimedLines(result.lyrics || []))
                 throw new Error(result.error || errorOutput || "No usable YouTube captions");
-            const language = result.language ? ` (${result.language})` : "";
-            _loadLines(result.lyrics, "YouTube captions", qsTr("Last fallback: YouTube captions%1").arg(language));
-            _saveCache(result.lyrics, "YouTube captions");
+            root.youtubeResult = result;
+            root.youtubeFailure = "";
         } catch (e) {
+            root.youtubeResult = null;
+            root.youtubeFailure = String(e);
+        }
+
+        if (root.youtubeEligible)
+            _useYoutubeResult(req);
+    }
+
+    function _useYoutubeResult(req: int): void {
+        if (req !== root.requestId)
+            return;
+
+        _setNativeFallback();
+        if (root.ownsTiming) {
+            root.networkSettled = true;
+            paxPreferenceTimeout.stop();
+            onlineTimeout.stop();
+            _resetYoutubeFallback();
+            return;
+        }
+
+        const result = root.youtubeResult;
+        if (result) {
+            root.networkSettled = true;
+            paxPreferenceTimeout.stop();
+            onlineTimeout.stop();
+            _resetYoutubeFallback();
+            const language = result.language ? ` (${result.language})` : "";
+            _loadLines(result.lyrics, "YouTube captions", qsTr("Fallback: YouTube captions%1").arg(language));
+            _saveCache(result.lyrics, "YouTube captions");
+        } else if (root.networkSettled) {
+            root.youtubePending = false;
             root.loading = Lyrics.loading;
             _setNativeFallback();
             if (!root.ownsTiming)
                 root.status = qsTr("No lyrics found; YouTube captions unavailable");
+        } else {
+            root.youtubePending = false;
+            root.status = qsTr("YouTube captions unavailable; waiting for other providers...");
         }
     }
 
@@ -544,6 +609,7 @@ Singleton {
 
     function _saveCache(lines: var, source: string): void {
         const payload = JSON.stringify({
+            formatVersion: 2,
             key: root.loadedKey,
             provider: source || root.provider,
             romanized: root.romanizeLyrics,
@@ -654,9 +720,9 @@ Singleton {
 
         property int requestId: -1
 
-        interval: 9000
+        interval: 10000
         repeat: false
-        onTriggered: root._startYoutubeFallback(requestId)
+        onTriggered: root._makeYoutubeEligible(requestId)
     }
 
     Timer {
@@ -669,14 +735,15 @@ Singleton {
         onTriggered: {
             if (requestId !== root.requestId)
                 return;
+            youtubeProcess.requestId = -1;
             if (youtubeProcess.running)
                 youtubeProcess.running = false;
-            root.youtubePending = false;
             root.youtubeStarted = false;
-            root.loading = Lyrics.loading;
-            root._setNativeFallback();
-            if (!root.ownsTiming)
-                root.status = qsTr("No lyrics found; YouTube captions timed out");
+            root.youtubeFinished = true;
+            root.youtubeResult = null;
+            root.youtubeFailure = "YouTube captions timed out";
+            if (root.youtubeEligible)
+                root._useYoutubeResult(requestId);
         }
     }
 
@@ -690,7 +757,8 @@ Singleton {
                 return;
             try {
                 const cached = JSON.parse(text());
-                if (cached.key === root.loadedKey && _hasTimedLines(cached.lyrics)) {
+                const currentFormat = cached.provider !== "YouTube captions" || cached.formatVersion === 2;
+                if (currentFormat && cached.key === root.loadedKey && _hasTimedLines(cached.lyrics)) {
                     root.cacheLoaded = true;
                     root._loadLines(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"));
                 }
