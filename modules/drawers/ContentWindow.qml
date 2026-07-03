@@ -139,8 +139,11 @@ StyledWindow {
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
-            blurMax: 15
-            shadowColor: Qt.alpha(Colours.palette.m3shadow, Math.max(0, root.shadowOpacity))
+            blurMax: 10
+            shadowBlur: 0.22
+            shadowOpacity: Math.max(0, root.shadowOpacity)
+            shadowColor: Qt.lighter(Colours.palette.m3outlineVariant, 1.25)
+            shadowScale: 1.002
         }
 
         BlobGroup {
