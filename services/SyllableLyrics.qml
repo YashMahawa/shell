@@ -50,10 +50,10 @@ Singleton {
     readonly property var trackSync: {
         const p = Players.active;
         if (p)
-            Lyrics.setTrack(p.trackArtist, p.trackTitle, p.trackAlbum, p.length);
+            Lyrics.setTrack(_queryArtist(), _queryTitle(), p.trackAlbum, p.length);
         else
             Lyrics.clearTrack();
-        return p ? `${p.trackArtist || ""} - ${p.trackTitle || ""}` : "";
+        return p ? `${_queryArtist()} - ${_queryTitle()}` : "";
     }
 
     onRomanizeLyricsChanged: {
@@ -70,7 +70,7 @@ Singleton {
         const p = Players.active;
         if (!p)
             return "";
-        return `${p.trackArtist || ""} - ${p.trackTitle || ""}`;
+        return `${_queryArtist()} - ${_queryTitle()}`;
     }
 
     function _trackDuration(): int {
@@ -126,6 +126,7 @@ Singleton {
     }
 
     function _resetSources(): void {
+        nativeSelectionTimeout.stop();
         root.sourceCandidates = [];
         root.sourceRecords = ({});
         root.sourceRevision++;
@@ -145,7 +146,7 @@ Singleton {
             id,
             provider: source || "Timed",
             title: details.title || details.sourceTitle || _queryTitle(),
-            artist: details.artist || Players.active?.trackArtist || "",
+            artist: details.artist || _queryArtist(),
             detail: message || qsTr("%1 timed lyrics").arg(source || "Timed"),
             language: details.language || "",
             priority: _sourcePriority(source),
@@ -181,6 +182,7 @@ Singleton {
 
         root.selectedSourceId = id;
         root.pendingNativeSourceId = "";
+        nativeSelectionTimeout.stop();
         if (byUser)
             root.userSelectedSource = true;
         root.networkSettled = true;
@@ -212,10 +214,13 @@ Singleton {
     function selectNativeCandidate(candidate: var): void {
         if (!candidate)
             return;
+        nativeSelectionTimeout.previousSourceId = root.selectedSourceId;
+        nativeSelectionTimeout.previousUserSelected = root.userSelectedSource;
         root.userSelectedSource = true;
         root.pendingNativeSourceId = nativeSourceId(candidate);
         root.status = qsTr("Loading selected lyric track...");
-        Lyrics.setSelectedCandidate(candidate);
+        nativeSelectionTimeout.restart();
+        Lyrics.selectedCandidate = candidate;
         Qt.callLater(() => _captureNativeSource());
     }
 
@@ -239,7 +244,7 @@ Singleton {
             sourceId: selectedId,
             id: selected?.id || selectedId,
             title: selected?.title || _queryTitle(),
-            artist: selected?.artist || Players.active?.trackArtist || ""
+            artist: selected?.artist || _queryArtist()
         });
         if (!id)
             return "";
@@ -258,15 +263,21 @@ Singleton {
             .trim();
     }
 
+    function _queryArtist(): string {
+        const raw = String(Players.active?.trackArtist || "").trim();
+        const normalised = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        return normalised === "teng nong" ? "Sally Kim" : raw;
+    }
+
     function _isPlaceholderTitle(title: string): bool {
         const value = String(title || "").trim().toLowerCase();
         return !value || value === "a site is playing media" || value === "playing media" || value === "unknown title";
     }
 
     function _paxsenixUrl(): string {
-        const p = Players.active;
-        const query = `${_queryTitle()} ${p?.trackArtist || ""}`.trim();
-        let url = `https://lyrics.paxsenix.org/musixmatch/lyrics?type=word&q=${encodeURIComponent(query)}&t=${encodeURIComponent(_queryTitle())}&a=${encodeURIComponent(p?.trackArtist || "")}&enchanted=true&alt=true&parse=true&v=2`;
+        const artist = _queryArtist();
+        const query = `${_queryTitle()} ${artist}`.trim();
+        let url = `https://lyrics.paxsenix.org/musixmatch/lyrics?type=word&q=${encodeURIComponent(query)}&t=${encodeURIComponent(_queryTitle())}&a=${encodeURIComponent(artist)}&enchanted=true&alt=true&parse=true&v=2`;
         const duration = _trackDuration();
         if (duration > 0)
             url += `&d=${duration}`;
@@ -274,8 +285,7 @@ Singleton {
     }
 
     function _lrcMuxUrl(): string {
-        const p = Players.active;
-        let url = `https://api.lrcmux.dev/compat/kpoe/v2/lyrics/get?title=${encodeURIComponent(_queryTitle())}&artist=${encodeURIComponent(p?.trackArtist || "")}`;
+        let url = `https://api.lrcmux.dev/compat/kpoe/v2/lyrics/get?title=${encodeURIComponent(_queryTitle())}&artist=${encodeURIComponent(_queryArtist())}`;
         const duration = _trackDuration();
         if (duration > 0)
             url += `&duration=${duration}`;
@@ -292,7 +302,7 @@ Singleton {
         }
 
         const targetTitle = clean(p.trackTitle);
-        const targetArtist = clean(p.trackArtist).split(/[&,xX]/)[0].trim();
+        const targetArtist = clean(_queryArtist()).split(/[&,xX]/)[0].trim();
         const returnedTitle = clean(meta.title);
         const returnedArtist = clean(meta.artist).split(/[&,xX]/)[0].trim();
 
@@ -322,7 +332,7 @@ Singleton {
         if (!activeTitle || !nativeTitle || activeTitle !== nativeTitle)
             return false;
 
-        const activeArtist = _normaliseTrackText(p.trackArtist).split(/[&,xX]/)[0].trim();
+        const activeArtist = _normaliseTrackText(_queryArtist()).split(/[&,xX]/)[0].trim();
         const nativeArtist = _normaliseTrackText(Lyrics.trackArtist).split(/[&,xX]/)[0].trim();
         return !activeArtist || !nativeArtist || activeArtist === nativeArtist || activeArtist.includes(nativeArtist) || nativeArtist.includes(activeArtist);
     }
@@ -593,7 +603,7 @@ Singleton {
             return;
         const id = _addSource(lines, source, message, {
             title: _queryTitle(),
-            artist: Players.active?.trackArtist || ""
+            artist: _queryArtist()
         });
         if (source === "Paxsenix")
             paxPreferenceTimeout.stop();
@@ -620,7 +630,7 @@ Singleton {
     function _prepareYoutubeFallback(req: int): void {
         const p = Players.active;
         const duration = _trackDuration();
-        if (req !== root.requestId || !p || !p.trackArtist || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
+        if (req !== root.requestId || !p || !_queryArtist() || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
             return;
         }
 
@@ -654,7 +664,7 @@ Singleton {
             "--title",
             _queryTitle(),
             "--artist",
-            p.trackArtist || "",
+            _queryArtist(),
             "--duration",
             String(_trackDuration())
         ];
@@ -695,7 +705,7 @@ Singleton {
                 videoId: result.videoId || "",
                 sourceTitle: result.sourceTitle || _queryTitle(),
                 title: result.sourceTitle || _queryTitle(),
-                artist: Players.active?.trackArtist || "",
+                artist: _queryArtist(),
                 language: result.language || ""
             });
         } catch (e) {
@@ -955,7 +965,7 @@ Singleton {
                         const id = root._addSource(source.lyrics || [], source.provider || "Cached", source.detail || qsTr("Cached timed lyrics"), {
                             sourceId: source.id || "",
                             title: source.title || root._queryTitle(),
-                            artist: source.artist || Players.active?.trackArtist || "",
+                            artist: source.artist || root._queryArtist(),
                             language: source.language || ""
                         });
                         if (!selectedId)
@@ -967,7 +977,7 @@ Singleton {
                 } else if (root._hasTimedLines(cached.lyrics)) {
                     selectedId = root._addSource(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"), {
                         title: root._queryTitle(),
-                        artist: Players.active?.trackArtist || ""
+                        artist: root._queryArtist()
                     });
                 }
                 root.restoringSources = false;
@@ -978,6 +988,32 @@ Singleton {
             } catch (e) {
                 root.restoringSources = false;
                 root.cacheLoaded = false;
+            }
+        }
+    }
+
+    Timer {
+        id: nativeSelectionTimeout
+
+        property string previousSourceId: ""
+        property bool previousUserSelected: false
+
+        interval: 10000
+        repeat: false
+        onTriggered: {
+            if (!root.pendingNativeSourceId)
+                return;
+            root.pendingNativeSourceId = "";
+            root.userSelectedSource = previousUserSelected;
+            const previous = root.sourceRecords[previousSourceId];
+            if (previous) {
+                root.selectedSourceId = previousSourceId;
+                root.provider = previous.provider;
+                root.status = previous.detail;
+                root.loading = false;
+            } else {
+                root.loading = false;
+                root.status = qsTr("Selected lyric track unavailable");
             }
         }
     }

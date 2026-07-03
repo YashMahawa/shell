@@ -322,15 +322,17 @@ def main():
         matched_title = args.title
         for search_title in searches:
             query = " ".join(part for part in (args.artist, search_title, "lyrics") if part).strip()
-            candidate = _run_fast_search(query, search_title, args.artist, args.duration)
+            match_duration = args.duration if _normalise_lookup(search_title) == _normalise_lookup(args.title) else 0
+            candidate = _run_fast_search(query, search_title, args.artist, match_duration)
             if candidate:
                 matched_title = search_title
                 break
         if not candidate:
             for search_title in searches:
                 query = " ".join(part for part in (args.artist, search_title, "lyrics") if part).strip()
-                entries = _run_search(query, search_title, args.artist, args.duration)
-                candidate = _pick_candidate(entries, search_title, args.artist, args.duration)
+                match_duration = args.duration if _normalise_lookup(search_title) == _normalise_lookup(args.title) else 0
+                entries = _run_search(query, search_title, args.artist, match_duration)
+                candidate = _pick_candidate(entries, search_title, args.artist, match_duration)
                 if candidate:
                     matched_title = search_title
                     break

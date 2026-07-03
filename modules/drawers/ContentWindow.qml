@@ -38,7 +38,7 @@ StyledWindow {
     readonly property real borderRounding: contentItem.Config.border.rounding * (1 - fsTransitionProg)
     readonly property real shadowOpacity: 0.7 * (1 - fsTransitionProg)
     readonly property real borderLayoutThickness: hasFullscreen ? 0 : contentItem.Config.border.thickness
-    readonly property real panelOutlineWidth: 3
+    readonly property real panelOutlineWidth: 2 * (1 - fsTransitionProg)
 
     property color surfaceColour: Colours.tPalette.m3surface
 
@@ -147,18 +147,31 @@ StyledWindow {
         BlobGroup {
             id: outlineGroup
 
-            color: Qt.alpha(Colours.palette.m3outline, 0.48)
+            color: Qt.alpha(Colours.palette.m3outline, 0.42)
             smoothing: root.contentItem.Config.border.smoothing
+        }
+
+        BlobInvertedRect {
+            anchors.fill: parent
+            anchors.margins: -50
+            group: outlineGroup
+            radius: root.borderRounding + root.panelOutlineWidth
+            borderLeft: bar.implicitWidth - anchors.margins - root.sdfBorderOffset + root.panelOutlineWidth
+            borderRight: root.borderThickness - anchors.margins - root.sdfBorderOffset + root.panelOutlineWidth
+            borderTop: root.borderThickness - anchors.margins - root.sdfBorderOffset + root.panelOutlineWidth
+            borderBottom: root.borderThickness - anchors.margins - root.sdfBorderOffset + root.panelOutlineWidth
         }
 
         PanelOutline {
             panel: panels.dashboard
             deformAmount: 0.1
+            visible: panel.visible && panels.dashboard.offsetScale < 0.98
         }
 
         PanelOutline {
             panel: panels.launcher
             deformAmount: 0.1
+            visible: panel.visible && panels.launcher.offsetScale < 0.98
         }
 
         PanelOutline {
@@ -166,12 +179,14 @@ StyledWindow {
             deformAmount: 0.2
             x: panels.sessionWrapper.x + panels.session.x + bar.implicitWidth - root.panelOutlineWidth
             implicitWidth: panels.session.width + root.panelOutlineWidth * 2
+            visible: panel.visible && panels.session.offsetScale < 0.98
         }
 
         PanelOutline {
             panel: panels.sidebar
             deformAmount: 0.03
             implicitHeight: panel.height * (1 / rawDeformMatrix.m22) + root.panelOutlineWidth * 2
+            visible: panel.visible && panels.sidebar.offsetScale < 0.98
         }
 
         PanelOutline {
@@ -179,6 +194,7 @@ StyledWindow {
             deformAmount: 0.25
             x: panels.osdWrapper.x + panels.osd.x + bar.implicitWidth - root.panelOutlineWidth
             implicitWidth: panels.osd.width + root.panelOutlineWidth * 2
+            visible: panel.visible && panels.osd.offsetScale < 0.98
         }
 
         PanelOutline {
@@ -188,6 +204,7 @@ StyledWindow {
         PanelOutline {
             panel: panels.utilities
             deformAmount: panels.sidebar.visible ? 0.1 : 0.15
+            visible: panel.visible && panels.utilities.offsetScale < 0.98
         }
 
         PanelOutline {
@@ -197,6 +214,7 @@ StyledWindow {
             deformAmount: panels.popouts.isDetached ? 0.05 : panels.popouts.hasCurrent ? 0.15 : 0.1
             x: panels.popoutsWrapper.x + panels.popouts.x + bar.implicitWidth - panels.popouts.width * extraWidth - root.panelOutlineWidth
             implicitWidth: panels.popouts.width * (1 + extraWidth) + root.panelOutlineWidth * 2
+            visible: panel.visible && panels.popoutsWrapper.offsetScale < 0.98
         }
 
         BlobGroup {
