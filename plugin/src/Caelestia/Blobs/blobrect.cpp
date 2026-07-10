@@ -97,20 +97,18 @@ void BlobRect::updatePhysics() {
         target11 = targetStretch * sin2 + targetCompress * cos2;
     }
 
-    // Underdamped spring on each matrix component
+    // Integrate damping implicitly so slow frames cannot inject deformation energy.
     const float kStiffness = static_cast<float>(m_stiffness);
     const float kDamping = static_cast<float>(m_damping);
+    const float invDamp = 1.0f / (1.0f + kDamping * dt);
 
-    const float accel00 = -kStiffness * (m_dm00 - target00) - kDamping * m_dmVel00;
-    m_dmVel00 += accel00 * dt;
+    m_dmVel00 = (m_dmVel00 - kStiffness * (m_dm00 - target00) * dt) * invDamp;
     m_dm00 += m_dmVel00 * dt;
 
-    const float accel01 = -kStiffness * (m_dm01 - target01) - kDamping * m_dmVel01;
-    m_dmVel01 += accel01 * dt;
+    m_dmVel01 = (m_dmVel01 - kStiffness * (m_dm01 - target01) * dt) * invDamp;
     m_dm01 += m_dmVel01 * dt;
 
-    const float accel11 = -kStiffness * (m_dm11 - target11) - kDamping * m_dmVel11;
-    m_dmVel11 += accel11 * dt;
+    m_dmVel11 = (m_dmVel11 - kStiffness * (m_dm11 - target11) * dt) * invDamp;
     m_dm11 += m_dmVel11 * dt;
 
     m_deformMatrix = QMatrix4x4(m_dm00, m_dm01, 0, 0, m_dm01, m_dm11, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);

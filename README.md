@@ -344,6 +344,7 @@ For example, to disable the bar on DP-1:
         "idle": {
             "lockBeforeSleep": true,
             "inhibitWhenAudio": true,
+            "inhibitWhenCharging": false,
             "timeouts": [
                 {
                     "timeout": 180,

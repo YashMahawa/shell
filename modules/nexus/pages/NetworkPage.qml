@@ -81,11 +81,13 @@ PageBase {
             }
 
             Repeater {
+                id: ethernetRepeater
+
                 model: Nmcli.ethernetDevices
                 delegate: ConnectedRect {
                     Layout.fillWidth: true
                     first: false
-                    last: index === Nmcli.ethernetDevices.length - 1
+                    last: index === ethernetRepeater.count - 1
                     implicitHeight: ethLayout.implicitHeight + ethLayout.anchors.margins * 2
 
                     RowLayout {
