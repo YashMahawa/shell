@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.components.controls
@@ -30,6 +31,13 @@ Item {
                 Layout.fillWidth: true
                 text: qsTr("Lyrics")
                 font: Tokens.font.title.medium
+            }
+
+            IconButton {
+                icon: "open_in_full"
+                type: IconButton.Text
+                disabled: !Players.active
+                onClicked: ImmersiveLyricsState.open((QsWindow.window as QsWindow)?.screen?.name ?? "")
             }
 
             IconButton {

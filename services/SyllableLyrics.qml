@@ -107,11 +107,11 @@ Singleton {
 
     function _sourcePriority(source: string): int {
         const value = String(source || "").toLowerCase();
-        if (value.includes("paxsenix") || value === "local")
+        if (value.includes("lrcmux"))
             return 0;
-        if (value.includes("lrclib"))
+        if (value.includes("paxsenix") || value === "local")
             return 1;
-        if (value.includes("lrcmux") || value.includes("netease"))
+        if (value.includes("lrclib") || value.includes("netease"))
             return 2;
         if (value.includes("youtube"))
             return 4;
@@ -529,6 +529,8 @@ Singleton {
                 root.muxLyrics = [];
             }
             root.muxFinished = true;
+            if (_hasTimedLines(root.muxLyrics))
+                _settleOnline(req, root.muxLyrics, "LrcMux", qsTr("LrcMux synced lyrics"));
             _maybeSettleOnline(req);
         }, () => {
             if (req !== root.requestId)
@@ -592,8 +594,6 @@ Singleton {
     function _maybeSettleOnline(req: int): void {
         if (req !== root.requestId)
             return;
-        if (root.paxFinished && _hasTimedLines(root.muxLyrics))
-            _settleOnline(req, root.muxLyrics, "LrcMux", qsTr("Fallback: %1").arg(root.muxSource));
         if (root.paxFinished && root.muxFinished)
             _finishOnlineWithNative(req);
     }
