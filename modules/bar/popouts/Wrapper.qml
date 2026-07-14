@@ -92,7 +92,7 @@ Item {
 
     HyprlandFocusGrab {
         active: root.isDetached
-        Component.onCompleted: windows = [QsWindow.window]
+        windows: [QsWindow.window]
         onCleared: root.close()
     }
 
@@ -143,7 +143,7 @@ Item {
 
                 anchors.fill: parent
                 nState.screen: root.screen
-                nState.currentPageIdx: ["appearance", "network", "bluetooth", "audio"].indexOf(root.queuedMode)
+                nState.currentPageIdx: ["appearance", "display", "network", "bluetooth", "audio"].indexOf(root.queuedMode)
                 onClose: root.close()
             }
         }

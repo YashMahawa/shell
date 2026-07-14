@@ -13,15 +13,16 @@ Singleton {
     property list<string> keys: [key]
     property list<real> weights: [1]
 
-    readonly property var fzf: useFuzzy ? [] : new Fzf.Finder(list, Object.assign({
+    readonly property var searchableList: list.filter(e => e !== null && e !== undefined)
+    readonly property var fzf: useFuzzy ? [] : new Fzf.Finder(searchableList, Object.assign({
         selector
     }, extraOpts))
-    readonly property list<var> fuzzyPrepped: useFuzzy ? list.map(e => {
+    readonly property list<var> fuzzyPrepped: useFuzzy ? searchableList.map(e => {
         const obj = {
             _item: e
         };
         for (const k of keys)
-            obj[k] = Fuzzy.prepare(e[k]);
+            obj[k] = Fuzzy.prepare(e[k] ?? "");
         return obj;
     }) : []
 
@@ -31,13 +32,13 @@ Singleton {
 
     function selector(item: var): string {
         // Only for fzf
-        return item[key];
+        return item?.[key] ?? "";
     }
 
     function query(search: string): list<var> {
         search = transformSearch(search.trim().replace(/\s+/g, " "));
         if (!search)
-            return [...list];
+            return [...searchableList];
 
         if (useFuzzy)
             return Fuzzy.go(search, fuzzyPrepped, Object.assign({

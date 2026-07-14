@@ -46,7 +46,7 @@ PageBase {
             placeholderText: root.btEnabled ? qsTr("No saved devices") : qsTr("Bluetooth disabled")
 
             model: ScriptModel {
-                values: Bluetooth.devices.values.filter(d => d.bonded).sort((a, b) => (b.connected - a.connected) || a.name.localeCompare(b.name)) // qmllint disable unresolved-type
+                values: (Bluetooth.devices?.values || []).filter(d => d && d.bonded).sort((a, b) => a && b ? (b.connected - a.connected) || (a.name || "").localeCompare(b.name || "") : 0) // qmllint disable unresolved-type
             }
 
             delegate: StyledRect {
@@ -132,10 +132,12 @@ PageBase {
                     }
 
                     Item {
-                        Layout.fillHeight: true
-                        implicitWidth: height
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: loader.implicitWidth
+                        implicitHeight: loader.implicitHeight
 
                         AnimLoader {
+                            id: loader
                             anchors.centerIn: parent
                             sourceComp: device.loading ? loadingComp : btnComp
 
