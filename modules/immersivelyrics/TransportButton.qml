@@ -29,7 +29,7 @@ Rectangle {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: 1
         text: root.icon
-        color: root.primary ? "#12151a" : "#f1f3f6"
+        color: root.primary ? "#12151a" : "#d6dce4"
         fontStyle: root.primary ? Tokens.font.icon.large : Tokens.font.icon.medium
         fill: 1
     }

@@ -185,7 +185,7 @@ Item {
                 width: parent.width
                 visible: !line.current || !SyllableLyrics.hasSyllables
                 text: line.lyricLine || ". . ."
-                color: line.current ? "#d8dde5" : line.index < lyrics.currentIndex ? "#a8b0ba" : "#858e99"
+                color: line.current ? "#cdd4de" : line.index < lyrics.currentIndex ? "#a8b0ba" : "#858e99"
                 font: line.lineFont
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 renderType: Text.QtRendering
@@ -206,7 +206,7 @@ Item {
                     position: root.smoothPosition - Lyrics.offset + 0.1
                     lyricFont: line.lineFont
                     waitingColor: "#68727e"
-                    activeColor: "#d8dde5"
+                    activeColor: "#cdd4de"
                 }
             }
 

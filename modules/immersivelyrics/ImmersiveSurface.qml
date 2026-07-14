@@ -16,7 +16,7 @@ FocusScope {
     signal exitRequested
 
     readonly property bool landscape: width >= height * 1.12
-    readonly property color primaryText: "#f5f7fa"
+    readonly property color primaryText: "#e1e6ed"
     readonly property color secondaryText: "#abb3bd"
     property real displayPosition: Players.active?.position ?? 0
     property string displayedTitle: Players.active?.trackTitle || qsTr("Nothing playing")
@@ -419,17 +419,21 @@ FocusScope {
             border.width: 1
             border.color: Qt.rgba(1, 1, 1, 0.14)
 
-            Row {
+            Item {
                 anchors.centerIn: parent
-                spacing: 13
+                width: 184
+                height: 58
 
                 TransportButton {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     icon: "skip_previous"
                     disabled: !Players.active?.canGoPrevious
                     onClicked: Players.active?.previous()
                 }
 
                 TransportButton {
+                    anchors.centerIn: parent
                     primary: true
                     icon: Players.active?.isPlaying ? "pause" : "play_arrow"
                     disabled: !Players.active?.canTogglePlaying
@@ -437,6 +441,8 @@ FocusScope {
                 }
 
                 TransportButton {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
                     icon: "skip_next"
                     disabled: !Players.active?.canGoNext
                     onClicked: Players.active?.next()
