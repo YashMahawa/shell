@@ -19,15 +19,41 @@ FocusScope {
     readonly property color primaryText: "#f5f7fa"
     readonly property color secondaryText: "#abb3bd"
     property real displayPosition: Players.active?.position ?? 0
+    property string displayedTitle: Players.active?.trackTitle || qsTr("Nothing playing")
+    property string displayedArtist: Players.active?.trackArtist || qsTr("Choose a song to begin")
 
     function formatTime(value: real): string {
         const seconds = Math.max(0, Math.floor(value || 0));
         return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     }
 
+    function scheduleMetadataSwap(): void {
+        if (root.active)
+            metadataDelay.restart();
+        else
+            root.commitMetadata();
+    }
+
+    function commitMetadata(): void {
+        const title = Players.active?.trackTitle || "";
+        const artist = Players.active?.trackArtist || "";
+        // Browsers briefly clear MPRIS metadata while changing tracks. Keep the
+        // previous identity until the actual song has arrived.
+        if (!title && !artist)
+            return;
+        root.displayedTitle = title || qsTr("Nothing playing");
+        root.displayedArtist = artist || qsTr("Choose a song to begin");
+    }
+
     focus: true
     opacity: active ? 1 : 0
     Keys.onEscapePressed: root.exitRequested()
+    Keys.onPressed: event => {
+        if (event.key === Qt.Key_I && (event.modifiers & Qt.AltModifier)) {
+            root.exitRequested();
+            event.accepted = true;
+        }
+    }
 
     onActiveChanged: {
         if (active) {
@@ -50,12 +76,70 @@ FocusScope {
         onTriggered: root.displayPosition = Players.active?.position ?? root.displayPosition
     }
 
+    Timer {
+        id: metadataDelay
+
+        interval: 300
+        repeat: false
+        onTriggered: metadataSwap.restart()
+    }
+
+    SequentialAnimation {
+        id: metadataSwap
+
+        ParallelAnimation {
+            NumberAnimation {
+                target: metadata
+                property: "opacity"
+                to: 0
+                duration: 150
+                easing.type: Easing.InCubic
+            }
+            NumberAnimation {
+                target: metadata
+                property: "scale"
+                to: 0.975
+                duration: 170
+                easing.type: Easing.InCubic
+            }
+        }
+        ScriptAction {
+            script: root.commitMetadata()
+        }
+        ParallelAnimation {
+            NumberAnimation {
+                target: metadata
+                property: "opacity"
+                to: 1
+                duration: 330
+                easing.type: Easing.OutCubic
+            }
+            SpringAnimation {
+                target: metadata
+                property: "scale"
+                to: 1
+                spring: 3.8
+                damping: 0.42
+                epsilon: 0.001
+            }
+        }
+    }
+
     Connections {
         target: Players.active
         ignoreUnknownSignals: true
 
         function onPositionChanged(): void {
             root.displayPosition = Players.active?.position ?? 0;
+        }
+        function onPostTrackChanged(): void {
+            root.scheduleMetadataSwap();
+        }
+        function onTrackTitleChanged(): void {
+            root.scheduleMetadataSwap();
+        }
+        function onTrackArtistChanged(): void {
+            root.scheduleMetadataSwap();
         }
     }
 
@@ -183,6 +267,14 @@ FocusScope {
             width: Math.min(parent.width * (root.landscape ? 0.85 : 0.57), parent.height * (root.landscape ? 0.69 : 0.74))
             height: width
 
+            function updateArtworkRequest(): void {
+                const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
+                HighResArtwork.requestSize(width * dpr * 1.2);
+            }
+
+            onWidthChanged: updateArtworkRequest()
+            Component.onCompleted: updateArtworkRequest()
+
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
@@ -233,7 +325,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: Players.active?.trackTitle || qsTr("Nothing playing")
+                text: root.displayedTitle
                 color: root.primaryText
                 font.family: Tokens.font.headline.small.family
                 font.pixelSize: Math.max(23, Math.min(34, root.width * 0.023))
@@ -245,7 +337,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: Players.active?.trackArtist || qsTr("Choose a song to begin")
+                text: root.displayedArtist
                 color: root.secondaryText
                 font: Tokens.font.title.medium
                 elide: Text.ElideRight
@@ -356,11 +448,12 @@ FocusScope {
     Item {
         id: lyricsPane
 
-        x: (root.landscape ? root.width * 0.505 : root.width * 0.07) + (root.active ? 0 : 64)
+        x: (root.landscape ? root.width * 0.505 : root.width * 0.07)
+            + (root.active ? (HighResArtwork.transitioning ? 30 : 0) : 64)
         y: root.landscape ? root.height * 0.065 : root.height * 0.49
         width: root.landscape ? root.width * 0.43 : root.width * 0.86
         height: root.landscape ? root.height * 0.87 : root.height * 0.46
-        opacity: root.active ? 1 : 0
+        opacity: root.active && !HighResArtwork.transitioning ? 1 : 0
 
         ImmersiveLyricList {
             anchors.fill: parent
@@ -377,7 +470,7 @@ FocusScope {
 
         Behavior on opacity {
             NumberAnimation {
-                duration: root.active ? 620 : 260
+                duration: root.active && !HighResArtwork.transitioning ? 540 : 210
                 easing.type: Easing.OutCubic
             }
         }

@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.components.containers
+import qs.components.misc
 import qs.services
 
 Scope {
@@ -59,5 +60,11 @@ Scope {
         }
 
         target: "immersiveLyrics"
+    }
+
+    CustomShortcut {
+        name: "immersiveLyrics"
+        description: "Toggle immersive lyrics"
+        onPressed: ImmersiveLyricsState.toggle(Hypr.focusedMonitor?.name ?? "")
     }
 }

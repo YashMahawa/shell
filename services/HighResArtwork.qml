@@ -10,17 +10,47 @@ Singleton {
 
     property string resolvedUrl: ""
     property string resolvedKey: ""
+    property string artworkBaseUrl: ""
     property int requestId: 0
+    property int requestedSize: 1200
     property bool loading: false
+    property bool transitioning: false
+    property int revision: 0
 
     readonly property string fallbackUrl: Players.getArtUrl(Players.active)
-    readonly property string source: resolvedUrl || fallbackUrl
+    readonly property string source: resolvedUrl || (_usableArtwork(fallbackUrl) ? fallbackUrl : "")
     readonly property string trackKey: {
         const player = Players.active;
-        return player ? `${player.trackArtist || ""}\n${player.trackTitle || ""}` : "";
+        const artist = player?.trackArtist || "";
+        const title = player?.trackTitle || "";
+        return artist || title ? `${artist}\n${title}` : "";
     }
 
-    onTrackKeyChanged: refreshDelay.restart()
+    onTrackKeyChanged: beginTransition()
+
+    function requestSize(pixels: real): void {
+        const wanted = Math.max(1000, Math.min(2400, Math.ceil(Number(pixels || root.requestedSize) / 200) * 200));
+        if (wanted === root.requestedSize)
+            return;
+        root.requestedSize = wanted;
+        if (root.artworkBaseUrl && root.resolvedKey === root.trackKey)
+            root.resolvedUrl = root._sizedArtwork(root.artworkBaseUrl, wanted);
+    }
+
+    function beginTransition(): void {
+        root.transitioning = !!root.trackKey;
+        refreshDelay.restart();
+        fallbackDelay.restart();
+        transitionTimeout.restart();
+    }
+
+    function _usableArtwork(url: string): bool {
+        const value = String(url || "").toLocaleLowerCase();
+        if (!value)
+            return false;
+        return !/(^|[\/_-])(chrome|chromium|firefox|browser)([\/_\-.]|$)/.test(value)
+            && !/(application-x-executable|application-default-icon|web-browser)/.test(value);
+    }
 
     function _normalise(value: string): string {
         return String(value || "")
@@ -46,10 +76,27 @@ Singleton {
         return score;
     }
 
-    function _largeArtwork(url: string): string {
+    function _sizedArtwork(url: string, size: int): string {
         if (!url)
             return "";
-        return url.replace(/\/[0-9]+x[0-9]+bb\.(jpg|png)$/i, "/1600x1600bb.$1");
+        return url.replace(/\/[0-9]+x[0-9]+bb\.(jpg|png)$/i, `/${size}x${size}bb.$1`);
+    }
+
+    function _acceptArtwork(url: string, key: string): void {
+        if (!root._usableArtwork(url) || key !== root.trackKey)
+            return;
+        root.resolvedUrl = url;
+        root.resolvedKey = key;
+        root.transitioning = false;
+        root.revision++;
+        transitionTimeout.stop();
+    }
+
+    function _acceptFallback(): void {
+        if (!root.transitioning || !root.trackKey)
+            return;
+        if (root._usableArtwork(root.fallbackUrl) && root.fallbackUrl !== root.resolvedUrl)
+            root._acceptArtwork(root.fallbackUrl, root.trackKey);
     }
 
     function refresh(): void {
@@ -59,8 +106,6 @@ Singleton {
         const key = root.trackKey;
         const req = ++root.requestId;
 
-        root.resolvedUrl = "";
-        root.resolvedKey = "";
         root.loading = !!title && !!artist;
         if (!root.loading)
             return;
@@ -82,31 +127,51 @@ Singleton {
                     }
                 }
                 if (best && bestScore >= 8) {
-                    root.resolvedUrl = root._largeArtwork(best.artworkUrl100 || "");
-                    root.resolvedKey = key;
+                    root.artworkBaseUrl = best.artworkUrl100 || "";
+                    root._acceptArtwork(root._sizedArtwork(root.artworkBaseUrl, root.requestedSize), key);
+                } else {
+                    root._acceptFallback();
                 }
             } catch (error) {
-                root.resolvedUrl = "";
+                root._acceptFallback();
             }
             root.loading = false;
         }, () => {
-            if (req === root.requestId)
-                root.loading = false;
+            if (req !== root.requestId)
+                return;
+            root.loading = false;
+            root._acceptFallback();
         }, {}, 7000);
     }
 
     Timer {
         id: refreshDelay
 
-        interval: 180
+        interval: 260
         repeat: false
         onTriggered: root.refresh()
+    }
+
+    Timer {
+        id: fallbackDelay
+
+        interval: 1300
+        repeat: false
+        onTriggered: root._acceptFallback()
+    }
+
+    Timer {
+        id: transitionTimeout
+
+        interval: 2800
+        repeat: false
+        onTriggered: root.transitioning = false
     }
 
     Connections {
         target: Players
         function onActiveChanged(): void {
-            refreshDelay.restart();
+            root.beginTransition();
         }
     }
 
@@ -115,15 +180,19 @@ Singleton {
         ignoreUnknownSignals: true
 
         function onPostTrackChanged(): void {
-            refreshDelay.restart();
+            root.beginTransition();
         }
         function onTrackTitleChanged(): void {
-            refreshDelay.restart();
+            root.beginTransition();
         }
         function onTrackArtistChanged(): void {
-            refreshDelay.restart();
+            root.beginTransition();
+        }
+        function onTrackArtUrlChanged(): void {
+            if (root.transitioning)
+                fallbackDelay.restart();
         }
     }
 
-    Component.onCompleted: refreshDelay.start()
+    Component.onCompleted: beginTransition()
 }
