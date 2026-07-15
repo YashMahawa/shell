@@ -10,7 +10,7 @@ Item {
     required property real position
     property font lyricFont
     property color waitingColor: "#69727e"
-    property color activeColor: "#cdd4de"
+    property color activeColor: "#b7c0cc"
     property var segments: _segmentsFor(lineText, syllabus)
 
     implicitHeight: flow.implicitHeight
@@ -97,7 +97,7 @@ Item {
                     Text {
                         text: baseText.text
                         color: root.activeColor
-                        opacity: 0.86
+                        opacity: 0.78
                         font: root.lyricFont
                         renderType: Text.QtRendering
                         renderTypeQuality: Text.VeryHighRenderTypeQuality

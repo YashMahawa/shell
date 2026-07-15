@@ -78,7 +78,9 @@ Item {
         id: smoothTicker
 
         interval: 16
-        running: root.active && SyllableLyrics.hasSyllables && !!Players.active && Players.active.isPlaying
+        // Some MPRIS players publish position sparsely. Keep a local clock for
+        // line-timed lyrics too, otherwise non-syllable tracks appear frozen.
+        running: root.active && SyllableLyrics.hasLyrics && !!Players.active && Players.active.isPlaying
         repeat: true
         property real lastRealTime: 0
 
@@ -176,8 +178,10 @@ Item {
             width: lyrics.width - 18
             implicitHeight: Math.max(plainLine.implicitHeight, karaokeLoader.implicitHeight) + 16
             height: implicitHeight
-            x: current ? 16 : 0
-            opacity: current ? 1 : Math.max(0.19, 0.58 - distanceFromCurrent * 0.12)
+            x: current ? 14 : 0
+            scale: current ? 1 : 0.965
+            opacity: current ? 0.82 : Math.max(0.17, 0.54 - distanceFromCurrent * 0.11)
+            transformOrigin: Item.Left
 
             Text {
                 id: plainLine
@@ -185,7 +189,7 @@ Item {
                 width: parent.width
                 visible: !line.current || !SyllableLyrics.hasSyllables
                 text: line.lyricLine || ". . ."
-                color: line.current ? "#cdd4de" : line.index < lyrics.currentIndex ? "#a8b0ba" : "#858e99"
+                color: line.current ? "#b7c0cc" : line.index < lyrics.currentIndex ? "#9fa8b4" : "#7f8996"
                 font: line.lineFont
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 renderType: Text.QtRendering
@@ -206,15 +210,23 @@ Item {
                     position: root.smoothPosition - Lyrics.offset + 0.1
                     lyricFont: line.lineFont
                     waitingColor: "#68727e"
-                    activeColor: "#cdd4de"
+                    activeColor: "#b7c0cc"
                 }
             }
 
             Behavior on x {
                 SpringAnimation {
-                    spring: 4.2
-                    damping: 0.34
-                    epsilon: 0.2
+                    spring: 4.6
+                    damping: 0.48
+                    epsilon: 0.15
+                }
+            }
+
+            Behavior on scale {
+                SpringAnimation {
+                    spring: 5.1
+                    damping: 0.43
+                    epsilon: 0.001
                 }
             }
 

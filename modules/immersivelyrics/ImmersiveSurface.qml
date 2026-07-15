@@ -16,7 +16,7 @@ FocusScope {
     signal exitRequested
 
     readonly property bool landscape: width >= height * 1.12
-    readonly property color primaryText: "#e1e6ed"
+    readonly property color primaryText: "#d8dee7"
     readonly property color secondaryText: "#abb3bd"
     property real displayPosition: Players.active?.position ?? 0
     property string displayedTitle: Players.active?.trackTitle || qsTr("Nothing playing")
@@ -166,10 +166,9 @@ FocusScope {
         }
 
         Behavior on scale {
-            SpringAnimation {
-                spring: 2.3
-                damping: 0.42
-                epsilon: 0.002
+            NumberAnimation {
+                duration: root.active ? 620 : 360
+                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
             }
         }
     }
@@ -234,13 +233,12 @@ FocusScope {
         width: root.landscape ? root.width * 0.41 : root.width * 0.84
         height: root.landscape ? root.height * 0.86 : root.height * 0.4
         opacity: root.active ? 1 : 0
-        scale: root.active ? 1 : 0.84
+        scale: root.active ? 1 : 0.94
 
         Behavior on x {
-            SpringAnimation {
-                spring: 2.8
-                damping: 0.38
-                epsilon: 0.02
+            NumberAnimation {
+                duration: root.active ? 500 : 320
+                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
             }
         }
 
@@ -252,10 +250,9 @@ FocusScope {
         }
 
         Behavior on scale {
-            SpringAnimation {
-                spring: 3.3
-                damping: 0.34
-                epsilon: 0.002
+            NumberAnimation {
+                duration: root.active ? 520 : 330
+                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
             }
         }
 
@@ -467,10 +464,9 @@ FocusScope {
         }
 
         Behavior on x {
-            SpringAnimation {
-                spring: 2.65
-                damping: 0.4
-                epsilon: 0.02
+            NumberAnimation {
+                duration: root.active && !HighResArtwork.transitioning ? 520 : 300
+                easing.type: root.active && !HighResArtwork.transitioning ? Easing.OutCubic : Easing.InCubic
             }
         }
 
