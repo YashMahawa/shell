@@ -18,6 +18,8 @@ Item {
     property real smoothPosition: Players.active?.position ?? 0
 
     onActiveChanged: {
+        trackingDelay.stop();
+        lyrics.animateTracking = false;
         if (!active)
             return;
         root.smoothPosition = Players.active?.position ?? 0;
@@ -25,7 +27,14 @@ Item {
             const index = lyrics.currentIndex;
             if (index >= 0)
                 lyrics.positionViewAtIndex(index, ListView.Center);
+            trackingDelay.restart();
         });
+    }
+
+    onLyricRevisionChanged: {
+        lyrics.animateTracking = false;
+        if (root.active)
+            trackingDelay.restart();
     }
 
     layer.enabled: true
@@ -101,6 +110,14 @@ Item {
         }
     }
 
+    Timer {
+        id: trackingDelay
+
+        interval: 120
+        repeat: false
+        onTriggered: lyrics.animateTracking = root.active
+    }
+
     Column {
         anchors.centerIn: parent
         visible: !SyllableLyrics.hasLyrics
@@ -143,6 +160,7 @@ Item {
         model: SyllableLyrics.model
         spacing: Math.max(18, height * 0.022)
         pixelAligned: false
+        property bool animateTracking: false
         readonly property real focusLineHeight: Math.max(72, Math.min(96, width * 0.11))
 
         Component.onCompleted: {
@@ -155,7 +173,7 @@ Item {
         onModelChanged: Qt.callLater(() => positionViewAtIndex(currentIndex, ListView.Center))
 
         highlightRangeMode: ListView.StrictlyEnforceRange
-        highlightMoveDuration: 720
+        highlightMoveDuration: animateTracking ? 720 : 0
         highlightMoveVelocity: -1
         preferredHighlightBegin: (height - focusLineHeight) / 2
         preferredHighlightEnd: (height + focusLineHeight) / 2

@@ -64,8 +64,8 @@ FocusScope {
 
     Behavior on opacity {
         NumberAnimation {
-            duration: root.active ? 520 : 390
-            easing.type: Easing.OutCubic
+            duration: 420
+            easing.type: Easing.InOutCubic
         }
     }
 
@@ -167,8 +167,8 @@ FocusScope {
 
         Behavior on scale {
             NumberAnimation {
-                duration: root.active ? 620 : 360
-                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
+                duration: 520
+                easing.type: Easing.InOutCubic
             }
         }
     }
@@ -237,22 +237,22 @@ FocusScope {
 
         Behavior on x {
             NumberAnimation {
-                duration: root.active ? 500 : 320
-                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
+                duration: 420
+                easing.type: Easing.InOutCubic
             }
         }
 
         Behavior on opacity {
             NumberAnimation {
-                duration: root.active ? 520 : 280
-                easing.type: Easing.OutCubic
+                duration: 420
+                easing.type: Easing.InOutCubic
             }
         }
 
         Behavior on scale {
             NumberAnimation {
-                duration: root.active ? 520 : 330
-                easing.type: root.active ? Easing.OutCubic : Easing.InCubic
+                duration: 420
+                easing.type: Easing.InOutCubic
             }
         }
 
@@ -465,15 +465,15 @@ FocusScope {
 
         Behavior on x {
             NumberAnimation {
-                duration: root.active && !HighResArtwork.transitioning ? 520 : 300
-                easing.type: root.active && !HighResArtwork.transitioning ? Easing.OutCubic : Easing.InCubic
+                duration: 420
+                easing.type: Easing.InOutCubic
             }
         }
 
         Behavior on opacity {
             NumberAnimation {
-                duration: root.active && !HighResArtwork.transitioning ? 540 : 210
-                easing.type: Easing.OutCubic
+                duration: 420
+                easing.type: Easing.InOutCubic
             }
         }
     }
