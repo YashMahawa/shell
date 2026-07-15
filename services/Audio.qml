@@ -248,6 +248,8 @@ Singleton {
         previousSourceName = newSourceName;
     }
 
+    // Populate immediately: Pipewire.nodes may already be filled by the time this
+    // lazily-loaded singleton is created, so onValuesChanged would never fire.
     Component.onCompleted: {
         refreshNodes();
         previousSinkName = sink?.description || sink?.name || qsTr("Unknown Device");
@@ -279,6 +281,8 @@ Singleton {
         onTriggered: root.applyPendingBluetoothSafety()
     }
 
+    // Always track the current defaults so volume/mute bind even if the lists
+    // momentarily lag behind the default node.
     PwObjectTracker {
         objects: [root.sink, root.source, ...root.sinks, ...root.sources, ...root.streams].filter(n => n)
     }
