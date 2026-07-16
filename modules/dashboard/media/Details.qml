@@ -11,6 +11,8 @@ import qs.services
 ColumnLayout {
     id: root
 
+    required property bool active
+
     function lengthStr(length: int): string {
         if (length < 0)
             return "-1:-1";
@@ -27,7 +29,7 @@ ColumnLayout {
     spacing: Tokens.spacing.extraSmall
 
     Timer {
-        running: Players.active?.isPlaying ?? false
+        running: root.active && (Players.active?.isPlaying ?? false)
         interval: GlobalConfig.dashboard.mediaUpdateInterval
         triggeredOnStart: true
         repeat: true

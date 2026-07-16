@@ -13,6 +13,8 @@ import qs.utils
 Item {
     id: root
 
+    required property bool active
+
     property real playerProgress: {
         const active = Players.active;
         return active?.length ? (active.position % active.length) / active.length : 0;
@@ -31,15 +33,18 @@ Item {
     }
 
     Timer {
-        running: Players.active?.isPlaying ?? false
+        running: root.active && (Players.active?.isPlaying ?? false)
         interval: GlobalConfig.dashboard.mediaUpdateInterval
         triggeredOnStart: true
         repeat: true
         onTriggered: Players.active?.positionChanged()
     }
 
-    ServiceRef {
-        service: Audio.beatTracker
+    Loader {
+        active: root.active
+        sourceComponent: ServiceRef {
+            service: Audio.beatTracker
+        }
     }
 
     CircularProgress {

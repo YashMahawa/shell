@@ -20,7 +20,7 @@ Item {
 
     signal close
 
-    implicitWidth: implicitHeight * Tokens.sizes.nexus.ratio
+    implicitWidth: implicitHeight * (Number.isFinite(Tokens.sizes.nexus.ratio) ? Tokens.sizes.nexus.ratio : 16 / 9)
     implicitHeight: nState.screen.height * Tokens.sizes.nexus.heightMult
 
     Behavior on blobColour {

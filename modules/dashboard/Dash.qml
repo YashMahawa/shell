@@ -96,6 +96,7 @@ GridLayout {
 
         Media {
             id: media
+            active: root.visibilities.dashboard
         }
     }
 

@@ -9,6 +9,7 @@ import qs.services
 Item {
     id: root
 
+    required property bool active
     property bool toolsOpen: false
 
     ColumnLayout {
@@ -54,6 +55,7 @@ Item {
             LyricList {
                 anchors.fill: parent
                 visible: !root.toolsOpen
+                active: root.active && visible
             }
 
             LyricsInfo {

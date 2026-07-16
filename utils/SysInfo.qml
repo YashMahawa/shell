@@ -110,7 +110,8 @@ Singleton {
     Timer {
         running: true
         repeat: true
-        interval: 15000
+        triggeredOnStart: true
+        interval: 60000
         onTriggered: fileUptime.reload()
     }
 

@@ -14,6 +14,8 @@ import qs.services
 Item {
     id: root
 
+    required property bool active
+
     readonly property real fadeAmount: 0.1
     property bool flag
     property int lyricRevision: SyllableLyrics.revision
@@ -175,7 +177,7 @@ Item {
         id: smoothTicker
 
         interval: 16
-        running: SyllableLyrics.hasSyllables && !!Players.active && Players.active.isPlaying
+        running: root.active && SyllableLyrics.hasSyllables && !!Players.active && Players.active.isPlaying
         repeat: true
 
         property real lastRealTime: 0

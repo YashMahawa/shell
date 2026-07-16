@@ -138,11 +138,13 @@ Item {
 
                     Details {
                         Layout.fillWidth: true
+                        active: root.visibilities.dashboard
                     }
 
                     LyricsAndSelector {
                         Layout.fillHeight: true
                         implicitWidth: Tokens.sizes.dashboard.mediaSectionWidth
+                        active: root.visibilities.dashboard
                     }
                 }
             }

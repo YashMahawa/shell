@@ -93,7 +93,7 @@ Item {
                         icon: "desktop_windows"
                         label: qsTr("GPU")
                         subLabel: Gpu.name || IntelGpu.name
-                        usage: Math.max(0, Math.min(100, Gpu.percentage > 0 ? Gpu.percentage : IntelGpu.percentage))
+                        usage: Math.max(0, Math.min(1, Gpu.percentage > 0 ? Gpu.percentage : IntelGpu.percentage))
                         temperature: Gpu.temperature
                         accent: Colours.palette.m3secondary
 

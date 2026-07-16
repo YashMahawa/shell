@@ -26,6 +26,9 @@ Item {
         id: icon
 
         anchors.centerIn: parent
+        anchors.horizontalCenterOffset: isVertical ? -1 : 0
+        anchors.verticalCenterOffset: isVertical ? 0 : -1
+
         text: "power_settings_new"
         color: Colours.palette.m3error
         fontStyle: Tokens.font.icon.builders.small.weight(Font.Bold).build()

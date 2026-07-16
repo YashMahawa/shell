@@ -4,3 +4,10 @@
 build/
 .cache/
 logs
+
+*.bak
+*.bak-*
+*.backup-*
+*.disabled-test
+*broken-post-fork*
+*pre-package-sync*
