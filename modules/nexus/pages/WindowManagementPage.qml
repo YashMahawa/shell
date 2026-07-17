@@ -196,7 +196,7 @@ PageBase {
                     Layout.fillWidth: true
                     icon: "select_window"
                     text: qsTr("Float")
-                    onClicked: root.dispatch("togglefloating")
+                    onClicked: Quickshell.execDetached([`${Quickshell.env("HOME")}/.config/hypr/scripts/toggle-floating-preserve-position.sh`])
                 }
 
                 IconTextButton {

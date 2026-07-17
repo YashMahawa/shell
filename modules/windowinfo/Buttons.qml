@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.services
@@ -118,7 +119,7 @@ ColumnLayout {
             color: Colours.palette.m3secondaryContainer
             onColor: Colours.palette.m3onSecondaryContainer
             text: root.client?.lastIpcObject.floating ? qsTr("Tile") : qsTr("Float")
-            onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.float({ window = "address:0x${root.client?.address}" })` : `togglefloating address:0x${root.client?.address}`)
+            onClicked: Quickshell.execDetached([`${Quickshell.env("HOME")}/.config/hypr/scripts/toggle-floating-preserve-position.sh`])
         }
 
         Loader {

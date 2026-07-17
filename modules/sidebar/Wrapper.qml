@@ -16,7 +16,8 @@ Item {
 
     visible: offsetScale < 1
     anchors.rightMargin: (-implicitWidth - 5) * offsetScale
-    implicitWidth: Tokens.sizes.sidebar.width
+    // The notification centre is a proper half-screen management surface.
+    implicitWidth: Math.max(Tokens.sizes.sidebar.width, (parent?.width ?? 0) * 0.5)
     opacity: 1 - offsetScale
 
     Behavior on offsetScale {
@@ -36,7 +37,7 @@ Item {
         active: root.shouldBeActive || root.visible
 
         sourceComponent: Content {
-            implicitWidth: Tokens.sizes.sidebar.width - content.anchors.leftMargin - content.anchors.margins
+            implicitWidth: root.implicitWidth - content.anchors.leftMargin - content.anchors.margins
             props: root.props
             visibilities: root.visibilities
         }

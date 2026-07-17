@@ -22,6 +22,7 @@ CustomMouseArea {
     property bool dashboardShortcutActive
     property bool osdShortcutActive
     property bool utilitiesShortcutActive
+    property bool sidebarHoverActive
     readonly property real barTriggerWidth: Math.max(bar?.implicitWidth ?? 0, bar?.clampedThickness ?? 0, Config.border.minThickness ?? 0, Config.border.thickness ?? 0, 8)
     readonly property real topRightHotCornerSize: Math.max(24, Config.border.rounding, Config.border.thickness * 2)
 
@@ -97,6 +98,11 @@ CustomMouseArea {
             if (!utilitiesShortcutActive)
                 visibilities.utilities = false;
 
+            if (sidebarHoverActive) {
+                visibilities.sidebar = false;
+                sidebarHoverActive = false;
+            }
+
             if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
                 popouts.hasCurrent = false;
                 bar.closeTray();
@@ -127,6 +133,7 @@ CustomMouseArea {
             visibilities.session = false;
             visibilities.utilities = false;
             visibilities.sidebar = true;
+            sidebarHoverActive = true;
         }
 
         // Show bar in non-exclusive mode on hover
@@ -230,7 +237,7 @@ CustomMouseArea {
         }
 
         // Show utilities on hover
-        const showUtilities = inBottomPanel(panels.utilities, x, y, true);
+        const showUtilities = !visibilities.sidebar && !sidebarHoverActive && inBottomPanel(panels.utilities, x, y, true);
 
         // Always update visibility based on hover if not in shortcut mode
         if (!utilitiesShortcutActive) {

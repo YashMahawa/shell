@@ -17,8 +17,8 @@ PageBase {
     title: qsTr("Display")
 
     property var selectedMonitor: Hypr.focusedMonitor ?? (Hypr.monitors.values[0] ?? null)
-    property string selectedResolution: "preferred"
-    property real selectedRefresh: Math.round((selectedMonitor?.refreshRate ?? 60000) / 1000)
+    property string selectedResolution: selectedMonitor ? `${selectedMonitor.width}x${selectedMonitor.height}` : "preferred"
+    property real selectedRefresh: Math.round((selectedMonitor?.refreshRate ?? 60) * 100) / 100
     property real selectedScale: selectedMonitor?.scale ?? 1
     property int selectedX: selectedMonitor?.x ?? 0
     property int selectedY: selectedMonitor?.y ?? 0
@@ -28,39 +28,8 @@ PageBase {
     property bool showConfirmSave: false
     property string statusMessage: ""
     property bool statusIsError: false
+    property var modesByMonitor: ({})
 
-    readonly property list<MenuItem> resolutionItems: [
-        MenuItem {
-            text: qsTr("Preferred")
-        },
-        MenuItem {
-            text: root.currentResolutionLabel()
-        },
-        MenuItem {
-            text: "3840x2160"
-        },
-        MenuItem {
-            text: "2560x1600"
-        },
-        MenuItem {
-            text: "2560x1440"
-        },
-        MenuItem {
-            text: "1920x1200"
-        },
-        MenuItem {
-            text: "1920x1080"
-        },
-        MenuItem {
-            text: "1600x900"
-        },
-        MenuItem {
-            text: "1366x768"
-        },
-        MenuItem {
-            text: "1280x720"
-        }
-    ]
     readonly property list<MenuItem> scaleItems: [
         MenuItem {
             text: "100%"
@@ -114,10 +83,48 @@ PageBase {
         return best;
     }
 
+    function parsedMode(raw: string): var {
+        const match = raw.match(/^(\d+x\d+)@([\d.]+)Hz$/);
+        return match ? ({ resolution: match[1], refresh: Number(match[2]) }) : null;
+    }
+
+    function monitorModes(): var {
+        return modesByMonitor[selectedMonitor?.name] ?? [];
+    }
+
+    function supportedResolutions(): var {
+        const values = [qsTr("Preferred")];
+        for (const raw of monitorModes()) {
+            const mode = parsedMode(raw);
+            if (mode && !values.includes(mode.resolution))
+                values.push(mode.resolution);
+        }
+        if (values.length === 1)
+            values.push(currentResolutionLabel());
+        return values;
+    }
+
+    function supportedRefreshRates(): var {
+        const resolution = selectedResolution === qsTr("Preferred") || selectedResolution === "preferred" ? currentResolutionLabel() : selectedResolution;
+        const values = [];
+        for (const raw of monitorModes()) {
+            const mode = parsedMode(raw);
+            if (mode && mode.resolution === resolution && !values.includes(mode.refresh))
+                values.push(mode.refresh);
+        }
+        if (!values.length)
+            values.push(Math.round((selectedMonitor?.refreshRate ?? 60) * 100) / 100);
+        return values.sort((a, b) => b - a);
+    }
+
+    function refreshLabel(rate: real): string {
+        return `${Number(rate).toFixed(Number(rate) % 1 === 0 ? 0 : 2)} Hz`;
+    }
+
     function selectMonitor(m: var): void {
         selectedMonitor = m;
         selectedResolution = currentResolutionLabel();
-        selectedRefresh = Math.round((m?.refreshRate ?? 60000) / 1000);
+        selectedRefresh = Math.round((m?.refreshRate ?? 60) * 100) / 100;
         selectedScale = m?.scale ?? 1;
         selectedX = m?.x ?? 0;
         selectedY = m?.y ?? 0;
@@ -145,7 +152,7 @@ PageBase {
         if (!selectedMonitor)
             return;
 
-        const oldRes = `${selectedMonitor.width}x${selectedMonitor.height}@${Math.round((selectedMonitor.refreshRate ?? 60000) / 1000)}`;
+        const oldRes = `${selectedMonitor.width}x${selectedMonitor.height}@${Math.round((selectedMonitor.refreshRate ?? 60) * 100) / 100}`;
         const oldPos = `${selectedMonitor.x}x${selectedMonitor.y}`;
         const oldScale = String(selectedMonitor.scale ?? 1);
         const pos = mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`;
@@ -170,7 +177,7 @@ PageBase {
     function saveAll(): void {
         const monitorsData = Hypr.monitors.values.map(m => ({
             name: m.name,
-            res: m.name === selectedMonitor?.name && selectedEnabled ? resolutionWithRefresh() : `${m.width}x${m.height}@${Math.round((m.refreshRate ?? 60000) / 1000)}`,
+            res: m.name === selectedMonitor?.name && selectedEnabled ? resolutionWithRefresh() : `${m.width}x${m.height}@${Math.round((m.refreshRate ?? 60) * 100) / 100}`,
             pos: m.name === selectedMonitor?.name ? (mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`) : `${m.x}x${m.y}`,
             scale: m.name === selectedMonitor?.name ? selectedScale : m.scale,
             transform: m.name === selectedMonitor?.name ? selectedTransform : (m.transform ?? 0)
@@ -183,6 +190,30 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        Process {
+            id: modeProc
+
+            running: true
+            command: ["hyprctl", "monitors", "-j"]
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    try {
+                        const monitors = JSON.parse(text);
+                        const modes = {};
+                        for (const monitor of monitors)
+                            modes[monitor.name] = monitor.availableModes ?? [];
+                        root.modesByMonitor = modes;
+                        const rates = root.supportedRefreshRates();
+                        if (!rates.some(rate => Math.abs(rate - root.selectedRefresh) < 0.02))
+                            root.selectedRefresh = rates[0] ?? root.selectedRefresh;
+                    } catch (error) {
+                        root.statusMessage = qsTr("Could not read supported display modes");
+                        root.statusIsError = true;
+                    }
+                }
+            }
+        }
 
         Process {
             id: monitorProc
@@ -220,12 +251,19 @@ PageBase {
                 }
                 Qt.callLater(() => {
                     Hyprland.refreshMonitors();
+                    modeProc.running = true;
                 });
             }
         }
 
         Component {
             id: monitorItem
+
+            MenuItem {}
+        }
+
+        Component {
+            id: modeItem
 
             MenuItem {}
         }
@@ -342,23 +380,28 @@ PageBase {
         SelectRow {
             Layout.fillWidth: true
             label: qsTr("Resolution")
-            subtext: qsTr("Choose preferred or a common fixed mode")
-            menuItems: root.resolutionItems
-            active: Math.max(0, root.resolutionItems.findIndex(i => i.text === root.selectedResolution))
+            subtext: qsTr("Modes reported by this display")
+            menuItems: root.supportedResolutions().map(value => modeItem.createObject(root, { text: value }))
+            active: Math.max(0, root.supportedResolutions().indexOf(root.selectedResolution))
             fallbackText: root.selectedResolution
             fallbackIcon: "aspect_ratio"
-            onSelected: item => root.selectedResolution = item.text
+            onSelected: item => {
+                root.selectedResolution = item.text;
+                const rates = root.supportedRefreshRates();
+                if (!rates.some(rate => Math.abs(rate - root.selectedRefresh) < 0.02))
+                    root.selectedRefresh = rates[0] ?? root.selectedRefresh;
+            }
         }
 
-        StepperRow {
+        SelectRow {
             Layout.fillWidth: true
             label: qsTr("Refresh rate")
-            subtext: qsTr("Hz")
-            value: root.selectedRefresh
-            from: 24
-            to: 240
-            stepSize: 1
-            onMoved: v => root.selectedRefresh = v
+            subtext: qsTr("Supported rates for the selected resolution")
+            menuItems: root.supportedRefreshRates().map(rate => modeItem.createObject(root, { text: root.refreshLabel(rate) }))
+            active: Math.max(0, root.supportedRefreshRates().findIndex(rate => Math.abs(rate - root.selectedRefresh) < 0.02))
+            fallbackText: root.refreshLabel(root.selectedRefresh)
+            fallbackIcon: "speed"
+            onSelected: item => root.selectedRefresh = Number(item.text.replace(" Hz", ""))
         }
 
         SelectRow {

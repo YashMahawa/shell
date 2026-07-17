@@ -153,8 +153,8 @@ Item {
 
         visibilities: root.visibilities
 
-        anchors.top: notifications.bottom
-        anchors.bottom: utilities.top
+        anchors.top: root.visibilities.sidebar ? parent.top : notifications.bottom
+        anchors.bottom: root.visibilities.sidebar ? parent.bottom : utilities.top
         anchors.right: parent.right
         anchors.topMargin: -notifications.anchors.topMargin
     }
