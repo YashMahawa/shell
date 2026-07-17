@@ -23,6 +23,7 @@ CustomMouseArea {
     property bool osdShortcutActive
     property bool utilitiesShortcutActive
     readonly property real barTriggerWidth: Math.max(bar?.implicitWidth ?? 0, bar?.clampedThickness ?? 0, Config.border.minThickness ?? 0, Config.border.thickness ?? 0, 8)
+    readonly property real topRightHotCornerSize: Math.max(24, Config.border.rounding, Config.border.thickness * 2)
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
         const panelHeight = panel.height || panel.implicitHeight;
@@ -118,6 +119,14 @@ CustomMouseArea {
         if (fullscreen) {
             root.panels.osd.hovered = inRightPanel(panels.osdWrapper, x, y);
             return;
+        }
+
+        // A deliberate trip to the top-right corner opens the notification
+        // centre and leaves it open for interaction until normal click-away.
+        if (!visibilities.sidebar && x >= width - topRightHotCornerSize && y <= topRightHotCornerSize) {
+            visibilities.session = false;
+            visibilities.utilities = false;
+            visibilities.sidebar = true;
         }
 
         // Show bar in non-exclusive mode on hover

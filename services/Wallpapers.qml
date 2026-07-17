@@ -22,6 +22,33 @@ Searcher {
     property string actualCurrent
     property bool previewColourLock
     property bool pendingPreviewClear
+    property list<QtObject> daemonWalls: []
+
+    function syncDaemonWalls(): void {
+        const previous = daemonWalls;
+        daemonWalls = [];
+        for (const object of previous)
+            object.destroy();
+
+        const next = [];
+        for (const wall of BackgroundDaemon.wallpapers) {
+            if (!wall?.path)
+                continue;
+            const object = wallpaperObject.createObject(root, {
+                path: String(wall.path),
+                parentDir: String(wall.parentDir),
+                relativePath: String(wall.relativePath),
+                name: String(wall.name),
+                baseName: String(wall.baseName),
+                suffix: String(wall.suffix),
+                size: Number(wall.size),
+                isImage: true
+            });
+            if (object)
+                next.push(object);
+        }
+        daemonWalls = next;
+    }
 
     function getCategoryFor(w: var): string {
         let category = w.parentDir.slice(Paths.wallsdir.length + 1);
@@ -62,14 +89,37 @@ Searcher {
 
     Component.onCompleted: {
         BackgroundDaemon.startDaemon(Paths.wallsdir);
+        syncDaemonWalls();
     }
 
-    list: BackgroundDaemon.wallpapers
+    list: daemonWalls
     key: "relativePath"
     useFuzzy: GlobalConfig.launcher.useFuzzy.wallpapers
     extraOpts: useFuzzy ? ({}) : ({
             forward: false
         })
+
+    Connections {
+        target: BackgroundDaemon
+        function onWallpapersChanged(): void {
+            root.syncDaemonWalls();
+        }
+    }
+
+    Component {
+        id: wallpaperObject
+
+        QtObject {
+            property string path
+            property string parentDir
+            property string relativePath
+            property string name
+            property string baseName
+            property string suffix
+            property real size
+            property bool isImage
+        }
+    }
 
     IpcHandler {
         function get(): string {
