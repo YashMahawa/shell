@@ -85,6 +85,10 @@ CustomMouseArea {
             popouts.close();
     }
     onContainsMouseChanged: {
+        if (containsMouse) {
+            sidebarHideTimer.stop();
+            return;
+        }
         if (!containsMouse) {
             // Only hide if not activated by shortcut
             if (!osdShortcutActive) {
@@ -99,8 +103,7 @@ CustomMouseArea {
                 visibilities.utilities = false;
 
             if (sidebarHoverActive) {
-                visibilities.sidebar = false;
-                sidebarHoverActive = false;
+                sidebarHideTimer.restart();
             }
 
             if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
@@ -110,6 +113,18 @@ CustomMouseArea {
 
             if (Config.bar.showOnHover)
                 bar.isHovered = false;
+        }
+    }
+
+    Timer {
+        id: sidebarHideTimer
+
+        interval: 180
+        onTriggered: {
+            if (!root.containsMouse && root.sidebarHoverActive) {
+                root.visibilities.sidebar = false;
+                root.sidebarHoverActive = false;
+            }
         }
     }
 

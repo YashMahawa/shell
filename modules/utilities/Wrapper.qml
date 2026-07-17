@@ -24,47 +24,16 @@ Item {
 
         reloadableId: "utilities"
     }
-    readonly property bool shouldBeActive: visibilities.sidebar || (visibilities.utilities && Config.utilities.enabled && !(visibilities.session && Config.session.enabled))
+    readonly property bool shouldBeActive: visibilities.utilities && !visibilities.sidebar && Config.utilities.enabled && !(visibilities.session && Config.session.enabled)
     readonly property real totalPadding: content.anchors.margins + CUtils.clamp(content.anchors.margins - Config.border.thickness, 0, content.anchors.margins)
     readonly property real nonAnimHeight: ((content.item as Content)?.nonAnimHeight ?? 0) + totalPadding
     property real offsetScale: shouldBeActive ? 0 : 1
-    property real sidebarLerp
 
     visible: offsetScale < 1
     anchors.bottomMargin: (-implicitHeight - 5) * offsetScale
     implicitHeight: content.implicitHeight + totalPadding
-    implicitWidth: sidebar.width * (1 - sidebar.offsetScale) * horizontalStretch * sidebarLerp + Tokens.sizes.utilities.width * (1 - sidebarLerp)
+    implicitWidth: Tokens.sizes.utilities.width
     opacity: 1 - offsetScale
-
-    states: State {
-        name: "attachedToSidebar"
-        when: root.visibilities.sidebar
-
-        PropertyChanges {
-            root.sidebarLerp: 1
-        }
-    }
-
-    transitions: [
-        Transition {
-            from: ""
-
-            Anim {
-                property: "sidebarLerp"
-                duration: Tokens.anim.durations.expressiveDefaultSpatial / 2
-                easing: Tokens.anim.standardAccel
-            }
-        },
-        Transition {
-            to: ""
-
-            Anim {
-                property: "sidebarLerp"
-                duration: Tokens.anim.durations.expressiveDefaultSpatial / 2
-                easing: Tokens.anim.standardDecel
-            }
-        }
-    ]
 
     Behavior on offsetScale {
         Anim {}

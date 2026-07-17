@@ -78,6 +78,11 @@ Region {
         panel: root.panels.notifications
     }
 
+    R {
+        panel: root.panels.sidebar
+        width: panel.width * (1 - panel.offsetScale)
+    }
+
     component R: Region {
         required property Item panel
 

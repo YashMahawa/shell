@@ -16,8 +16,7 @@ Item {
 
     visible: offsetScale < 1
     anchors.rightMargin: (-implicitWidth - 5) * offsetScale
-    // The notification centre is a proper half-screen management surface.
-    implicitWidth: Math.max(Tokens.sizes.sidebar.width, (parent?.width ?? 0) * 0.5)
+    implicitWidth: Tokens.sizes.sidebar.width
     opacity: 1 - offsetScale
 
     Behavior on offsetScale {
