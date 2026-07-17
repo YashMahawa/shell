@@ -18,6 +18,13 @@ Singleton {
     property list<PwNode> sources: []
     property list<PwNode> streams: []
 
+    property alias safeBluetoothVolumeEnabled: audioPreferences.safeBluetoothVolumeEnabled
+    property alias safeBluetoothVolume: audioPreferences.safeBluetoothVolume
+
+    property var bluetoothSinksSeen: ({})
+    property var bluetoothSinksPending: ({})
+    property int bluetoothSafetyRetries: 0
+
     readonly property PwNode sink: Pipewire.defaultAudioSink
     readonly property PwNode source: Pipewire.defaultAudioSource
 
@@ -29,6 +36,96 @@ Singleton {
 
     readonly property alias cava: cava
     readonly property alias beatTracker: beatTracker
+
+    function isBluetoothSink(node: PwNode): bool {
+        if (!node)
+            return false;
+
+        const properties = node.properties ?? {};
+        const nodeName = node.name ?? properties["node.name"] ?? "";
+        return node.isSink && (nodeName.startsWith("bluez_output.") || properties["device.api"] === "bluez5" || properties["device.bus"] === "bluetooth");
+    }
+
+    function bluetoothSinkKey(node: PwNode): string {
+        return node?.name ?? node?.properties?.["node.name"] ?? String(node?.id ?? "");
+    }
+
+    function setSafeBluetoothVolumeEnabled(enabled: bool): void {
+        audioPreferences.safeBluetoothVolumeEnabled = enabled;
+
+        if (!enabled) {
+            bluetoothSafetyTimer.stop();
+            root.bluetoothSinksPending = ({});
+
+            const seen = ({});
+            for (const node of root.sinks) {
+                if (root.isBluetoothSink(node))
+                    seen[root.bluetoothSinkKey(node)] = true;
+            }
+            root.bluetoothSinksSeen = seen;
+        }
+    }
+
+    function syncBluetoothSafety(sinkNodes): void {
+        const present = ({});
+        let queued = false;
+
+        for (const node of sinkNodes) {
+            if (!root.isBluetoothSink(node))
+                continue;
+
+            const key = root.bluetoothSinkKey(node);
+            present[key] = true;
+            if (root.bluetoothSinksSeen[key] || root.bluetoothSinksPending[key])
+                continue;
+
+            if (audioPreferences.safeBluetoothVolumeEnabled) {
+                root.bluetoothSinksPending[key] = true;
+                queued = true;
+            } else {
+                root.bluetoothSinksSeen[key] = true;
+            }
+        }
+
+        for (const key of Object.keys(root.bluetoothSinksSeen)) {
+            if (!present[key])
+                delete root.bluetoothSinksSeen[key];
+        }
+        for (const key of Object.keys(root.bluetoothSinksPending)) {
+            if (!present[key])
+                delete root.bluetoothSinksPending[key];
+        }
+
+        if (queued) {
+            root.bluetoothSafetyRetries = 0;
+            bluetoothSafetyTimer.restart();
+        }
+    }
+
+    function applyPendingBluetoothSafety(): void {
+        let retry = false;
+
+        for (const node of root.sinks) {
+            if (!root.isBluetoothSink(node))
+                continue;
+
+            const key = root.bluetoothSinkKey(node);
+            if (!root.bluetoothSinksPending[key])
+                continue;
+
+            if (node.ready && node.audio) {
+                node.audio.volume = Math.max(0, Math.min(1, audioPreferences.safeBluetoothVolume));
+                root.bluetoothSinksSeen[key] = true;
+                delete root.bluetoothSinksPending[key];
+            } else {
+                retry = true;
+            }
+        }
+
+        root.bluetoothSafetyRetries++;
+        if (retry && root.bluetoothSafetyRetries < 40)
+            bluetoothSafetyTimer.restart();
+    }
 
     function setVolume(newVolume: real): void {
         if (sink?.ready && sink?.audio) {
@@ -124,6 +221,7 @@ Singleton {
         root.sinks = newSinks;
         root.sources = newSources;
         root.streams = newStreams;
+        root.syncBluetoothSafety(newSinks);
     }
 
     onSinkChanged: {
@@ -162,6 +260,23 @@ Singleton {
         }
 
         target: Pipewire.nodes
+    }
+
+    PersistentProperties {
+        id: audioPreferences
+
+        property bool safeBluetoothVolumeEnabled: true
+        property real safeBluetoothVolume: 0.2
+
+        reloadableId: "audioSafety"
+    }
+
+    Timer {
+        id: bluetoothSafetyTimer
+
+        interval: 250
+        repeat: false
+        onTriggered: root.applyPendingBluetoothSafety()
     }
 
     PwObjectTracker {

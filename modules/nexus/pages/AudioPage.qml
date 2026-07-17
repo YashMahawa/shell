@@ -47,6 +47,32 @@ PageBase {
             onSelected: node => Audio.setAudioSink(node)
         }
 
+        SectionHeader {
+            text: qsTr("Bluetooth safety")
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("Safe connection volume")
+            subtext: qsTr("Limit volume once when a Bluetooth audio device connects")
+            checked: Audio.safeBluetoothVolumeEnabled
+            onToggled: Audio.setSafeBluetoothVolumeEnabled(checked)
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            last: true
+            label: qsTr("Initial Bluetooth volume")
+            subtext: qsTr("You can freely adjust it after connection")
+            value: Math.round(Audio.safeBluetoothVolume * 100)
+            from: 5
+            to: 100
+            stepSize: 5
+            enabled: Audio.safeBluetoothVolumeEnabled
+            onMoved: v => Audio.safeBluetoothVolume = v / 100
+        }
+
         // Input
         SliderRow {
             Layout.fillWidth: true
