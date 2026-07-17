@@ -75,6 +75,12 @@ QtObject {
             category: "shell"
         },
         {
+            label: qsTr("Voice typing"),
+            icon: "keyboard_voice",
+            description: qsTr("Gemini keys and transcription prompt"),
+            category: "shell"
+        },
+        {
             label: qsTr("Language & region"),
             icon: "globe",
             description: qsTr("UI language, weather location, display units"),

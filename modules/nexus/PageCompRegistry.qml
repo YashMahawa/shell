@@ -153,6 +153,14 @@ QtObject {
             }
         },
         Component {
+            // Voice typing
+            StackPage {
+                Component {
+                    VoiceTypingPage {}
+                }
+            }
+        },
+        Component {
             // Language & region
             StackPage {
                 Component {

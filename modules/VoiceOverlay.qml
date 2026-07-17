@@ -67,17 +67,52 @@ Scope {
                     anchors.rightMargin: Tokens.padding.large
                     spacing: Tokens.spacing.medium
 
-                    MaterialIcon {
+                    Item {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.status === "processing" ? "progress_activity" : root.status === "done" ? "check_circle" : root.status === "error" ? "error" : "mic"
-                        color: root.status === "error" ? Colours.palette.m3error : Colours.palette.m3primary
-                        fontStyle: Tokens.font.icon.large
-                        RotationAnimation on rotation {
-                            running: root.status === "processing"
-                            loops: Animation.Infinite
-                            from: 0
-                            to: 360
-                            duration: 900
+                        implicitWidth: 38
+                        implicitHeight: 38
+
+                        StyledRect {
+                            anchors.fill: parent
+                            radius: width / 2
+                            color: root.status === "error" ? Colours.palette.m3errorContainer : Colours.palette.m3primaryContainer
+                        }
+
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            visible: root.status !== "processing"
+                            rotation: 0
+                            text: root.status === "done" ? "check" : root.status === "error" ? "error" : "mic"
+                            color: root.status === "error" ? Colours.palette.m3onErrorContainer : Colours.palette.m3onPrimaryContainer
+                            fontStyle: Tokens.font.icon.medium
+                            renderType: Text.NativeRendering
+                        }
+
+                        Row {
+                            anchors.centerIn: parent
+                            visible: root.status === "processing"
+                            spacing: 3
+
+                            Repeater {
+                                model: 3
+
+                                StyledRect {
+                                    required property int index
+                                    width: 4
+                                    height: 4
+                                    radius: 2
+                                    color: Colours.palette.m3onPrimaryContainer
+
+                                    SequentialAnimation on opacity {
+                                        running: root.status === "processing"
+                                        loops: Animation.Infinite
+                                        PauseAnimation { duration: index * 130 }
+                                        NumberAnimation { from: 0.35; to: 1; duration: 220 }
+                                        NumberAnimation { from: 1; to: 0.35; duration: 220 }
+                                        PauseAnimation { duration: (2 - index) * 130 }
+                                    }
+                                }
+                            }
                         }
                     }
 
