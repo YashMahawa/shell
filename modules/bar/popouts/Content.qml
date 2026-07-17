@@ -105,6 +105,11 @@ Item {
         }
 
         Popout {
+            name: "continuity"
+            sourceComponent: Continuity {}
+        }
+
+        Popout {
             name: "battery"
             sourceComponent: Battery {}
         }

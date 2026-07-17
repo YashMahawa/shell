@@ -11,6 +11,7 @@ import qs.services
 Scope {
     id: root
     property bool sent: false
+    property string resultText: ""
 
     Timer {
         id: sentTimer
@@ -69,7 +70,7 @@ Scope {
                         renderType: Text.NativeRendering
                     }
                     StyledText {
-                        text: root.sent ? qsTr("Sent to T2 5G") : qsTr("Drop to share with T2 5G")
+                        text: root.sent ? root.resultText : qsTr("Drop files to send • drop text to copy")
                         color: Colours.palette.m3onSurface
                         font: Tokens.font.title.medium
                     }
@@ -86,6 +87,12 @@ Scope {
                         values.push(String(url));
                     if (values.length) {
                         Quickshell.execDetached(["caelestia-clipboard", "send-path", ...values]);
+                        root.resultText = qsTr("Sent to T2 5G");
+                        root.sent = true;
+                        sentTimer.restart();
+                    } else if ((event.text ?? "").length) {
+                        Quickshell.execDetached(["wl-copy", String(event.text)]);
+                        root.resultText = qsTr("Copied to clipboard");
                         root.sent = true;
                         sentTimer.restart();
                     }

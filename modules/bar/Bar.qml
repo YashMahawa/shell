@@ -19,6 +19,20 @@ GridLayout {
     required property bool fullscreen
     readonly property int vPadding: Tokens.padding.large
     readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
+    readonly property list<var> entries: {
+        const result = [];
+        let inserted = false;
+        for (const entry of Config.bar.entries) {
+            if (!inserted && entry.id === "clock") {
+                result.push({ id: "continuity", enabled: true });
+                inserted = true;
+            }
+            result.push(entry);
+        }
+        if (!inserted)
+            result.push({ id: "continuity", enabled: true });
+        return result;
+    }
     flow: isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
 
     function closeTray(): void {
@@ -74,6 +88,11 @@ GridLayout {
                 popouts.hasCurrent = false;
                 tray.expanded = true;
             }
+        } else if (id === "continuity") {
+            popouts.currentName = "continuity";
+            const mappedItem = (ch.item as Item).mapToItem(root, isVertical ? 0 : (ch.item as Item).implicitWidth / 2, isVertical ? (ch.item as Item).implicitHeight / 2 : 0);
+            popouts.currentCenter = mappedItem[isVertical ? "y" : "x"] ?? 0;
+            popouts.hasCurrent = true;
         } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
             popouts.currentName = id.toLowerCase();
             const mappedItem = (ch.item as Item).mapToItem(root, isVertical ? 0 : (ch.item as Item).implicitWidth / 2, isVertical ? (ch.item as Item).implicitHeight / 2 : 0);
@@ -118,7 +137,7 @@ GridLayout {
     Repeater {
         id: repeater
 
-        model: Config.bar.entries
+        model: root.entries
 
         DelegateChooser {
             role: "id"
@@ -160,6 +179,13 @@ GridLayout {
                 delegate: WrappedLoader {
                     visible: !root.fullscreen
                     sourceComponent: Tray {}
+                }
+            }
+            DelegateChoice {
+                roleValue: "continuity"
+                delegate: WrappedLoader {
+                    visible: !root.fullscreen
+                    sourceComponent: ContinuityButtons { popouts: root.popouts }
                 }
             }
             DelegateChoice {
