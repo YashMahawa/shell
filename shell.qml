@@ -10,6 +10,7 @@ import "modules/background"
 import "modules/areapicker"
 import "modules/lock"
 import "modules/immersivelyrics"
+import "modules/continuity"
 import Quickshell
 
 ShellRoot {
@@ -21,6 +22,9 @@ ShellRoot {
     Drawers {}
     AreaPicker {}
     ImmersiveLyrics {}
+    Continuity {}
+    ContinuityIsland {}
+    CallGuard {}
     Lock {
         id: lock
     }
