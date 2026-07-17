@@ -256,6 +256,8 @@ StyledRect {
             sourceComponent: MaterialIcon {
                 animate: true
                 text: {
+                    if (UltraPower.active)
+                        return "battery_saver";
                     if (!UPower.displayDevice.isLaptopBattery) {
                         if (PowerProfiles.profile === PowerProfile.PowerSaver)
                             return "energy_savings_leaf";

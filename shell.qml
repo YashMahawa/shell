@@ -26,6 +26,7 @@ ShellRoot {
     }
 
     ConfigToasts {}
+    VoiceOverlay {}
     Shortcuts {}
     BatteryMonitor {}
     IdleMonitors {

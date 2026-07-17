@@ -16,6 +16,16 @@ StyledListView {
     required property StyledTextField search
     required property DrawerVisibilities visibilities
 
+    Component.onCompleted: HybridSearch.query(search.text)
+
+    Connections {
+        target: root.search
+        function onTextChanged(): void {
+            if (root.state === "apps")
+                HybridSearch.query(root.search.text);
+        }
+    }
+
     model: ScriptModel {
         id: model
 
@@ -69,8 +79,8 @@ StyledListView {
             name: "apps"
 
             PropertyChanges {
-                model.values: Apps.search(search.text)
-                root.delegate: appItem
+                model.values: HybridSearch.results
+                root.delegate: hybridItem
             }
         },
         State {
@@ -218,9 +228,9 @@ StyledListView {
     }
 
     Component {
-        id: appItem
+        id: hybridItem
 
-        AppItem {
+        HybridItem {
             visibilities: root.visibilities
         }
     }

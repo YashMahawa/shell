@@ -17,6 +17,14 @@ Column {
     }
 
     StyledText {
+        visible: UltraPower.active
+        text: qsTr("Ultra Power Saver active")
+        color: Colours.palette.m3primary
+        font: Tokens.font.label.medium
+        anchors.horizontalCenter: parent.horizontalCenter
+    }
+
+    StyledText {
         function formatSeconds(s: int, fallback: string): string {
             const day = Math.floor(s / 86400);
             const hr = Math.floor(s / 3600) % 60;
@@ -98,6 +106,8 @@ Column {
         id: profiles
 
         property string current: {
+            if (UltraPower.active)
+                return ultra.icon;
             const p = PowerProfiles.profile;
             if (p === PowerProfile.PowerSaver)
                 return saver.icon;
@@ -108,8 +118,8 @@ Column {
 
         anchors.horizontalCenter: parent.horizontalCenter
 
-        implicitWidth: saver.implicitHeight + balance.implicitHeight + perf.implicitHeight + Tokens.padding.medium * 2 + Tokens.spacing.largeIncreased * 2
-        implicitHeight: Math.max(saver.implicitHeight, balance.implicitHeight, perf.implicitHeight) + Tokens.padding.small
+        implicitWidth: ultra.implicitWidth + saver.implicitWidth + balance.implicitWidth + perf.implicitWidth + Tokens.padding.medium + Tokens.spacing.medium * 3
+        implicitHeight: Math.max(ultra.implicitHeight, saver.implicitHeight, balance.implicitHeight, perf.implicitHeight) + Tokens.padding.small
 
         color: Colours.tPalette.m3surfaceContainer
         radius: Tokens.rounding.full
@@ -122,6 +132,13 @@ Column {
             state: profiles.current
 
             states: [
+                State {
+                    name: ultra.icon
+
+                    Fill {
+                        item: ultra
+                    }
+                },
                 State {
                     name: saver.icon
 
@@ -151,11 +168,22 @@ Column {
         }
 
         Profile {
-            id: saver
+            id: ultra
 
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left
             anchors.leftMargin: Tokens.padding.extraSmall
+
+            ultra: true
+            icon: "battery_saver"
+        }
+
+        Profile {
+            id: saver
+
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: ultra.right
+            anchors.leftMargin: Tokens.spacing.medium
 
             profile: PowerProfile.PowerSaver
             icon: "energy_savings_leaf"
@@ -164,7 +192,9 @@ Column {
         Profile {
             id: balance
 
-            anchors.centerIn: parent
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: saver.right
+            anchors.leftMargin: Tokens.spacing.medium
 
             profile: PowerProfile.Balanced
             icon: "balance"
@@ -194,7 +224,8 @@ Column {
 
     component Profile: Item {
         required property string icon
-        required property int profile
+        property int profile: PowerProfile.Balanced
+        property bool ultra: false
 
         implicitWidth: icon.implicitHeight + Tokens.padding.small
         implicitHeight: icon.implicitHeight + Tokens.padding.small
@@ -202,7 +233,12 @@ Column {
         StateLayer {
             radius: Tokens.rounding.full
             color: profiles.current === parent.icon ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-            onClicked: PowerProfiles.profile = parent.profile
+            onClicked: {
+                if (parent.ultra)
+                    UltraPower.toggle();
+                else
+                    UltraPower.selectProfile(parent.profile === PowerProfile.PowerSaver ? "power-saver" : parent.profile === PowerProfile.Performance ? "performance" : "balanced");
+            }
         }
 
         MaterialIcon {
