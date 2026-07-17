@@ -35,8 +35,7 @@ PageBase {
 
     // Discovery is expensive and competes with 2.4 GHz Wi-Fi. A minute is long
     // enough to find nearby devices; the user can leave/re-enter to scan again.
-    Timer {
-        id: scanTimeout
+    property Timer scanTimeout: Timer {
         interval: 60000
         onTriggered: root.setScan(false)
     }
