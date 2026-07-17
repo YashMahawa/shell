@@ -14,6 +14,7 @@ Singleton {
     readonly property list<MprisPlayer> list: Mpris.players.values
     readonly property MprisPlayer active: props.manualActive ?? list.find(p => getIdentity(p) === GlobalConfig.services.defaultPlayer) ?? list[0] ?? null
     property alias manualActive: props.manualActive
+    property string lastNowPlayingKey: ""
 
     function getIdentity(player: MprisPlayer): string {
         if (!player)
@@ -37,14 +38,40 @@ Singleton {
         return "";
     }
 
+    function maybeToastNowPlaying(): void {
+        if (!GlobalConfig.utilities.toasts.nowPlaying)
+            return;
+
+        const player = root.active;
+        if (!player)
+            return;
+
+        const title = player.trackTitle ?? "";
+        const artist = player.trackArtist ?? "";
+        if (!title || !artist)
+            return;
+
+        const key = `${getIdentity(player)}\0${player.uniqueId}\0${title}\0${artist}`;
+        if (key === lastNowPlayingKey)
+            return;
+
+        lastNowPlayingKey = key;
+        Toaster.toast(qsTr("Now Playing"), qsTr("%1 - %2").arg(artist).arg(title), "music_note");
+    }
+
+    onActiveChanged: lastNowPlayingKey = ""
+
     Connections {
-        function onPostTrackChanged() {
-            if (!GlobalConfig.utilities.toasts.nowPlaying) {
-                return;
-            }
-            if (root.active.trackArtist != "" && root.active.trackTitle != "") {
-                Toaster.toast(qsTr("Now Playing"), qsTr("%1 - %2").arg(root.active.trackArtist).arg(root.active.trackTitle), "music_note");
-            }
+        function onPostTrackChanged(): void {
+            root.maybeToastNowPlaying();
+        }
+
+        function onTrackTitleChanged(): void {
+            root.maybeToastNowPlaying();
+        }
+
+        function onTrackArtistChanged(): void {
+            root.maybeToastNowPlaying();
         }
 
         target: root.active

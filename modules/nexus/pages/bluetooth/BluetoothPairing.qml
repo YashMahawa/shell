@@ -17,8 +17,13 @@ PageBase {
     readonly property BluetoothAdapter adapter: Bluetooth.defaultAdapter // qmllint disable unresolved-type
 
     function setScan(on: bool): void {
-        if (adapter?.enabled)
+        if (adapter?.enabled) {
             adapter.discovering = on;
+            if (on)
+                scanTimeout.restart();
+            else
+                scanTimeout.stop();
+        }
     }
 
     title: qsTr("Pair new device")
@@ -27,6 +32,14 @@ PageBase {
     Component.onCompleted: setScan(true)
     Component.onDestruction: setScan(false)
     onVisibleChanged: setScan(visible)
+
+    // Discovery is expensive and competes with 2.4 GHz Wi-Fi. A minute is long
+    // enough to find nearby devices; the user can leave/re-enter to scan again.
+    Timer {
+        id: scanTimeout
+        interval: 60000
+        onTriggered: root.setScan(false)
+    }
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter

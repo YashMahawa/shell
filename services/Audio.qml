@@ -105,6 +105,27 @@ Singleton {
         return stream.properties["application.name"] || stream.description || stream.name || qsTr("Unknown Application");
     }
 
+    function refreshNodes(): void {
+        const newSinks = [];
+        const newSources = [];
+        const newStreams = [];
+
+        for (const node of Pipewire.nodes.values) {
+            if (!node.isStream) {
+                if (node.isSink)
+                    newSinks.push(node);
+                else if (node.audio)
+                    newSources.push(node);
+            } else if (node.audio) {
+                newStreams.push(node);
+            }
+        }
+
+        root.sinks = newSinks;
+        root.sources = newSources;
+        root.streams = newStreams;
+    }
+
     onSinkChanged: {
         if (!sink?.ready)
             return;
@@ -130,37 +151,21 @@ Singleton {
     }
 
     Component.onCompleted: {
+        refreshNodes();
         previousSinkName = sink?.description || sink?.name || qsTr("Unknown Device");
         previousSourceName = source?.description || source?.name || qsTr("Unknown Device");
     }
 
     Connections {
         function onValuesChanged(): void {
-            const newSinks = [];
-            const newSources = [];
-            const newStreams = [];
-
-            for (const node of Pipewire.nodes.values) {
-                if (!node.isStream) {
-                    if (node.isSink)
-                        newSinks.push(node);
-                    else if (node.audio)
-                        newSources.push(node);
-                } else if (node.audio) {
-                    newStreams.push(node);
-                }
-            }
-
-            root.sinks = newSinks;
-            root.sources = newSources;
-            root.streams = newStreams;
+            root.refreshNodes();
         }
 
         target: Pipewire.nodes
     }
 
     PwObjectTracker {
-        objects: [...root.sinks, ...root.sources, ...root.streams]
+        objects: [root.sink, root.source, ...root.sinks, ...root.sources, ...root.streams].filter(n => n)
     }
 
     CavaProvider {

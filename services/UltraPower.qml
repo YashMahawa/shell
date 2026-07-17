@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
 
 Singleton {
@@ -9,6 +10,22 @@ Singleton {
 
     property bool active: false
     property string status: "off"
+
+    function stopDiscovery(): void {
+        const adapter = Bluetooth.defaultAdapter; // qmllint disable unresolved-type
+        if (adapter?.discovering)
+            adapter.discovering = false;
+    }
+
+    onActiveChanged: {
+        if (active)
+            stopDiscovery();
+    }
+
+    Component.onCompleted: {
+        if (active)
+            stopDiscovery();
+    }
 
     function toggle(): void {
         Quickshell.execDetached(["/home/yash/.local/bin/caelestia-ultra-power", "toggle"]);
