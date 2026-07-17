@@ -81,6 +81,12 @@ QtObject {
             category: "shell"
         },
         {
+            label: qsTr("Clipboard"),
+            icon: "content_paste",
+            description: qsTr("History retention and pinned items"),
+            category: "shell"
+        },
+        {
             label: qsTr("Language & region"),
             icon: "globe",
             description: qsTr("UI language, weather location, display units"),

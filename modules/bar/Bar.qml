@@ -89,6 +89,12 @@ GridLayout {
                 tray.expanded = true;
             }
         } else if (id === "continuity") {
+            const continuity = ch.item as ContinuityButtons;
+            const local = continuity.mapFromItem(root, x, y);
+            if (!continuity.linkContains(local.x, local.y)) {
+                popouts.hasCurrent = false;
+                return;
+            }
             popouts.currentName = "continuity";
             const mappedItem = (ch.item as Item).mapToItem(root, isVertical ? 0 : (ch.item as Item).implicitWidth / 2, isVertical ? (ch.item as Item).implicitHeight / 2 : 0);
             popouts.currentCenter = mappedItem[isVertical ? "y" : "x"] ?? 0;

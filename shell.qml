@@ -23,7 +23,6 @@ ShellRoot {
     AreaPicker {}
     ImmersiveLyrics {}
     Continuity {}
-    ContinuityIsland {}
     CallGuard {}
     Lock {
         id: lock

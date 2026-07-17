@@ -17,6 +17,7 @@ CustomMouseArea {
     required property Bar.BarWrapper bar
     required property real borderThickness
     required property bool fullscreen
+    required property bool dashboardHoverBlocked
 
     property point dragStart
     property bool dashboardShortcutActive
@@ -25,6 +26,13 @@ CustomMouseArea {
     property bool sidebarHoverActive
     readonly property real barTriggerWidth: Math.max(bar?.implicitWidth ?? 0, bar?.clampedThickness ?? 0, Config.border.minThickness ?? 0, Config.border.thickness ?? 0, 8)
     readonly property real topRightHotCornerSize: Math.max(24, Config.border.rounding, Config.border.thickness * 2)
+
+    onDashboardHoverBlockedChanged: {
+        if (dashboardHoverBlocked) {
+            dashboardShortcutActive = false;
+            visibilities.dashboard = false;
+        }
+    }
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
         const panelHeight = panel.height || panel.implicitHeight;
@@ -233,7 +241,7 @@ CustomMouseArea {
         }
 
         // Show dashboard on hover
-        const showDashboard = Config.dashboard.showOnHover && inTopPanel(panels.dashboard, x, y);
+        const showDashboard = !dashboardHoverBlocked && Config.dashboard.showOnHover && inTopPanel(panels.dashboard, x, y);
 
         // Always update visibility based on hover if not in shortcut mode
         if (!dashboardShortcutActive) {
@@ -244,7 +252,7 @@ CustomMouseArea {
         }
 
         // Show/hide dashboard on drag (for touchscreen devices)
-        if (pressed && inTopPanel(panels.dashboard, dragStart.x, dragStart.y) && withinPanelWidth(panels.dashboard, x, y)) {
+        if (!dashboardHoverBlocked && pressed && inTopPanel(panels.dashboard, dragStart.x, dragStart.y) && withinPanelWidth(panels.dashboard, x, y)) {
             if (dragY > Config.dashboard.dragThreshold)
                 visibilities.dashboard = true;
             else if (dragY < -Config.dashboard.dragThreshold)

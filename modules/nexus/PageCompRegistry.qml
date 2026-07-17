@@ -161,6 +161,14 @@ QtObject {
             }
         },
         Component {
+            // Clipboard
+            StackPage {
+                Component {
+                    ClipboardPage {}
+                }
+            }
+        },
+        Component {
             // Language & region
             StackPage {
                 Component {

@@ -40,6 +40,13 @@ Region {
     }
 
     Region {
+        x: (root.win.width - width) / 2
+        y: 0
+        width: root.win.dropInteractionActive ? 720 : 0
+        height: root.win.dropInteractionActive ? 300 : 0
+    }
+
+    Region {
         x: root.win.width - width
         y: 0
         width: root.edgeThickness

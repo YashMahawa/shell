@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
@@ -13,14 +14,17 @@ Scope {
     id: root
 
     property bool opened: false
-    property bool phoneFocus: false
     property string query: ""
     property list<var> items: []
+    property bool dropActive: false
+    property int editingId: -1
+    property string editDraft: ""
     readonly property list<var> filtered: items.filter(item => !query || (item.text ?? "").toLowerCase().includes(query.toLowerCase()))
 
     function close(): void {
         opened = false;
         query = "";
+        editingId = -1;
     }
 
     FileView {
@@ -37,24 +41,19 @@ Scope {
     Variants {
         model: Screens.screens
 
-        StyledWindow {
+        FloatingWindow {
             id: window
             required property ShellScreen modelData
             readonly property bool targetScreen: (Hypr.focusedMonitor?.name ?? modelData.name) === modelData.name
 
             screen: modelData
-            name: "continuity-clipboard"
             visible: root.opened && targetScreen
-            implicitWidth: 620
-            implicitHeight: 510
+            implicitWidth: 700
+            implicitHeight: 580
+            minimumSize.width: 560
+            minimumSize.height: 420
             color: "transparent"
-
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-            anchors.top: true
-            margins.top: 10
-
+            title: qsTr("Clipboard")
             onVisibleChanged: if (visible) surface.forceActiveFocus()
 
             Item {
@@ -69,7 +68,24 @@ Scope {
                     radius: 30
                     color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 0.98)
                     border.width: 1
-                    border.color: Colours.layer(Colours.palette.m3primary, 0.38)
+                    border.color: root.dropActive ? Colours.palette.m3primary : Colours.layer(Colours.palette.m3primary, 0.38)
+
+                    DropArea {
+                        anchors.fill: parent
+                        onEntered: event => { root.dropActive = true; event.acceptProposedAction(); }
+                        onExited: root.dropActive = false
+                        onDropped: event => {
+                            const urls = event.urls ?? [];
+                            if (urls.length) {
+                                for (const url of urls)
+                                    Quickshell.execDetached(["caelestia-clipboard", "add-path", String(url)]);
+                            } else if ((event.text ?? "").length) {
+                                Quickshell.execDetached(["wl-copy", String(event.text)]);
+                            }
+                            root.dropActive = false;
+                            event.acceptProposedAction();
+                        }
+                    }
 
                     Column {
                         anchors.fill: parent
@@ -87,7 +103,7 @@ Scope {
                                 color: Colours.palette.m3primaryContainer
                                 MaterialIcon {
                                     anchors.centerIn: parent
-                                    text: root.phoneFocus ? "mobile_screen_share" : "content_paste"
+                                    text: "content_paste_search"
                                     color: Colours.palette.m3onPrimaryContainer
                                     fontStyle: Tokens.font.icon.medium
                                     renderType: Text.NativeRendering
@@ -96,20 +112,19 @@ Scope {
 
                             Column {
                                 width: parent.width - 144
-                                StyledText { text: "Continuity"; font: Tokens.font.title.medium }
+                                StyledText { text: "Clipboard"; font: Tokens.font.title.medium }
                                 StyledText {
-                                    text: root.phoneFocus ? "T2 5G • connected services • file sharing" : "Clipboard • screenshots • T2 5G"
+                                    text: root.dropActive ? "Drop text, images, or files here" : "Search • pin • edit • drag • explicitly share"
                                     color: Colours.palette.m3outline
                                     font: Tokens.font.label.small
                                 }
                             }
 
-                            MiniButton { visible: !root.phoneFocus; icon: "delete_sweep"; tip: "Clear history"; onTriggered: Quickshell.execDetached(["caelestia-clipboard", "clear"]) }
+                            MiniButton { icon: "delete_sweep"; tip: "Clear history"; onTriggered: Quickshell.execDetached(["caelestia-clipboard", "clear"]) }
                             MiniButton { icon: "close"; tip: "Close"; onTriggered: root.close() }
                         }
 
                         StyledRect {
-                            visible: !root.phoneFocus
                             width: parent.width; height: 42; radius: 14
                             color: Colours.layer(Colours.palette.m3surfaceContainerHighest, 1)
                             border.width: 1
@@ -142,7 +157,6 @@ Scope {
                         ListView {
                             id: history
                             width: parent.width
-                            visible: !root.phoneFocus
                             height: parent.height - 118
                             clip: true
                             spacing: Tokens.spacing.small
@@ -152,39 +166,65 @@ Scope {
                                 id: card
                                 required property var modelData
                                 width: history.width
-                                height: modelData.kind === "image" ? 92 : 68
+                                height: modelData.kind === "image" ? 124 : (root.editingId === modelData.id ? 104 : 72)
                                 radius: 16
-                                color: mouse.containsMouse ? Colours.layer(Colours.palette.m3secondaryContainer, 0.52) : Colours.layer(Colours.palette.m3surfaceContainer, 0.9)
+                                color: dragHover.hovered ? Colours.layer(Colours.palette.m3secondaryContainer, 0.52) : Colours.layer(Colours.palette.m3surfaceContainer, 0.9)
 
-                                Image {
-                                    id: preview
+                                StyledRect {
                                     visible: card.modelData.kind === "image"
                                     anchors.left: parent.left; anchors.leftMargin: 10
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 72; height: 72
-                                    source: visible ? "file://" + card.modelData.path : ""
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    cache: true
+                                    width: 104; height: 104; radius: 13
+                                    color: Colours.layer(Colours.palette.m3surface, 0.96)
+                                    clip: true
+                                    Image {
+                                        id: thumbnailImage
+                                        anchors.fill: parent; anchors.margins: 5
+                                        source: parent.visible ? "file://" + card.modelData.path : ""
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        cache: true
+                                    }
                                 }
 
                                 Column {
                                     anchors.left: parent.left
-                                    anchors.leftMargin: card.modelData.kind === "image" ? 94 : 16
+                                    anchors.leftMargin: card.modelData.kind === "image" ? 128 : 16
                                     anchors.right: actions.left
                                     anchors.rightMargin: 10
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 3
-                                    StyledText {
+                                    Loader {
                                         width: parent.width
-                                        text: card.modelData.kind === "image" ? "Screenshot or copied image" : card.modelData.text
-                                        font: Tokens.font.body.medium
-                                        elide: Text.ElideRight
-                                        maximumLineCount: 2
-                                        wrapMode: Text.Wrap
+                                        sourceComponent: root.editingId === card.modelData.id ? editor : label
+                                        Component {
+                                            id: label
+                                            StyledText {
+                                                text: card.modelData.kind === "image" ? card.modelData.text : card.modelData.text
+                                                font: Tokens.font.body.medium
+                                                elide: Text.ElideRight
+                                                maximumLineCount: 2
+                                                wrapMode: Text.Wrap
+                                            }
+                                        }
+                                        Component {
+                                            id: editor
+                                            TextInput {
+                                                text: root.editDraft
+                                                color: Colours.palette.m3onSurface
+                                                selectionColor: Colours.palette.m3primaryContainer
+                                                font: Tokens.font.body.medium
+                                                onTextChanged: root.editDraft = text
+                                                Component.onCompleted: forceActiveFocus()
+                                                Keys.onReturnPressed: {
+                                                    Quickshell.execDetached(["caelestia-clipboard", "edit", String(card.modelData.id), root.editDraft]);
+                                                    root.editingId = -1;
+                                                }
+                                            }
+                                        }
                                     }
                                     StyledText {
-                                        text: card.modelData.kind === "image" ? "Image • ready to send" : card.modelData.kind === "files" ? "Files" : "Text"
+                                        text: `${card.modelData.pinned ? "Pinned • " : ""}${card.modelData.kind === "image" ? "Image" : card.modelData.kind === "files" ? "Files" : "Text"} • hold and drag into any app`
                                         color: Colours.palette.m3outline
                                         font: Tokens.font.label.small
                                     }
@@ -196,7 +236,24 @@ Scope {
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 6
                                     MiniButton {
-                                        icon: "send_to_mobile"; tip: "Send to T2 5G"
+                                        icon: card.modelData.pinned ? "keep_off" : "keep"; tip: card.modelData.pinned ? "Unpin" : "Pin"
+                                        onTriggered: Quickshell.execDetached(["caelestia-clipboard", "pin", String(card.modelData.id)])
+                                    }
+                                    MiniButton {
+                                        visible: card.modelData.kind === "text"
+                                        icon: root.editingId === card.modelData.id ? "save" : "edit"; tip: "Edit text"
+                                        onTriggered: {
+                                            if (root.editingId === card.modelData.id) {
+                                                Quickshell.execDetached(["caelestia-clipboard", "edit", String(card.modelData.id), root.editDraft]);
+                                                root.editingId = -1;
+                                            } else {
+                                                root.editDraft = card.modelData.text;
+                                                root.editingId = card.modelData.id;
+                                            }
+                                        }
+                                    }
+                                    MiniButton {
+                                        icon: "send_to_mobile"; tip: "Send to phone"
                                         onTriggered: Quickshell.execDetached(["caelestia-clipboard", "send", String(card.modelData.id)])
                                     }
                                     MiniButton {
@@ -205,15 +262,84 @@ Scope {
                                     }
                                 }
 
-                                MouseArea {
-                                    id: mouse
+                                Item {
+                                    id: dragZone
                                     anchors.fill: parent
-                                    anchors.rightMargin: 94
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        Quickshell.execDetached(["caelestia-clipboard", "copy", String(card.modelData.id)]);
-                                        root.close();
+                                    anchors.rightMargin: card.modelData.kind === "text" ? 182 : 138
+
+                                    HoverHandler {
+                                        id: dragHover
+                                        cursorShape: dragHandler.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                                    }
+
+                                    TapHandler {
+                                        onTapped: {
+                                            Quickshell.execDetached(["caelestia-clipboard", "copy", String(card.modelData.id)]);
+                                            root.close();
+                                        }
+                                    }
+
+                                    DragHandler {
+                                        id: dragHandler
+                                        target: null
+                                        dragThreshold: 6
+                                        onActiveChanged: {
+                                            if (!active) {
+                                                card.Drag.active = false;
+                                                DropShare.active = false;
+                                                return;
+                                            }
+                                            DropShare.active = true;
+                                            const payload = card.modelData.kind === "image" ? thumbnailImage : dragPayloadPreview;
+                                            payload.grabToImage(result => {
+                                                if (!dragHandler.active)
+                                                    return;
+                                                card.Drag.imageSource = result.url;
+                                                card.Drag.active = true;
+                                            });
+                                        }
+                                    }
+                                }
+
+                                Drag.dragType: Drag.Automatic
+                                Drag.supportedActions: Qt.CopyAction
+                                Drag.mimeData: card.modelData.kind === "image" ? { "text/uri-list": `file://${card.modelData.path}` } : { "text/plain": card.modelData.text }
+                                Drag.hotSpot.x: card.modelData.kind === "image" ? 47 : 20
+                                Drag.hotSpot.y: card.modelData.kind === "image" ? 47 : 20
+
+                                StyledRect {
+                                    id: dragPayloadPreview
+                                    z: 20
+                                    visible: dragHandler.active && card.modelData.kind !== "image"
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.min(320, card.width - actions.width - 38)
+                                    height: 56
+                                    radius: 14
+                                    color: Colours.palette.m3primary
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+                                        spacing: 9
+                                        MaterialIcon {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: card.modelData.kind === "files" ? "draft" : "notes"
+                                            color: Colours.palette.m3onPrimary
+                                            fontStyle: Tokens.font.icon.small
+                                            renderType: Text.NativeRendering
+                                        }
+                                        StyledText {
+                                            width: parent.width - 34
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: card.modelData.text
+                                            color: Colours.palette.m3onPrimary
+                                            font: Tokens.font.body.small
+                                            maximumLineCount: 2
+                                            wrapMode: Text.Wrap
+                                            elide: Text.ElideRight
+                                        }
                                     }
                                 }
                             }
@@ -227,44 +353,6 @@ Scope {
                             }
                         }
 
-                        Column {
-                            visible: root.phoneFocus
-                            width: parent.width
-                            spacing: Tokens.spacing.medium
-
-                            StyledRect {
-                                width: parent.width; height: 90; radius: 20
-                                color: Colours.layer(Colours.palette.m3surfaceContainerHighest, 0.96)
-                                border.width: 1
-                                border.color: Colours.layer(Colours.palette.m3primary, 0.5)
-                                StyledRect {
-                                    anchors.left: parent.left; anchors.leftMargin: 16; anchors.verticalCenter: parent.verticalCenter
-                                    width: 52; height: 52; radius: 18
-                                    color: Colours.palette.m3primaryContainer
-                                    MaterialIcon {
-                                        anchors.centerIn: parent
-                                        text: "smartphone"; color: Colours.palette.m3onPrimaryContainer; fontStyle: Tokens.font.icon.large; fill: 1
-                                        renderType: Text.NativeRendering
-                                    }
-                                }
-                                Column {
-                                    anchors.left: parent.left; anchors.leftMargin: 82; anchors.verticalCenter: parent.verticalCenter
-                                    StyledText { text: "T2 5G"; font: Tokens.font.title.large }
-                                    StyledText { text: "Connected over Wi-Fi • background protected"; color: Colours.palette.m3primary; font: Tokens.font.label.medium }
-                                }
-                            }
-
-                            Row {
-                                width: parent.width; spacing: Tokens.spacing.medium
-                                PhoneAction { width: (parent.width - parent.spacing) / 2; icon: "folder_shared"; title: "Browse phone"; detail: "Open phone storage"; onTriggered: Quickshell.execDetached(["caelestia-continuity", "browse"]) }
-                                PhoneAction { width: (parent.width - parent.spacing) / 2; icon: "notifications_active"; title: "Find phone"; detail: "Ring T2 5G"; onTriggered: Quickshell.execDetached(["kdeconnect-cli", "-n", "T2 5G", "--ring"]) }
-                            }
-                            Row {
-                                width: parent.width; spacing: Tokens.spacing.medium
-                                PhoneAction { width: (parent.width - parent.spacing) / 2; icon: "sync"; title: "Sync selected paths"; detail: "Runs only configured rules"; onTriggered: Quickshell.execDetached(["caelestia-continuity", "sync"]) }
-                                PhoneAction { width: (parent.width - parent.spacing) / 2; icon: "content_paste_go"; title: "Clipboard"; detail: "Screenshots and recent items"; onTriggered: root.phoneFocus = false }
-                            }
-                        }
                     }
                 }
             }
@@ -272,8 +360,8 @@ Scope {
     }
 
     IpcHandler {
-        function open(): void { root.phoneFocus = false; root.opened = true; }
-        function openPhone(): void { root.phoneFocus = true; root.opened = true; }
+        function open(): void { root.opened = true; }
+        function openPhone(): void { root.opened = true; }
         function close(): void { root.close(); }
         function toggle(): void { root.opened ? root.close() : root.opened = true; }
         target: "clipboard"

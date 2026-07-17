@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.services
 
 // KDE Connect's pausemusic plugin performs synchronous MPRIS D-Bus calls.
@@ -11,6 +12,18 @@ Scope {
     id: root
 
     property var handled: ({})
+    property bool callsEnabled: true
+
+    FileView {
+        path: "/home/yash/.config/caelestia/continuity.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try { root.callsEnabled = JSON.parse(text()).callsEnabled ?? true; }
+            catch (error) { root.callsEnabled = true; }
+        }
+    }
 
     function textFor(notif: var): string {
         return `${notif?.appName ?? ""} ${notif?.summary ?? ""} ${notif?.body ?? ""}`.toLowerCase();
@@ -23,6 +36,8 @@ Scope {
     }
 
     function inspect(): void {
+        if (!callsEnabled)
+            return;
         for (const notif of Notifs.notClosed) {
             if (!notif || handled[String(notif.id)] || !isIncomingCall(notif))
                 continue;

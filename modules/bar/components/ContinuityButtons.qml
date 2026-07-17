@@ -14,6 +14,11 @@ StyledRect {
     required property var popouts
     readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
+    function linkContains(x: real, y: real): bool {
+        const point = linkAction.mapFromItem(root, x, y);
+        return linkAction.contains(point);
+    }
+
     color: Colours.layer(Colours.palette.m3surfaceContainer, 0.86)
     radius: Tokens.rounding.full
     implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth : icons.implicitWidth + Tokens.padding.small * 2
@@ -29,10 +34,12 @@ StyledRect {
         ActionIcon {
             materialIcon: "content_paste_search"
             colour: Colours.palette.m3secondary
+            opensClipboard: true
         }
 
         ActionIcon {
-            iconSource: Quickshell.iconPath("kdeconnect-symbolic", "kdeconnect")
+            id: linkAction
+            materialIcon: "hub"
             colour: Colours.palette.m3primary
         }
     }
@@ -41,6 +48,7 @@ StyledRect {
         id: action
         property string materialIcon
         property string iconSource
+        property bool opensClipboard
         required property color colour
         implicitWidth: 24
         implicitHeight: 24
@@ -49,8 +57,13 @@ StyledRect {
             anchors.fill: parent
             radius: Tokens.rounding.full
             onClicked: {
-                root.popouts.currentName = "continuity";
-                root.popouts.hasCurrent = true;
+                if (action.opensClipboard) {
+                    root.popouts.hasCurrent = false;
+                    Quickshell.execDetached(["caelestia", "shell", "clipboard", "open"]);
+                } else {
+                    root.popouts.currentName = "continuity";
+                    root.popouts.hasCurrent = true;
+                }
             }
         }
 
