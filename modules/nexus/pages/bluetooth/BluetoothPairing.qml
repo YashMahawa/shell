@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Bluetooth
@@ -15,6 +16,7 @@ PageBase {
     id: root
 
     readonly property BluetoothAdapter adapter: Bluetooth.defaultAdapter // qmllint disable unresolved-type
+    readonly property bool scanActive: StackView.status === StackView.Active
 
     function setScan(on: bool): void {
         if (adapter?.enabled) {
@@ -29,9 +31,8 @@ PageBase {
     title: qsTr("Pair new device")
     isSubPage: true
 
-    Component.onCompleted: setScan(true)
     Component.onDestruction: setScan(false)
-    onVisibleChanged: setScan(visible)
+    onScanActiveChanged: setScan(scanActive)
 
     // Discovery is expensive and competes with 2.4 GHz Wi-Fi. A minute is long
     // enough to find nearby devices; the user can leave/re-enter to scan again.
