@@ -18,6 +18,7 @@ ShellRoot {
     settings.watchFiles: false
 
     GSFLoader {}
+    ServiceLoader {}
 
     Background {}
     Drawers {}
