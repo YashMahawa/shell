@@ -29,7 +29,8 @@ PageBase {
     property bool statusIsError: false
     property var modesByMonitor: ({})
     property var liveMonitorsByName: ({})
-    property bool saveAfterApply: false
+    property string pendingToken: ""
+    property int revertSeconds: 0
     property bool pointerFollowsMonitor: true
     property bool warpPointerWithWorkspace: false
 
@@ -151,41 +152,19 @@ PageBase {
         return `${focused.x}x${focused.y}`;
     }
 
-    function applySelected(save: bool): void {
+    function applySelected(): void {
         if (!selectedMonitor)
             return;
 
-        const live = liveMonitorsByName[selectedMonitor.name] ?? selectedMonitor;
-        const oldRes = `${live.width}x${live.height}@${Math.round((live.refreshRate ?? 60) * 100) / 100}`;
-        const oldPos = `${live.x}x${live.y}`;
-        const oldScale = String(live.scale ?? 1);
         const pos = mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`;
-
-        saveAfterApply = save;
         monitorProc.exec([
-            Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"),
-            "--apply",
+            "caelestia-display", "apply",
             "--name", selectedMonitor.name,
-            "--res", selectedEnabled ? resolutionWithRefresh() : "disable",
-            "--pos", pos,
+            "--resolution", selectedEnabled ? resolutionWithRefresh() : "disable",
+            "--position", pos,
             "--scale", String(selectedScale),
-            "--transform", String(selectedTransform),
-            "--old-res", oldRes,
-            "--old-pos", oldPos,
-            "--old-scale", oldScale
+            "--transform", String(selectedTransform)
         ]);
-
-    }
-
-    function saveAll(): void {
-        const monitorsData = Hypr.monitors.values.map(m => ({
-            name: m.name,
-            res: m.name === selectedMonitor?.name && selectedEnabled ? resolutionWithRefresh() : `${m.width}x${m.height}@${Math.round((m.refreshRate ?? 60) * 100) / 100}`,
-            pos: m.name === selectedMonitor?.name ? (mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`) : `${m.x}x${m.y}`,
-            scale: m.name === selectedMonitor?.name ? selectedScale : m.scale,
-            transform: m.name === selectedMonitor?.name ? selectedTransform : (m.transform ?? 0)
-        }));
-        saveProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
     }
 
     ColumnLayout {
@@ -277,10 +256,18 @@ PageBase {
 
             stdout: StdioCollector {
                 onStreamFinished: {
-                    const message = text.trim();
-                    if (message) {
-                        root.statusMessage = message;
+                    const output = text.trim();
+                    if (!output)
+                        return;
+                    try {
+                        const result = JSON.parse(output);
+                        root.pendingToken = result.token ?? "";
+                        root.revertSeconds = result.timeout ?? 20;
+                        root.statusMessage = qsTr("Keep this layout within %1 seconds").arg(root.revertSeconds);
                         root.statusIsError = false;
+                        revertTimer.restart();
+                    } catch (error) {
+                        root.statusMessage = output;
                     }
                 }
             }
@@ -300,14 +287,11 @@ PageBase {
                     if (!root.statusMessage)
                         root.statusMessage = qsTr("Display settings applied");
                     root.statusIsError = false;
-                    if (root.saveAfterApply)
-                        root.saveAll();
                 } else {
                     if (!root.statusMessage)
                         root.statusMessage = qsTr("Display change failed and was rolled back");
                     root.statusIsError = true;
                 }
-                root.saveAfterApply = false;
                 Qt.callLater(() => {
                     Hyprland.refreshMonitors();
                     modeProc.running = true;
@@ -316,12 +300,30 @@ PageBase {
         }
 
         Process {
-            id: saveProc
+            id: confirmProc
             stdout: StdioCollector { onStreamFinished: { const message = text.trim(); if (message) root.statusMessage = message; } }
             stderr: StdioCollector { onStreamFinished: { const message = text.trim(); if (message) { root.statusMessage = message; root.statusIsError = true; } } }
             onExited: exitCode => {
                 root.statusIsError = exitCode !== 0;
-                if (exitCode === 0 && !root.statusMessage) root.statusMessage = qsTr("Display settings applied and saved");
+                if (exitCode === 0 && !root.statusMessage) root.statusMessage = qsTr("Display layout saved");
+            }
+        }
+
+        Timer {
+            id: revertTimer
+            interval: 1000
+            repeat: true
+            onTriggered: {
+                root.revertSeconds--;
+                if (root.revertSeconds <= 0) {
+                    stop();
+                    root.pendingToken = "";
+                    root.statusMessage = qsTr("Previous display layout restored");
+                    Hyprland.refreshMonitors();
+                    modeProc.running = true;
+                } else {
+                    root.statusMessage = qsTr("Keep this layout within %1 seconds").arg(root.revertSeconds);
+                }
             }
         }
 
@@ -615,15 +617,26 @@ PageBase {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: root.statusMessage || qsTr("Choose a mode, then apply it now and keep it after reboot")
+                    text: root.statusMessage || qsTr("Changes revert automatically unless you keep them")
                     color: root.statusIsError ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.small
                     wrapMode: Text.Wrap
                 }
 
                 TextButton {
-                    text: qsTr("Apply & save")
-                    onClicked: root.applySelected(true)
+                    visible: root.pendingToken === ""
+                    text: qsTr("Apply safely")
+                    onClicked: root.applySelected()
+                }
+
+                TextButton {
+                    visible: root.pendingToken !== ""
+                    text: qsTr("Keep")
+                    onClicked: {
+                        confirmProc.exec(["caelestia-display", "confirm", root.pendingToken]);
+                        root.pendingToken = "";
+                        revertTimer.stop();
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
@@ -67,11 +68,14 @@ ColumnLayout {
         topMargin: Tokens.padding.large
         bottomMargin: Tokens.padding.extraLarge
 
-        contentHeight: root.contentChild?.implicitHeight ?? 0
+        // Keep the final row above the fade instead of trapping it at the
+        // bottom edge where it is difficult to read or click.
+        contentHeight: (root.contentChild?.implicitHeight ?? 0) + bottomMargin
         contentItem.children: [root.contentChild]
 
         StyledScrollBar.vertical: StyledScrollBar {
             flickable: flickable
+            policy: ScrollBar.AlwaysOn
         }
     }
 }

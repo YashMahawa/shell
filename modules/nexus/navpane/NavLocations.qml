@@ -1,10 +1,12 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
 import qs.components.containers
+import qs.components.controls
 import qs.services
 import qs.modules.nexus
 
@@ -16,6 +18,11 @@ VerticalFadeFlickable {
     topMargin: Tokens.padding.large
     bottomMargin: Tokens.padding.large
     contentHeight: content.implicitHeight
+
+    StyledScrollBar.vertical: StyledScrollBar {
+        flickable: root
+        policy: ScrollBar.AlwaysOn
+    }
 
     ColumnLayout {
         id: content

@@ -11,7 +11,6 @@ import "modules/areapicker"
 import "modules/lock"
 import "modules/immersivelyrics"
 import "modules/continuity"
-import "modules/codex"
 import Quickshell
 
 ShellRoot {
@@ -26,7 +25,6 @@ ShellRoot {
     ImmersiveLyrics {}
     Continuity {}
     PresenterPointer {}
-    CodexActivity {}
     Lock {
         id: lock
     }
