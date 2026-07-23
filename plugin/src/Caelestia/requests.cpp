@@ -60,7 +60,10 @@ void Requests::get(const QUrl& url, QJSValue onSuccess, QJSValue onError, QJSVal
     auto reply = m_manager->get(request);
 
     QObject::connect(reply, &QNetworkReply::finished, this, [this, reply, onSuccess, onError]() {
-        const QString body = QString::fromUtf8(reply->readAll());
+        // A timed-out or externally closed reply can emit finished after its
+        // device has closed. Avoid reading it in that state (Qt warns and the
+        // result is unusable anyway).
+        const QString body = reply->isOpen() ? QString::fromUtf8(reply->readAll()) : QString();
 
         QJSValue metadata;
         if (auto* engine = qmlEngine(this))
