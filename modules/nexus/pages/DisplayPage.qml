@@ -25,10 +25,13 @@ PageBase {
     property int selectedTransform: selectedMonitor?.transform ?? 0
     property bool selectedEnabled: true
     property bool mirrorFocused: false
-    property bool showConfirmSave: false
     property string statusMessage: ""
     property bool statusIsError: false
     property var modesByMonitor: ({})
+    property var liveMonitorsByName: ({})
+    property bool saveAfterApply: false
+    property bool pointerFollowsMonitor: true
+    property bool warpPointerWithWorkspace: false
 
     readonly property list<MenuItem> scaleItems: [
         MenuItem {
@@ -63,7 +66,7 @@ PageBase {
     ]
 
     function currentResolutionLabel(): string {
-        const m = selectedMonitor;
+        const m = liveMonitorsByName[selectedMonitor?.name] ?? selectedMonitor;
         if (!m)
             return qsTr("Current");
         return `${m.width}x${m.height}`;
@@ -113,7 +116,7 @@ PageBase {
                 values.push(mode.refresh);
         }
         if (!values.length)
-            values.push(Math.round((selectedMonitor?.refreshRate ?? 60) * 100) / 100);
+            values.push(Math.round(((liveMonitorsByName[selectedMonitor?.name]?.refreshRate) ?? selectedMonitor?.refreshRate ?? 60) * 100) / 100);
         return values.sort((a, b) => b - a);
     }
 
@@ -123,15 +126,15 @@ PageBase {
 
     function selectMonitor(m: var): void {
         selectedMonitor = m;
+        const live = liveMonitorsByName[m?.name] ?? m;
         selectedResolution = currentResolutionLabel();
-        selectedRefresh = Math.round((m?.refreshRate ?? 60) * 100) / 100;
-        selectedScale = m?.scale ?? 1;
-        selectedX = m?.x ?? 0;
-        selectedY = m?.y ?? 0;
-        selectedTransform = m?.transform ?? 0;
+        selectedRefresh = Math.round((live?.refreshRate ?? 60) * 100) / 100;
+        selectedScale = live?.scale ?? 1;
+        selectedX = live?.x ?? 0;
+        selectedY = live?.y ?? 0;
+        selectedTransform = live?.transform ?? 0;
         selectedEnabled = true;
         mirrorFocused = false;
-        showConfirmSave = false;
     }
 
     function resolutionWithRefresh(): string {
@@ -152,11 +155,13 @@ PageBase {
         if (!selectedMonitor)
             return;
 
-        const oldRes = `${selectedMonitor.width}x${selectedMonitor.height}@${Math.round((selectedMonitor.refreshRate ?? 60) * 100) / 100}`;
-        const oldPos = `${selectedMonitor.x}x${selectedMonitor.y}`;
-        const oldScale = String(selectedMonitor.scale ?? 1);
+        const live = liveMonitorsByName[selectedMonitor.name] ?? selectedMonitor;
+        const oldRes = `${live.width}x${live.height}@${Math.round((live.refreshRate ?? 60) * 100) / 100}`;
+        const oldPos = `${live.x}x${live.y}`;
+        const oldScale = String(live.scale ?? 1);
         const pos = mirrorFocused ? focusedMirrorPosition() : `${selectedX}x${selectedY}`;
 
+        saveAfterApply = save;
         monitorProc.exec([
             Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"),
             "--apply",
@@ -170,8 +175,6 @@ PageBase {
             "--old-scale", oldScale
         ]);
 
-        if (save)
-            saveAll();
     }
 
     function saveAll(): void {
@@ -182,7 +185,7 @@ PageBase {
             scale: m.name === selectedMonitor?.name ? selectedScale : m.scale,
             transform: m.name === selectedMonitor?.name ? selectedTransform : (m.transform ?? 0)
         }));
-        monitorProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
+        saveProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_monitors.py"), "--save", "--monitors-json", JSON.stringify(monitorsData)]);
     }
 
     ColumnLayout {
@@ -201,17 +204,71 @@ PageBase {
                     try {
                         const monitors = JSON.parse(text);
                         const modes = {};
-                        for (const monitor of monitors)
+                        const live = {};
+                        for (const monitor of monitors) {
                             modes[monitor.name] = monitor.availableModes ?? [];
+                            live[monitor.name] = monitor;
+                        }
                         root.modesByMonitor = modes;
-                        const rates = root.supportedRefreshRates();
-                        if (!rates.some(rate => Math.abs(rate - root.selectedRefresh) < 0.02))
-                            root.selectedRefresh = rates[0] ?? root.selectedRefresh;
+                        root.liveMonitorsByName = live;
+                        const current = live[root.selectedMonitor?.name];
+                        if (current) {
+                            root.selectedResolution = `${current.width}x${current.height}`;
+                            root.selectedRefresh = Math.round((current.refreshRate ?? 60) * 100) / 100;
+                            root.selectedScale = current.scale ?? root.selectedScale;
+                            root.selectedX = current.x ?? root.selectedX;
+                            root.selectedY = current.y ?? root.selectedY;
+                            root.selectedTransform = current.transform ?? root.selectedTransform;
+                        }
                     } catch (error) {
                         root.statusMessage = qsTr("Could not read supported display modes");
                         root.statusIsError = true;
                     }
                 }
+            }
+        }
+
+        Process {
+            id: policyStatusProc
+
+            running: true
+            command: ["caelestia-display", "status"]
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    try {
+                        const state = JSON.parse(text);
+                        root.pointerFollowsMonitor = state.pointerFollowsMonitor ?? true;
+                        root.warpPointerWithWorkspace = state.warpPointerWithWorkspace ?? false;
+                    } catch (error) {
+                        root.statusMessage = qsTr("Could not read focus behaviour");
+                        root.statusIsError = true;
+                    }
+                }
+            }
+        }
+
+        Process {
+            id: policyProc
+
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message)
+                        root.statusMessage = message;
+                }
+            }
+            stderr: StdioCollector {
+                onStreamFinished: {
+                    const message = text.trim();
+                    if (message) {
+                        root.statusMessage = message;
+                        root.statusIsError = true;
+                    }
+                }
+            }
+            onExited: exitCode => {
+                root.statusIsError = exitCode !== 0;
+                policyStatusProc.running = true;
             }
         }
 
@@ -243,16 +300,28 @@ PageBase {
                     if (!root.statusMessage)
                         root.statusMessage = qsTr("Display settings applied");
                     root.statusIsError = false;
-                    Hypr.dispatch("reload");
+                    if (root.saveAfterApply)
+                        root.saveAll();
                 } else {
                     if (!root.statusMessage)
                         root.statusMessage = qsTr("Display change failed and was rolled back");
                     root.statusIsError = true;
                 }
+                root.saveAfterApply = false;
                 Qt.callLater(() => {
                     Hyprland.refreshMonitors();
                     modeProc.running = true;
                 });
+            }
+        }
+
+        Process {
+            id: saveProc
+            stdout: StdioCollector { onStreamFinished: { const message = text.trim(); if (message) root.statusMessage = message; } }
+            stderr: StdioCollector { onStreamFinished: { const message = text.trim(); if (message) { root.statusMessage = message; root.statusIsError = true; } } }
+            onExited: exitCode => {
+                root.statusIsError = exitCode !== 0;
+                if (exitCode === 0 && !root.statusMessage) root.statusMessage = qsTr("Display settings applied and saved");
             }
         }
 
@@ -432,6 +501,66 @@ PageBase {
         }
 
         SectionHeader {
+            text: qsTr("Focus and workspaces")
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("Focus screen under pointer")
+            subtext: qsTr("Keyboard focus follows the pointer between displays")
+            checked: root.pointerFollowsMonitor
+            onToggled: {
+                root.pointerFollowsMonitor = checked;
+                policyProc.exec(["caelestia-display", "policy", "pointer", checked ? "on" : "off"]);
+            }
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Move pointer with workspace focus")
+            subtext: qsTr("Keep mouse and keyboard control on the same display")
+            checked: root.warpPointerWithWorkspace
+            onToggled: {
+                root.warpPointerWithWorkspace = checked;
+                policyProc.exec(["caelestia-display", "policy", "warp", checked ? "on" : "off"]);
+            }
+        }
+
+        ConnectedRect {
+            Layout.fillWidth: true
+            last: true
+            implicitHeight: startupRow.implicitHeight + startupRow.anchors.margins * 2
+
+            RowLayout {
+                id: startupRow
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.medium
+                anchors.leftMargin: Tokens.padding.largeIncreased
+                anchors.rightMargin: Tokens.padding.largeIncreased
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+                    StyledText {
+                        text: qsTr("Startup display")
+                        font: Tokens.font.body.medium
+                    }
+                    StyledText {
+                        text: qsTr("Place the pointer and initial focus here after login")
+                        font: Tokens.font.body.small
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+                }
+                TextButton {
+                    text: qsTr("Use selected")
+                    enabled: root.selectedMonitor !== null
+                    onClicked: policyProc.exec(["caelestia-display", "primary", root.selectedMonitor.name])
+                }
+            }
+        }
+
+        SectionHeader {
             text: qsTr("Arrangement")
         }
 
@@ -486,29 +615,15 @@ PageBase {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: root.statusMessage || qsTr("Preview changes before saving them")
+                    text: root.statusMessage || qsTr("Choose a mode, then apply it now and keep it after reboot")
                     color: root.statusIsError ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.small
                     wrapMode: Text.Wrap
                 }
 
                 TextButton {
-                    text: qsTr("Apply")
-                    onClicked: root.applySelected(false)
-                }
-
-                TextButton {
-                    text: root.showConfirmSave ? qsTr("Confirm") : qsTr("Save")
-                    onClicked: {
-                        if (!root.showConfirmSave) {
-                            root.showConfirmSave = true;
-                            root.statusMessage = qsTr("Save this monitor layout to Hyprland config?");
-                            root.statusIsError = false;
-                        } else {
-                            root.applySelected(true);
-                            root.showConfirmSave = false;
-                        }
-                    }
+                    text: qsTr("Apply & save")
+                    onClicked: root.applySelected(true)
                 }
             }
         }

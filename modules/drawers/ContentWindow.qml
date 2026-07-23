@@ -41,9 +41,7 @@ StyledWindow {
     readonly property real panelOutlineWidth: 2 * (1 - fsTransitionProg)
 
     property color surfaceColour: Colours.tPalette.m3surface
-    property bool dropDone: false
-    property string dropResult: ""
-    readonly property bool dropInteractionActive: DropShare.active || topDrop.containsDrag || dropDone
+    readonly property bool dropInteractionActive: DropShare.active
 
     readonly property int dragMaskPadding: {
         if (focusGrab.active || panels.popouts.isDetached)
@@ -69,7 +67,20 @@ StyledWindow {
     name: "drawers"
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen ? WlrLayer.Overlay : WlrLayer.Top
-    WlrLayershell.keyboardFocus: visibilities.launcher || visibilities.session ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    // OnDemand whenever a panel needs a text field (launcher, session, center
+    // clipboard, wifi password, hover clipboard search). Without this, keys
+    // pass through the shell into the focused app.
+    WlrLayershell.keyboardFocus: {
+        if (visibilities.launcher || visibilities.session)
+            return WlrKeyboardFocus.OnDemand;
+        if (panels.popouts.isDetached)
+            return WlrKeyboardFocus.OnDemand;
+        if (panels.popouts.hasCurrent
+            && (panels.popouts.currentName === "wirelesspassword"
+                || panels.popouts.currentName === "clipboardhover"))
+            return WlrKeyboardFocus.OnDemand;
+        return WlrKeyboardFocus.None;
+    }
 
     mask: hasFullscreen ? emptyRegion : regions
 
@@ -120,14 +131,18 @@ StyledWindow {
             visibilities.session = false;
             visibilities.sidebar = false;
             visibilities.dashboard = false;
-            panels.popouts.hasCurrent = false;
-            bar.closeTray();
+            // Detached center panels use Wrapper's own focus grab.
+            if (!panels.popouts.isDetached) {
+                panels.popouts.hasCurrent = false;
+                bar.closeTray();
+            }
         }
     }
 
     StyledRect {
         anchors.fill: parent
-        opacity: (visibilities.session && Config.session.enabled) || panels.popouts.detachedMode !== "" ? 0.5 : 0
+        opacity: (visibilities.session && Config.session.enabled)
+            || (panels.popouts.detachedMode !== "" && panels.popouts.detachedMode !== "clipboard") ? 0.5 : 0
         color: Colours.palette.m3scrim
 
         Behavior on opacity {
@@ -380,74 +395,6 @@ StyledWindow {
             fullscreen: root.hasFullscreen
 
             Component.onCompleted: Visibilities.bars.set(root.screen, this)
-        }
-    }
-
-    Timer {
-        id: dropDoneTimer
-        interval: 1800
-        onTriggered: root.dropDone = false
-    }
-
-    DropArea {
-        id: topDrop
-        z: 200
-        x: (root.width - width) / 2
-        y: 0
-        width: root.dropInteractionActive ? 720 : 520
-        height: root.dropInteractionActive ? 300 : 120
-
-        onDropped: event => {
-            const urls = event.urls ?? [];
-            if (urls.length) {
-                const values = [];
-                for (const url of urls)
-                    values.push(String(url));
-                Quickshell.execDetached(["caelestia-clipboard", "send-path", ...values]);
-                root.dropResult = qsTr("Sent to phone");
-                root.dropDone = true;
-                DropShare.active = false;
-                dropDoneTimer.restart();
-            } else if ((event.text ?? "").length) {
-                Quickshell.execDetached(["wl-copy", String(event.text)]);
-                root.dropResult = qsTr("Copied to clipboard");
-                root.dropDone = true;
-                DropShare.active = false;
-                dropDoneTimer.restart();
-            }
-            event.acceptProposedAction();
-        }
-
-        StyledRect {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 18
-            width: 440
-            height: 86
-            radius: 28
-            opacity: topDrop.containsDrag || root.dropDone ? 1 : 0
-            scale: topDrop.containsDrag || root.dropDone ? 1 : 0.92
-            color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 0.98)
-            border.width: 1
-            border.color: topDrop.containsDrag ? Colours.palette.m3primary : Colours.layer(Colours.palette.m3outline, 0.35)
-
-            Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 10
-                MaterialIcon {
-                    text: root.dropDone ? "check_circle" : "ios_share"
-                    color: Colours.palette.m3primary
-                    fontStyle: Tokens.font.icon.large
-                    renderType: Text.NativeRendering
-                }
-                StyledText {
-                    text: root.dropDone ? root.dropResult : qsTr("Drop files to send • drop text to copy")
-                    color: Colours.palette.m3onSurface
-                    font: Tokens.font.title.medium
-                }
-            }
         }
     }
 

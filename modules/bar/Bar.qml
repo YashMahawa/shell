@@ -48,6 +48,9 @@ GridLayout {
     }
 
     function checkPopout(x: real, y: real): void {
+        if (popouts.isDetached)
+            return;
+
         const primary = isVertical ? y : x;
         const cross = isVertical ? width / 2 : height / 2;
         const ch = childAt(isVertical ? cross : primary, isVertical ? primary : cross) as WrappedLoader;
@@ -63,11 +66,14 @@ GridLayout {
         const id = ch.id;
         const top = isVertical ? ch.y : ch.x;
 
+        // Same pattern as wifi/bluetooth: sticky=false, open while over icon,
+        // Interactions keeps it open while the pointer is over the side panel.
         if (id === "statusIcons" && Config.bar.popouts.statusIcons) {
             const items = (ch.item as StatusIcons).items;
             const mapped = mapToItem(items, x, y);
             const icon = items.childAt(isVertical ? items.width / 2 : mapped.x, isVertical ? mapped.y : items.height / 2);
             if (icon) {
+                popouts.sticky = false;
                 popouts.currentName = icon.name;
                 popouts.currentCenter = Qt.binding(() => icon.mapToItem(root, isVertical ? 0 : icon.implicitWidth / 2, isVertical ? icon.implicitHeight / 2 : 0)[isVertical ? 'y' : 'x']);
                 popouts.hasCurrent = true;
@@ -78,6 +84,7 @@ GridLayout {
                 const index = Math.floor(((primary - top - tray.padding * 2 + tray.spacing) / (isVertical ? tray.layout.implicitHeight : tray.layout.implicitWidth)) * tray.items.count);
                 const trayItem = tray.items.itemAt(index);
                 if (trayItem) {
+                    popouts.sticky = false;
                     popouts.currentName = `traymenu${index}`;
                     popouts.currentCenter = Qt.binding(() => trayItem.mapToItem(root, isVertical ? 0 : trayItem.implicitWidth / 2, isVertical ? trayItem.implicitHeight / 2 : 0)[isVertical ? 'y' : 'x']);
                     popouts.hasCurrent = true;
@@ -90,16 +97,23 @@ GridLayout {
             }
         } else if (id === "continuity") {
             const continuity = ch.item as ContinuityButtons;
-            const local = continuity.mapFromItem(root, x, y);
-            if (!continuity.linkContains(local.x, local.y)) {
-                popouts.hasCurrent = false;
+            if (!continuity)
                 return;
+            const local = continuity.mapFromItem(root, x, y);
+            if (continuity.clipboardContains(local.x, local.y)) {
+                popouts.sticky = false;
+                popouts.currentName = "clipboardhover";
+                continuity.setClipboardCenter();
+                popouts.hasCurrent = true;
+            } else if (continuity.linkContains(local.x, local.y)) {
+                popouts.sticky = false;
+                popouts.currentName = "continuity";
+                continuity.setLinkCenter();
+                popouts.hasCurrent = true;
             }
-            popouts.currentName = "continuity";
-            const mappedItem = (ch.item as Item).mapToItem(root, isVertical ? 0 : (ch.item as Item).implicitWidth / 2, isVertical ? (ch.item as Item).implicitHeight / 2 : 0);
-            popouts.currentCenter = mappedItem[isVertical ? "y" : "x"] ?? 0;
-            popouts.hasCurrent = true;
+            // Between icons: leave hasCurrent as-is (same as statusIcons gaps).
         } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
+            popouts.sticky = false;
             popouts.currentName = id.toLowerCase();
             const mappedItem = (ch.item as Item).mapToItem(root, isVertical ? 0 : (ch.item as Item).implicitWidth / 2, isVertical ? (ch.item as Item).implicitHeight / 2 : 0);
             popouts.currentCenter = mappedItem[isVertical ? 'y' : 'x'] ?? 0;
@@ -191,7 +205,7 @@ GridLayout {
                 roleValue: "continuity"
                 delegate: WrappedLoader {
                     visible: !root.fullscreen
-                    sourceComponent: ContinuityButtons { popouts: root.popouts }
+                    sourceComponent: ContinuityButtons { popouts: root.popouts; bar: root }
                 }
             }
             DelegateChoice {

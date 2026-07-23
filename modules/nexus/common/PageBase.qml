@@ -69,5 +69,9 @@ ColumnLayout {
 
         contentHeight: root.contentChild?.implicitHeight ?? 0
         contentItem.children: [root.contentChild]
+
+        StyledScrollBar.vertical: StyledScrollBar {
+            flickable: flickable
+        }
     }
 }

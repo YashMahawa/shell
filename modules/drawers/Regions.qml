@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.services
 import qs.modules.bar as Bar
 
 Region {
@@ -16,12 +17,30 @@ Region {
     readonly property real clampedThickness: win.contentItem.Config.border.clampedThickness
     readonly property real edgeThickness: Math.max(win.contentItem.Config.border.minThickness ?? 0, win.contentItem.Config.border.thickness ?? 0, 8)
     readonly property real barWidth: Math.max(root.bar?.implicitWidth ?? 0, root.bar?.clampedThickness ?? 0, edgeThickness)
+
+    // Any side hover popout (wifi, bluetooth, Link, clipboard…).
+    readonly property bool hoverPopoutOpen: root.panels.popouts.hasCurrent && !root.panels.popouts.isDetached
+
+    // Full-screen only for detached center panels (clipboard/settings click-away).
     readonly property bool needsClickAwaySurface: root.panels.popouts.isDetached
+
+    // Continuous left strip while a side popout is open so the cursor can move
+    // icon → panel without falling through a mask hole (same idea as wifi).
+    readonly property real leftStripWidth: {
+        if (root.needsClickAwaySurface)
+            return root.win.width;
+        if (root.hoverPopoutOpen) {
+            const wrap = root.panels.popoutsWrapper;
+            const pw = Math.max(wrap.width, wrap.implicitWidth, 0);
+            return Math.ceil(root.barWidth + wrap.x + pw + 40);
+        }
+        return root.barWidth;
+    }
 
     Region {
         x: 0
         y: 0
-        width: root.needsClickAwaySurface ? root.win.width : root.barWidth
+        width: root.leftStripWidth
         height: root.win.height
     }
 
@@ -37,13 +56,6 @@ Region {
         y: root.win.height - root.edgeThickness
         width: root.win.width - root.barWidth
         height: root.edgeThickness
-    }
-
-    Region {
-        x: (root.win.width - width) / 2
-        y: 0
-        width: root.win.dropInteractionActive ? 720 : 0
-        height: root.win.dropInteractionActive ? 300 : 0
     }
 
     Region {
@@ -74,6 +86,7 @@ Region {
     R {
         panel: root.panels.popoutsWrapper
         width: panel.width * (1 - root.panels.popoutsWrapper.offsetScale)
+        height: panel.height
     }
 
     R {

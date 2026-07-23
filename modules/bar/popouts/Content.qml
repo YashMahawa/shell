@@ -110,6 +110,18 @@ Item {
         }
 
         Popout {
+            name: "clipboardhover"
+            sourceComponent: Clipboard {
+                compact: true
+                popouts: root.popouts
+                onClosed: {
+                    root.popouts.sticky = false;
+                    root.popouts.hasCurrent = false;
+                }
+            }
+        }
+
+        Popout {
             name: "battery"
             sourceComponent: Battery {}
         }

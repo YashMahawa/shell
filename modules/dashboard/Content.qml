@@ -37,10 +37,10 @@ Item {
                 enabled: Config.dashboard.showPerformance
             },
             {
-                component: weatherComponent,
-                iconName: "cloud",
-                text: qsTr("Weather"),
-                enabled: Config.dashboard.showWeather
+                component: displaysComponent,
+                iconName: "display_settings",
+                text: qsTr("Displays"),
+                enabled: true
             }
         ];
         return allTabs.filter(tab => tab.enabled);
@@ -178,9 +178,9 @@ Item {
             }
 
             Component {
-                id: weatherComponent
+                id: displaysComponent
 
-                WeatherTab {}
+                DisplaysTab {}
             }
 
             Behavior on contentX {

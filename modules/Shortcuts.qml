@@ -170,6 +170,12 @@ Scope {
             WindowFactory.create();
         }
 
+        function openDisplay(): void {
+            WindowFactory.create(undefined, {
+                "initialPage": 1
+            });
+        }
+
         target: "nexus"
     }
 

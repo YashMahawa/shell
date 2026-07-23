@@ -5,21 +5,25 @@ import Quickshell
 import Quickshell.Io
 import Caelestia.Config
 import qs.components
+import qs.services
 
 Column {
     id: root
 
     property bool reachable: false
+    property string connection: "offline"
+    property string transport: "offline"
+    property string transportLabel: "Disconnected"
     property bool autoSync: false
-    property bool callsEnabled: true
     property bool notificationsEnabled: true
     width: 390
     spacing: Tokens.spacing.medium
 
     function applySettings(value: var): void {
         root.autoSync = value.autoClipboardSync ?? false;
-        root.callsEnabled = value.callsEnabled ?? true;
         root.notificationsEnabled = value.notificationsEnabled ?? true;
+        root.transport = value.transport ?? "offline";
+        root.transportLabel = value.transportLabel ?? (root.reachable ? "local network" : "Disconnected");
     }
 
     Process {
@@ -30,6 +34,7 @@ Column {
                 try {
                     const value = JSON.parse(text);
                     root.reachable = value.reachable ?? false;
+                    root.connection = value.connection ?? (root.reachable ? "connected" : "offline");
                     root.applySettings(value);
                 } catch (error) {
                     root.reachable = false;
@@ -39,12 +44,17 @@ Column {
     }
 
     FileView {
-        path: "/home/yash/.config/caelestia/continuity.json"
+        path: "/home/yash/.local/state/caelestia/continuity.json"
         watchChanges: true
         printErrors: false
         onFileChanged: reload()
         onLoaded: {
-            try { root.applySettings(JSON.parse(text())); }
+            try {
+                const value = JSON.parse(text());
+                root.reachable = value.reachable ?? false;
+                root.connection = value.connection ?? (root.reachable ? "connected" : "offline");
+                root.applySettings(value);
+            }
             catch (error) {}
         }
     }
@@ -67,20 +77,27 @@ Column {
         }
         Column {
             width: parent.width - 58
-            StyledText { text: "Caelestia Link"; color: Colours.palette.m3onSurface; font: Tokens.font.title.medium }
+            spacing: 2
             StyledText {
-                text: root.reachable ? "Phone connected over Wi-Fi" : "Phone is offline"
-                color: root.reachable ? Colours.palette.m3secondary : Colours.palette.m3outline
+                text: "Caelestia Link"
+                color: Colours.palette.m3onSurface
+                font: Tokens.font.title.medium
+            }
+            StyledText {
+                text: root.reachable ? `Phone connected over ${root.transportLabel}` : "Phone disconnected"
+                color: root.reachable ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.label.medium
             }
         }
     }
 
     StyledRect {
-        width: parent.width; height: 62; radius: 18
-        color: Colours.layer(Colours.palette.m3surfaceContainerHighest, 0.92)
+        width: parent.width
+        height: 62
+        radius: 18
+        color: Colours.tPalette.m3surfaceContainerHigh
         border.width: 1
-        border.color: Colours.layer(root.reachable ? Colours.palette.m3primary : Colours.palette.m3outline, 0.45)
+        border.color: root.reachable ? Colours.palette.m3primary : Colours.palette.m3outlineVariant
 
         Row {
             anchors.fill: parent
@@ -89,15 +106,24 @@ Column {
             MaterialIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.reachable ? "wifi_tethering" : "portable_wifi_off"
-                color: root.reachable ? Colours.palette.m3secondary : Colours.palette.m3outline
+                color: root.reachable ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
                 fontStyle: Tokens.font.icon.medium
                 fill: 1
                 renderType: Text.NativeRendering
             }
             Column {
                 anchors.verticalCenter: parent.verticalCenter
-                StyledText { text: root.reachable ? "Ready to share" : "Waiting for phone"; color: Colours.palette.m3onSurface; font: Tokens.font.body.medium }
-                StyledText { text: "Encrypted local device transport"; color: Colours.palette.m3outline; font: Tokens.font.label.small }
+                spacing: 2
+                StyledText {
+                    text: root.reachable ? `Ready over ${root.transportLabel}` : "Connection unavailable"
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.medium
+                }
+                StyledText {
+                    text: root.reachable ? "Encrypted local device transport" : "Reconnect when the phone is on the same network"
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.label.small
+                }
             }
         }
     }
@@ -107,9 +133,11 @@ Column {
         spacing: Tokens.spacing.small
         ActionChip {
             width: (parent.width - parent.spacing) / 2
-            icon: "content_paste_go"
-            label: "Send clipboard"
-            onTriggered: Quickshell.execDetached(["caelestia-clipboard", "send-latest"])
+            icon: root.reachable ? "content_paste_go" : "sync"
+            label: root.reachable ? "Send clipboard" : "Reconnect"
+            onTriggered: Quickshell.execDetached(root.reachable
+                ? ["caelestia-clipboard", "send-latest"]
+                : ["caelestia-continuity", "reconnect"])
         }
         ActionChip {
             width: (parent.width - parent.spacing) / 2
@@ -120,20 +148,9 @@ Column {
     }
 
     StyledText {
-        text: "Phone on this laptop"
+        text: "Privacy"
         font: Tokens.font.label.medium
-        color: Colours.palette.m3outline
-    }
-
-    PrivacyToggle {
-        title: "Calls"
-        detail: checked ? "Incoming calls can appear and pause media" : "Call events stay on the phone"
-        icon: "phone_in_talk"
-        checked: root.callsEnabled
-        onTriggered: {
-            root.callsEnabled = !root.callsEnabled;
-            Quickshell.execDetached(["caelestia-continuity", "calls", root.callsEnabled ? "on" : "off"]);
-        }
+        color: Colours.palette.m3onSurfaceVariant
     }
 
     PrivacyToggle {
@@ -165,14 +182,29 @@ Column {
         signal triggered()
         height: 48
         radius: 15
-        color: chipMouse.containsMouse ? Colours.palette.m3primaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHighest, 0.9)
+        color: chipMouse.containsMouse ? Colours.palette.m3secondaryContainer : Colours.tPalette.m3surfaceContainerHigh
         Row {
             anchors.centerIn: parent
             spacing: 6
-            MaterialIcon { text: chip.icon; color: Colours.palette.m3secondary; fontStyle: Tokens.font.icon.small; renderType: Text.NativeRendering }
-            StyledText { text: chip.label; color: Colours.palette.m3onSurface; font: Tokens.font.label.medium }
+            MaterialIcon {
+                text: chip.icon
+                color: chipMouse.containsMouse ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3primary
+                fontStyle: Tokens.font.icon.small
+                renderType: Text.NativeRendering
+            }
+            StyledText {
+                text: chip.label
+                color: chipMouse.containsMouse ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                font: Tokens.font.label.medium
+            }
         }
-        MouseArea { id: chipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: chip.triggered() }
+        MouseArea {
+            id: chipMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: chip.triggered()
+        }
     }
 
     component PrivacyToggle: StyledRect {
@@ -185,38 +217,72 @@ Column {
         width: root.width
         height: 60
         radius: 17
-        color: toggleMouse.containsMouse ? Colours.layer(Colours.palette.m3secondaryContainer, 0.58) : Colours.layer(Colours.palette.m3surfaceContainerHighest, 0.82)
+        color: toggleMouse.containsMouse ? Colours.palette.m3surfaceContainerHighest : Colours.tPalette.m3surfaceContainerHigh
 
         MaterialIcon {
-            anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
             text: toggle.icon
-            color: toggle.checked ? Colours.palette.m3secondary : Colours.palette.m3outline
+            color: toggle.checked ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
             fontStyle: Tokens.font.icon.small
             fill: toggle.checked ? 1 : 0
             renderType: Text.NativeRendering
         }
         Column {
-            anchors.left: parent.left; anchors.leftMargin: 52
-            anchors.right: switchTrack.left; anchors.rightMargin: 12
+            anchors.left: parent.left
+            anchors.leftMargin: 52
+            anchors.right: switchTrack.left
+            anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            StyledText { width: parent.width; text: toggle.title; color: Colours.palette.m3onSurface; font: Tokens.font.body.medium; elide: Text.ElideRight }
-            StyledText { width: parent.width; text: toggle.detail; color: Colours.palette.m3outline; font: Tokens.font.label.small; elide: Text.ElideRight }
+            spacing: 2
+            StyledText {
+                width: parent.width
+                text: toggle.title
+                color: Colours.palette.m3onSurface
+                font: Tokens.font.body.medium
+                elide: Text.ElideRight
+            }
+            StyledText {
+                width: parent.width
+                text: toggle.detail
+                color: Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.label.small
+                elide: Text.ElideRight
+            }
         }
         StyledRect {
             id: switchTrack
-            anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
-            width: 44; height: 24; radius: 12
-            color: toggle.checked ? Colours.palette.m3secondary : Colours.palette.m3surfaceContainerHighest
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            width: 44
+            height: 24
+            radius: 12
+            color: toggle.checked ? Colours.palette.m3primary : Colours.palette.m3surfaceContainerHighest
             border.width: toggle.checked ? 0 : 1
-            border.color: Colours.palette.m3outline
+            border.color: Colours.palette.m3outlineVariant
             StyledRect {
-                width: 18; height: 18; radius: 9
+                width: 18
+                height: 18
+                radius: 9
                 y: 3
                 x: toggle.checked ? parent.width - width - 3 : 3
-                color: toggle.checked ? Colours.palette.m3onSecondary : Colours.palette.m3outline
-                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                color: toggle.checked ? Colours.palette.m3onPrimary : Colours.palette.m3onSurfaceVariant
+                Behavior on x {
+                    NumberAnimation {
+                        duration: 150
+                        easing.type: Easing.OutCubic
+                    }
+                }
             }
         }
-        MouseArea { id: toggleMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: toggle.triggered() }
+        MouseArea {
+            id: toggleMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: toggle.triggered()
+        }
     }
 }

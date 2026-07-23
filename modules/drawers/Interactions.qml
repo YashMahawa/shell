@@ -4,6 +4,7 @@ import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.components.controls
+import qs.services
 import qs.modules.bar as Bar
 import qs.modules.bar.popouts as BarPopouts
 
@@ -51,6 +52,34 @@ CustomMouseArea {
         return x < bar.implicitWidth + panel.x + panelWidth && withinPanelHeight(panel, x, y);
     }
 
+    readonly property bool hoverSidePopout: popouts.hasCurrent
+        && (popouts.currentName === "continuity" || popouts.currentName === "clipboardhover")
+
+    function overPopoutsPanel(x: real, y: real): bool {
+        const panel = panels.popoutsWrapper;
+        if (!panel || !popouts.hasCurrent)
+            return false;
+        // Map into the popout item — more reliable than hand-rolled geometry
+        // (panels margins / deform / animation make absolute math flaky).
+        const p = panel.mapFromItem(root, x, y);
+        const pad = 28;
+        return p.x >= -pad && p.y >= -pad
+            && p.x <= Math.max(panel.width, panel.implicitWidth) + pad
+            && p.y <= Math.max(panel.height, panel.implicitHeight) + pad;
+    }
+
+    function overContinuityHoverPopout(x: real, y: real): bool {
+        if (!hoverSidePopout)
+            return false;
+        if (x < bar.implicitWidth)
+            return true; // still on the bar strip
+        if (overPopoutsPanel(x, y))
+            return true;
+        // Bridge between bar edge and panel.
+        const bridge = Math.max(120, Config.border.rounding * 4);
+        return x < bar.implicitWidth + bridge;
+    }
+
     function inPanelBounds(panel: Item, x: real, y: real): bool {
         const panelWidth = panel.width || panel.implicitWidth;
         const panelHeight = panel.height || panel.implicitHeight;
@@ -89,8 +118,12 @@ CustomMouseArea {
 
     onPressed: event => dragStart = Qt.point(event.x, event.y)
     onClicked: event => {
-        if (popouts.isDetached && !inPanelBounds(panels.popoutsWrapper, event.x, event.y))
-            popouts.close();
+        // Center detach panels (clipboard / settings): click outside to close.
+        if (popouts.isDetached) {
+            if (!inPanelBounds(panels.popoutsWrapper, event.x, event.y)
+                && !overPopoutsPanel(event.x, event.y))
+                popouts.close();
+        }
     }
     onContainsMouseChanged: {
         if (containsMouse) {
@@ -98,7 +131,6 @@ CustomMouseArea {
             return;
         }
         if (!containsMouse) {
-            // Only hide if not activated by shortcut
             if (!osdShortcutActive) {
                 visibilities.osd = false;
                 root.panels.osd.hovered = false;
@@ -110,13 +142,16 @@ CustomMouseArea {
             if (!utilitiesShortcutActive)
                 visibilities.utilities = false;
 
-            if (sidebarHoverActive) {
+            if (sidebarHoverActive)
                 sidebarHideTimer.restart();
-            }
 
-            if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
-                popouts.hasCurrent = false;
-                bar.closeTray();
+            // Same as wifi/bluetooth: leaving the shell surface closes hover popouts.
+            if (!popouts.isDetached) {
+                if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
+                    popouts.sticky = false;
+                    popouts.hasCurrent = false;
+                    bar.closeTray();
+                }
             }
 
             if (Config.bar.showOnHover)
@@ -132,6 +167,28 @@ CustomMouseArea {
             if (!root.containsMouse && root.sidebarHoverActive) {
                 root.visibilities.sidebar = false;
                 root.sidebarHoverActive = false;
+            }
+        }
+    }
+
+    Timer {
+        id: hoverPopoutHideTimer
+        interval: 220
+        onTriggered: {
+            if (root.popouts.isDetached)
+                return;
+            // Keep open while still over bar or the side panel (wifi-style).
+            if (root.containsMouse) {
+                if (root.mouseX < root.bar.implicitWidth)
+                    return;
+                if (root.overPopoutsPanel(root.mouseX, root.mouseY)
+                    || root.inLeftPanel(root.panels.popoutsWrapper, root.mouseX, root.mouseY))
+                    return;
+            }
+            if (!root.popouts.currentName.startsWith("traymenu") || ((root.popouts.current as StackView)?.depth ?? 0) <= 1) {
+                root.popouts.sticky = false;
+                root.popouts.hasCurrent = false;
+                root.bar.closeTray();
             }
         }
     }
@@ -270,12 +327,19 @@ CustomMouseArea {
             utilitiesShortcutActive = false;
         }
 
-        // Show popouts on hover
+        // Hover popouts (wifi, bluetooth, Link, clipboard…): identical rules.
+        if (popouts.isDetached)
+            return;
+
         if (x < bar.implicitWidth) {
+            hoverPopoutHideTimer.stop();
             bar.checkPopout(x, y);
-        } else if ((!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) && !inLeftPanel(panels.popoutsWrapper, x, y)) {
-            popouts.hasCurrent = false;
-            bar.closeTray();
+        } else if (overPopoutsPanel(x, y) || inLeftPanel(panels.popoutsWrapper, x, y)) {
+            // Pointer made it onto the side panel — keep it open.
+            hoverPopoutHideTimer.stop();
+        } else if ((!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1)) {
+            if (popouts.hasCurrent)
+                hoverPopoutHideTimer.restart();
         }
     }
 

@@ -78,27 +78,41 @@ PageBase {
                 id: option
                 required property var modelData
                 required property int index
+                readonly property bool selected: root.retentionDays === modelData.days
+                readonly property color selectedFg: Colours.palette.m3onPrimaryContainer
                 Layout.fillWidth: true
                 implicitHeight: 66
                 first: index === 0
                 last: index === 2
-                color: root.retentionDays === modelData.days ? Colours.layer(Colours.palette.m3primaryContainer, 0.72) : Colours.tPalette.m3surfaceContainer
+                color: selected ? Colours.palette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHigh
+                border.width: selected ? 1 : 0
+                border.color: selected ? Colours.palette.m3primary : "transparent"
 
                 Column {
                     anchors.left: parent.left
                     anchors.leftMargin: Tokens.padding.largeIncreased
                     anchors.verticalCenter: parent.verticalCenter
-                    StyledText { text: option.modelData.label; font: Tokens.font.body.medium }
-                    StyledText { text: option.modelData.detail; color: Colours.palette.m3outline; font: Tokens.font.label.small }
+                    spacing: 2
+                    StyledText {
+                        text: option.modelData.label
+                        color: option.selected ? option.selectedFg : Colours.palette.m3onSurface
+                        font: Tokens.font.body.medium
+                    }
+                    StyledText {
+                        text: option.modelData.detail
+                        color: option.selected ? option.selectedFg : Colours.palette.m3onSurfaceVariant
+                        opacity: option.selected ? 0.88 : 1
+                        font: Tokens.font.label.small
+                    }
                 }
 
                 MaterialIcon {
                     anchors.right: parent.right
                     anchors.rightMargin: Tokens.padding.largeIncreased
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.retentionDays === option.modelData.days ? "check_circle" : "radio_button_unchecked"
-                    color: root.retentionDays === option.modelData.days ? Colours.palette.m3primary : Colours.palette.m3outline
-                    fill: root.retentionDays === option.modelData.days ? 1 : 0
+                    text: option.selected ? "check_circle" : "radio_button_unchecked"
+                    color: option.selected ? option.selectedFg : Colours.palette.m3onSurfaceVariant
+                    fill: option.selected ? 1 : 0
                     renderType: Text.NativeRendering
                 }
 

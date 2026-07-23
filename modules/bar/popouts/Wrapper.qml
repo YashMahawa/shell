@@ -27,10 +27,17 @@ Item {
 
     property alias currentName: popoutState.currentName
     property alias hasCurrent: popoutState.hasCurrent
+    property alias sticky: popoutState.sticky
     property real currentCenter
 
     property string detachedMode
     property string queuedMode
+
+    // Never leave sticky latched after a hover closes (search used to do this).
+    onHasCurrentChanged: {
+        if (!hasCurrent)
+            sticky = false;
+    }
 
     // Dummy object so Tokens attached prop resolves to global config
     // Anim configs are not per-monitor
@@ -46,8 +53,12 @@ Item {
 
     function detach(mode: string): void {
         setAnims(true);
+        sticky = false;
+        hasCurrent = false;
         if (mode === "winfo") {
             detachedMode = mode;
+        } else if (mode === "clipboard") {
+            detachedMode = "clipboard";
         } else {
             queuedMode = mode;
             detachedMode = "any";
@@ -56,15 +67,27 @@ Item {
         focus = true;
     }
 
+    function openSticky(name: string, center: real): void {
+        detachedMode = "";
+        currentName = name;
+        currentCenter = center;
+        sticky = true;
+        hasCurrent = true;
+        focus = true;
+    }
+
     function close(): void {
         hasCurrent = false;
+        sticky = false;
         detachedMode = "";
+        // Ensure layer-shell keyboard is released with the panel.
+        focus = false;
     }
 
     implicitWidth: nonAnimWidth
     implicitHeight: nonAnimHeight
 
-    focus: hasCurrent
+    focus: hasCurrent || isDetached
     Keys.onEscapePressed: {
         // Forward escape to password popout if active, otherwise close
         if (currentName === "wirelesspassword" && content.item) {
@@ -77,9 +100,14 @@ Item {
         close();
     }
 
+    // Popouts that own a text field and must receive keys (not the focused client).
+    readonly property bool needsKeyboard: root.isDetached
+        || (root.hasCurrent && (root.currentName === "wirelesspassword"
+            || root.currentName === "clipboardhover"))
+
     Keys.onPressed: event => {
-        // Don't intercept keys when password popout is active - let it handle them
-        if (currentName === "wirelesspassword") {
+        // Don't intercept keys when a nested text field owns them.
+        if (currentName === "wirelesspassword" || currentName === "clipboardhover") {
             event.accepted = false;
         }
     }
@@ -90,14 +118,36 @@ Item {
         onDetachRequested: mode => root.detach(mode)
     }
 
+    // Only grab focus for detached panels (settings/clipboard), and only after a
+    // short delay so open-from-click/IPC is not immediately cancelled by onCleared.
+    Timer {
+        id: focusGrabDelay
+        interval: 180
+        onTriggered: root.focusGrabReady = root.isDetached
+    }
+    property bool focusGrabReady: false
+    onIsDetachedChanged: {
+        if (isDetached) {
+            focusGrabReady = false;
+            focusGrabDelay.restart();
+        } else {
+            focusGrabDelay.stop();
+            focusGrabReady = false;
+        }
+    }
+
     HyprlandFocusGrab {
-        active: root.isDetached
+        // Detached center panels only (clipboard / settings / window info).
+        active: root.focusGrabReady
         windows: [QsWindow.window]
         onCleared: root.close()
     }
 
     Binding {
-        when: root.isDetached || (root.hasCurrent && root.currentName === "wirelesspassword")
+        // OnDemand so TextInputs (password, clipboard search) can take keys.
+        // Without this, layer-shell has keyboardFocus None and keys pass through
+        // to the focused app behind the hover panel.
+        when: root.needsKeyboard
 
         target: QsWindow.window
         property: "WlrLayershell.keyboardFocus"
@@ -146,6 +196,20 @@ Item {
                 nState.currentPageIdx: ["appearance", "display", "network", "bluetooth", "audio"].indexOf(root.queuedMode)
                 onClose: root.close()
             }
+        }
+    }
+
+    Comp {
+        id: clipboard
+
+        shouldBeActive: root.detachedMode === "clipboard"
+        anchors.centerIn: parent
+        // Ensure the loader reports a real size while the panel is open
+        width: item ? item.implicitWidth : 0
+        height: item ? item.implicitHeight : 0
+
+        sourceComponent: Clipboard {
+            onClosed: root.close()
         }
     }
 
