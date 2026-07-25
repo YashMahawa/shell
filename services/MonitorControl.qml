@@ -51,6 +51,21 @@ Singleton {
 
     Component.onCompleted: refresh()
 
+    Connections {
+        function onValuesChanged(): void {
+            hotplugRefresh.restart();
+        }
+
+        target: Hypr.monitors
+    }
+
+    Timer {
+        id: hotplugRefresh
+
+        interval: 900
+        onTriggered: root.refresh()
+    }
+
     Process {
         id: statusProc
 

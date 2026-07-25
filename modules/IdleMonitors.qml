@@ -18,9 +18,9 @@ Scope {
             return;
 
         if (action === "lock")
-            lock.lock.locked = true;
+            lock.engage();
         else if (action === "unlock")
-            lock.lock.locked = false;
+            lock.release();
         else if (typeof action === "string")
             Hypr.dispatch(Hypr.usingLua && ["dpms off", "dpms on"].includes(action) ? `hl.dsp.dpms({ action = "${action === "dpms off" ? "disable" : "enable"}" })` : action);
         else
@@ -30,10 +30,10 @@ Scope {
     LogindManager {
         onAboutToSleep: {
             if (GlobalConfig.general.idle.lockBeforeSleep)
-                root.lock.lock.locked = true;
+                root.lock.engage();
         }
-        onLockRequested: root.lock.lock.locked = true
-        onUnlockRequested: root.lock.lock.unlock()
+        onLockRequested: root.lock.engage()
+        onUnlockRequested: root.lock.release()
     }
 
     Variants {

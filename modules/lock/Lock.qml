@@ -7,12 +7,42 @@ import Quickshell.Wayland
 import qs.components.misc
 
 Scope {
+    id: root
+
     property alias lock: lock
+
+    function writeLockState(state: string): void {
+        lockStateProc.command = ["/home/yash/.local/bin/caelestia-lock-state", state];
+        lockStateProc.running = true;
+    }
+
+    function engage(): bool {
+        writeLockState("locked");
+        lock.locked = true;
+        return lock.locked;
+    }
+
+    function release(): void {
+        writeLockState("unlocked");
+        if (lock.locked)
+            lock.unlock();
+    }
+
+    Process {
+        id: lockStateProc
+    }
 
     WlSessionLock {
         id: lock
 
         signal unlock
+        onSecureChanged: {
+            lockStateProc.command = [
+                "/home/yash/.local/bin/caelestia-lock-state",
+                secure ? "locked" : "unlocked"
+            ];
+            lockStateProc.running = true;
+        }
 
         LockSurface {
             lock: lock
@@ -45,7 +75,7 @@ Scope {
         // qmllint enable unresolved-type
         name: "lock"
         description: "Lock the current session"
-        onPressed: lock.locked = true
+        onPressed: root.engage()
     }
 
     // qmllint disable unresolved-type
@@ -53,15 +83,14 @@ Scope {
         // qmllint enable unresolved-type
         name: "unlock"
         description: "Unlock the current session"
-        onPressed: lock.unlock()
+        onPressed: root.release()
     }
 
     IpcHandler {
         function safeLock(): bool {
             if (lock.locked)
                 return true;
-            lock.locked = true;
-            return lock.locked;
+            return root.engage();
         }
 
         function lock(): void {
@@ -69,8 +98,7 @@ Scope {
         }
 
         function unlock(): void {
-            if (lock.locked)
-                lock.unlock();
+            root.release();
         }
 
         function isLocked(): bool {

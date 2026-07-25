@@ -19,6 +19,11 @@ Scope {
 
     signal flashMsg
 
+    function finishUnlock(): void {
+        unlockStateProc.running = true;
+        root.lock.unlock();
+    }
+
     function handleKey(event: KeyEvent): void {
         if (passwd.active || state === "max")
             return;
@@ -60,7 +65,7 @@ Scope {
 
         onCompleted: res => {
             if (res === PamResult.Success)
-                return root.lock.unlock();
+                return root.finishUnlock();
 
             if (res === PamResult.Error)
                 root.state = "error";
@@ -100,7 +105,7 @@ Scope {
                 return;
 
             if (res === PamResult.Success)
-                return root.lock.unlock();
+                return root.finishUnlock();
 
             if (res === PamResult.Error) {
                 root.fprintState = "error";
@@ -126,6 +131,12 @@ Scope {
             root.flashMsg();
             fprintStateReset.start();
         }
+    }
+
+    Process {
+        id: unlockStateProc
+
+        command: ["/home/yash/.local/bin/caelestia-lock-state", "unlocked"]
     }
 
     Process {
