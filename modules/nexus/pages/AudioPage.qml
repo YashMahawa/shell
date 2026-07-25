@@ -40,11 +40,13 @@ PageBase {
 
         AudioDeviceList {
             nodes: Audio.sinks
+            profiles: Audio.profileSinks
             currentId: Audio.sink?.id ?? -1
             iconName: "speaker"
             placeholderIcon: "speaker"
             placeholderText: qsTr("No output devices")
             onSelected: node => Audio.setAudioSink(node)
+            onProfileSelected: profile => Audio.setOutputProfile(profile)
         }
 
         SectionHeader {

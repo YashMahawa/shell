@@ -17,6 +17,8 @@ Singleton {
     property list<PwNode> sinks: []
     property list<PwNode> sources: []
     property list<PwNode> streams: []
+    property var profileSinks: []
+    property string pendingProfileSink: ""
 
     property alias safeBluetoothVolumeEnabled: audioPreferences.safeBluetoothVolumeEnabled
     property alias safeBluetoothVolume: audioPreferences.safeBluetoothVolume
@@ -165,6 +167,22 @@ Singleton {
         Pipewire.preferredDefaultAudioSource = newSource;
     }
 
+    function setOutputProfile(profile): void {
+        if (!profile?.cardName || !profile?.profileName || profileSwitchProc.running)
+            return;
+
+        root.pendingProfileSink = profile.matchName ?? profile.description ?? "";
+        profileSwitchProc.command = [
+            "pactl", "set-card-profile", profile.cardName, profile.profileName
+        ];
+        profileSwitchProc.running = true;
+    }
+
+    function refreshCardProfiles(): void {
+        if (!cardProfilesProc.running)
+            cardProfilesProc.running = true;
+    }
+
     function cycleNextAudioOutput(): void {
         if (sinks.length === 0)
             return;
@@ -222,6 +240,18 @@ Singleton {
         root.sources = newSources;
         root.streams = newStreams;
         root.syncBluetoothSafety(newSinks);
+
+        if (root.pendingProfileSink) {
+            const wanted = root.pendingProfileSink.toLowerCase();
+            const activated = newSinks.find(node => {
+                const description = (node.description || node.name || "").toLowerCase();
+                return description.includes(wanted);
+            });
+            if (activated) {
+                root.setAudioSink(activated);
+                root.pendingProfileSink = "";
+            }
+        }
     }
 
     onSinkChanged: {
@@ -252,6 +282,7 @@ Singleton {
     // lazily-loaded singleton is created, so onValuesChanged would never fire.
     Component.onCompleted: {
         refreshNodes();
+        refreshCardProfiles();
         previousSinkName = sink?.description || sink?.name || qsTr("Unknown Device");
         previousSourceName = source?.description || source?.name || qsTr("Unknown Device");
     }
@@ -279,6 +310,105 @@ Singleton {
         interval: 250
         repeat: false
         onTriggered: root.applyPendingBluetoothSafety()
+    }
+
+    Timer {
+        id: cardRefreshDebounce
+
+        interval: 200
+        onTriggered: root.refreshCardProfiles()
+    }
+
+    Process {
+        id: cardEventProc
+
+        running: true
+        command: ["pactl", "subscribe"]
+        stdout: SplitParser {
+            onRead: cardRefreshDebounce.restart()
+        }
+    }
+
+    Process {
+        id: cardProfilesProc
+
+        command: ["pactl", "--format=json", "list", "cards"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const cards = JSON.parse(text);
+                    const choices = [];
+                    for (const card of cards) {
+                        if (!card.name?.startsWith("alsa_card."))
+                            continue;
+
+                        const profiles = card.profiles ?? {};
+                        const active = card.active_profile ?? "";
+                        const available = name => {
+                            const value = profiles[name];
+                            return value && value.available !== false && value.available !== "no";
+                        };
+
+                        const analog = available("output:analog-stereo+input:analog-stereo")
+                            ? "output:analog-stereo+input:analog-stereo"
+                            : available("output:analog-stereo") ? "output:analog-stereo" : "";
+                        if (analog && active !== analog && !active.startsWith("output:analog-stereo")) {
+                            choices.push({
+                                isProfile: true,
+                                id: `profile:${card.name}:${analog}`,
+                                cardName: card.name,
+                                profileName: analog,
+                                description: qsTr("Built-in Audio Analog Stereo"),
+                                matchName: "Built-in Audio Analog Stereo"
+                            });
+                        }
+
+                        for (const [portName, port] of Object.entries(card.ports ?? {})) {
+                            if (!portName.startsWith("hdmi-output-") || port.availability !== "available")
+                                continue;
+                            const product = port.properties?.["device.product.name"] || port.description || qsTr("HDMI display");
+                            const duplex = (port.profiles ?? []).find(name =>
+                                name.startsWith("output:hdmi-stereo") && name.includes("+input:") && available(name));
+                            const outputOnly = (port.profiles ?? []).find(name =>
+                                name.startsWith("output:hdmi-stereo") && !name.includes("+input:") && available(name));
+                            const profileName = duplex || outputOnly || "";
+                            if (!profileName || active === profileName || active.startsWith(profileName.split("+")[0]))
+                                continue;
+                            choices.push({
+                                isProfile: true,
+                                id: `profile:${card.name}:${profileName}`,
+                                cardName: card.name,
+                                profileName,
+                                description: `${product} · HDMI`,
+                                matchName: product
+                            });
+                        }
+                    }
+                    root.profileSinks = choices;
+                } catch (error) {
+                    root.profileSinks = [];
+                }
+            }
+        }
+    }
+
+    Process {
+        id: profileSwitchProc
+
+        onExited: {
+            cardRefreshDebounce.restart();
+            profileSinkWait.restart();
+        }
+    }
+
+    Timer {
+        id: profileSinkWait
+
+        interval: 350
+        onTriggered: {
+            root.refreshNodes();
+            root.refreshCardProfiles();
+        }
     }
 
     // Always track the current defaults so volume/mute bind even if the lists

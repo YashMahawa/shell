@@ -13,24 +13,26 @@ ItemList {
     id: root
 
     property var nodes: []
+    property var profiles: []
     property int currentId: -1
     property string iconName: "speaker"
 
     signal selected(node: PwNode)
+    signal profileSelected(var profile)
 
     last: true
     showList: true
 
     model: ScriptModel {
-        values: [...root.nodes].sort((a, b) => (a.description || a.name || "").localeCompare(b.description || b.name || ""))
+        values: [...root.nodes, ...root.profiles].sort((a, b) => (a.description || a.name || "").localeCompare(b.description || b.name || ""))
     }
 
     delegate: Item {
         id: device
 
-        required property PwNode modelData
+        required property var modelData
         required property int index
-        readonly property bool active: device.modelData?.id === root.currentId
+        readonly property bool active: !device.modelData?.isProfile && device.modelData?.id === root.currentId
 
         anchors.left: root.list.contentItem.left
         anchors.right: root.list.contentItem.right
@@ -40,7 +42,12 @@ ItemList {
             radius: Tokens.rounding.extraSmall
             bottomLeftRadius: device.index === root?.list.count - 1 ? Tokens.rounding.extraLarge : radius
             bottomRightRadius: device.index === root?.list.count - 1 ? Tokens.rounding.extraLarge : radius
-            onClicked: root.selected(device.modelData)
+            onClicked: {
+                if (device.modelData?.isProfile)
+                    root.profileSelected(device.modelData);
+                else
+                    root.selected(device.modelData);
+            }
         }
 
         RowLayout {

@@ -52,6 +52,19 @@ Item {
             }
         }
 
+        Repeater {
+            model: Audio.profileSinks
+
+            StyledRadioButton {
+                required property var modelData
+
+                ButtonGroup.group: sinks
+                checked: false
+                onClicked: Audio.setOutputProfile(modelData)
+                text: modelData.description
+            }
+        }
+
         StyledText {
             Layout.topMargin: Tokens.spacing.medium
             text: qsTr("Input device")
