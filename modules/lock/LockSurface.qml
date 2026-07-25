@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import Quickshell
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
@@ -14,6 +15,9 @@ WlSessionLockSurface {
     required property Pam pam
 
     readonly property alias unlocking: unlockAnim.running
+    readonly property ShellScreen captureScreen: Quickshell.screens.find(
+        candidate => candidate === root.screen
+    ) ?? null
 
     contentItem.Config.screen: screen.name
     contentItem.Tokens.screen: screen.name
@@ -208,7 +212,10 @@ WlSessionLockSurface {
         id: background
 
         anchors.fill: parent
-        captureSource: root.screen
+        // An unlocked shell does not need a continuous screen capture. More
+        // importantly, clearing this before an output disappears prevents the
+        // ext-image-copy object from retaining a destroyed Wayland output.
+        captureSource: root.lock.locked ? root.captureScreen : null
         opacity: 0
         z: -1
 
