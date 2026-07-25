@@ -83,7 +83,11 @@ Singleton {
     Process {
         id: ddcProc
 
-        command: ["sh", "-c", "id -nG | grep -qw i2c && command -v ddcutil >/dev/null && ddcutil detect --brief || true"]
+        // Access can be granted by udev ACLs without membership in the i2c
+        // group. Let ddcutil test the device directly instead of rejecting a
+        // valid per-user ACL such as /dev/i2c-3 on the connected Acer.
+        running: true
+        command: ["ddcutil", "detect", "--brief"]
         stdout: StdioCollector {
             onStreamFinished: root.ddcMonitors = text.trim().split("\n\n").filter(d => d.startsWith("Display ")).map(d => {
                         const busMatch = d.match(/I2C bus:[ ]*\/dev\/i2c-([0-9]+)/);
