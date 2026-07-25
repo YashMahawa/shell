@@ -207,7 +207,14 @@ CustomMouseArea {
         const dragY = y - dragStart.y;
 
         if (fullscreen) {
-            root.panels.osd.hovered = inRightPanel(panels.osdWrapper, x, y);
+            const showOsd = inRightPanel(panels.osdWrapper, x, y);
+            if (!osdShortcutActive) {
+                visibilities.osd = showOsd;
+                root.panels.osd.hovered = showOsd;
+            } else if (showOsd) {
+                osdShortcutActive = false;
+                root.panels.osd.hovered = true;
+            }
             return;
         }
 

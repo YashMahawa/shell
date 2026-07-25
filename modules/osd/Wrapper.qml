@@ -97,8 +97,11 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
 
-        asynchronous: true
-        active: root.shouldBeActive || root.visible
+        // This panel is tiny and is opened by an edge hover. Keep it warm:
+        // while a cold asynchronous loader has zero height, the hover leaves
+        // its bounds before the content exists and immediately closes again.
+        asynchronous: false
+        active: true
 
         sourceComponent: Content {
             monitor: root.monitor

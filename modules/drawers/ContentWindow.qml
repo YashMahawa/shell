@@ -66,7 +66,8 @@ StyledWindow {
 
     name: "drawers"
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen ? WlrLayer.Overlay : WlrLayer.Top
+    WlrLayershell.layer: (fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen)
+        || ImmersiveLyricsState.presented ? WlrLayer.Overlay : WlrLayer.Top
     // OnDemand whenever a panel needs a text field (launcher, session, center
     // clipboard, wifi password, hover clipboard search). Without this, keys
     // pass through the shell into the focused app.

@@ -111,7 +111,7 @@ Item {
     component WrappedLoader: Loader {
         required property bool shouldBeActive
 
-        asynchronous: true
+        asynchronous: false
         Layout.preferredHeight: shouldBeActive ? Tokens.sizes.osd.sliderHeight : 0
         opacity: shouldBeActive ? 1 : 0
         active: opacity > 0

@@ -115,7 +115,7 @@ StyledRect {
 
             property bool running: Recorder.running
 
-            asynchronous: true
+            asynchronous: false
             Layout.fillWidth: true
             Layout.preferredHeight: implicitHeight
             sourceComponent: running ? recordingControls : recordingList

@@ -46,8 +46,10 @@ Item {
         anchors.left: parent.left
         anchors.margins: Tokens.padding.large
 
-        asynchronous: true
-        active: root.shouldBeActive || root.visible
+        // This compact panel should appear as one finished surface. Preloading
+        // avoids cards and controls visibly arriving one by one on first open.
+        asynchronous: false
+        active: true
 
         sourceComponent: Content {
             implicitWidth: root.implicitWidth - root.totalPadding
