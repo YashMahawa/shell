@@ -67,7 +67,10 @@ Singleton {
     Variants {
         id: variants
 
-        model: Quickshell.screens // Don't respect excluded screens cause ipc
+        // The shell intentionally exposes one physical screen. Using raw
+        // Quickshell.screens here also creates transient eDP/HEADLESS monitor
+        // objects during hotplug, leaving the OSD bound to a null screen.
+        model: Screens.screens
 
         Monitor {}
     }
