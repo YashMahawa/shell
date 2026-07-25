@@ -91,7 +91,11 @@ CustomMouseArea {
     function inRightPanel(panel: Item, x: real, y: real): bool {
         const panelWidth = panel.width || panel.implicitWidth;
         const panelX = panel.width ? panel.x : (panel.x - panel.implicitWidth);
-        return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panelX) && withinPanelHeight(panel, x, y);
+        // Animated right panels collapse their width to zero while hidden.
+        // Keep a comfortable edge target so the OSD can still be discovered
+        // reliably on large external monitors.
+        const edgeTrigger = width - Math.max(32, Config.border.minThickness, Config.border.thickness * 2);
+        return x > Math.min(edgeTrigger, bar.implicitWidth + panelX) && withinPanelHeight(panel, x, y);
     }
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
