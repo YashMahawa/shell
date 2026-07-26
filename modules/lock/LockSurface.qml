@@ -253,7 +253,13 @@ WlSessionLockSurface {
             anchors.fill: parent
             color: Colours.palette.m3surface
             radius: parent.radius
-            opacity: Colours.transparency.enabled ? Colours.transparency.base : 1
+            // The captured desktop behind this card is already strongly
+            // blurred. Keep the card translucent even when ordinary shell
+            // transparency is disabled so the lock UI remains a calm glass
+            // surface instead of a harsh opaque slab.
+            opacity: Colours.transparency.enabled
+                ? Math.min(0.84, Math.max(0.72, Colours.transparency.base))
+                : 0.82
 
             layer.enabled: true
             layer.effect: MultiEffect {

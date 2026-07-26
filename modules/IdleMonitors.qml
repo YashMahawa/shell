@@ -11,7 +11,16 @@ Scope {
     id: root
 
     required property Lock lock
-    readonly property bool enabled: !GlobalConfig.general.idle.inhibitWhenAudio || !Players.list.some(p => p.isPlaying)
+    readonly property bool audioPlaying: Players.list.some(p => p.isPlaying)
+
+    function timeoutEnabled(modelData: var): bool {
+        if (!GlobalConfig.general.idle.inhibitWhenAudio || !audioPlaying)
+            return true;
+        // Audio should prevent lock/suspend, but music playback should not keep
+        // an external monitor's backlight on forever. Video apps can still use
+        // the standard Wayland idle inhibitor respected by this monitor.
+        return modelData.idleAction === "dpms off";
+    }
 
     function handleIdleAction(action: var): void {
         if (!action)
@@ -32,6 +41,13 @@ Scope {
             if (GlobalConfig.general.idle.lockBeforeSleep)
                 root.lock.engage();
         }
+        // Rebuild the one-screen layout after the GPU/display link has resumed.
+        // This also powers the chosen physical output before any fallback can
+        // become visible.
+        onResumed: Quickshell.execDetached([
+            Quickshell.env("HOME") + "/.local/bin/caelestia-display",
+            "auto"
+        ])
         onLockRequested: root.lock.engage()
         onUnlockRequested: root.lock.release()
     }
@@ -42,7 +58,7 @@ Scope {
         IdleMonitor {
             required property var modelData
 
-            enabled: root.enabled && (modelData.enabled ?? true)
+            enabled: root.timeoutEnabled(modelData) && (modelData.enabled ?? true)
             timeout: modelData.timeout
             respectInhibitors: modelData.respectInhibitors ?? true
             onIsIdleChanged: root.handleIdleAction(isIdle ? modelData.idleAction : modelData.returnAction)
