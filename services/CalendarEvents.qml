@@ -2,17 +2,24 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Caelestia
 import Caelestia.Config
+import qs.utils
 
 Singleton {
     id: root
 
     property var sourceBuckets: ({})
+    property var holidayBuckets: ({})
     property var holidaysByDate: ({})
     property var loadedHolidayYears: ({})
+    property var holidayCache: ({ version: 1, entries: ({}) })
+    property bool holidayCacheReady: false
     property int revision: 0
     property int sourceGeneration: 0
+
+    readonly property int holidayCacheMaxAgeMs: 7 * 24 * 60 * 60 * 1000
 
     readonly property string localeCountryCode: {
         const parts = Qt.locale().name.replace("-", "_").split("_");
@@ -109,7 +116,7 @@ Singleton {
     }
 
     function ensureYear(year: int): void {
-        if (!GlobalConfig.dashboard.showNationalHolidays || !countryCode)
+        if (!GlobalConfig.dashboard.showNationalHolidays || !countryCode || !holidayCacheReady)
             return;
 
         const cacheKey = `${countryCode}:${year}`;
@@ -120,9 +127,54 @@ Singleton {
         loading[cacheKey] = true;
         loadedHolidayYears = loading;
 
-        Requests.get(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`, text => {
+        const cached = holidayCache.entries?.[cacheKey];
+        if (cached?.holidays?.length) {
+            applyHolidays(cached.holidays, cacheKey);
+            if (Date.now() - Number(cached.fetchedAt ?? 0) < holidayCacheMaxAgeMs)
+                return;
+        }
+
+        fetchGoogleHolidays(year, countryCode, cacheKey);
+    }
+
+    function googleHolidayCalendarId(code: string): string {
+        // Most Google holiday calendars use the ISO alpha-2 code. Only the
+        // irregular identifiers need listing; these are identifiers, not dates.
+        const overrides = {
+            AU: "australian", AT: "austrian", BR: "brazilian", BG: "bulgarian",
+            CA: "canadian", CN: "china", HR: "croatian", CZ: "czech", DK: "danish",
+            FI: "finnish", FR: "french", DE: "german", GR: "greek", HK: "hong_kong",
+            HU: "hungarian", IN: "indian", ID: "indonesian", IE: "irish", IL: "jewish",
+            IT: "italian", JP: "japanese", LV: "latvian", LT: "lithuanian",
+            MY: "malaysia", MX: "mexican", NL: "dutch", NZ: "new_zealand",
+            NO: "norwegian", PH: "philippines", PL: "polish", PT: "portuguese",
+            KR: "south_korea", RO: "romanian", RU: "russian", SA: "saudiarabian",
+            SG: "singapore", SK: "slovak", SI: "slovenian", ZA: "sa", ES: "spain",
+            SE: "swedish", TW: "taiwan", TR: "turkish", UA: "ukrainian",
+            GB: "uk", US: "usa", VN: "vietnamese"
+        };
+        const slug = overrides[code] ?? code.toLowerCase();
+        return `en.${slug}#holiday@group.v.calendar.google.com`;
+    }
+
+    function fetchGoogleHolidays(year: int, code: string, cacheKey: string): void {
+        const calendarId = encodeURIComponent(googleHolidayCalendarId(code));
+        const url = `https://calendar.google.com/calendar/ical/${calendarId}/public/basic.ics`;
+        Requests.get(url, text => {
+            const values = parseGooglePublicHolidays(text, year);
+            if (values.length === 0) {
+                fetchNagerHolidays(year, code, cacheKey);
+                return;
+            }
+
+            cacheAndApplyHolidays(cacheKey, code, year, values, "google-calendar");
+        }, error => fetchNagerHolidays(year, code, cacheKey));
+    }
+
+    function fetchNagerHolidays(year: int, code: string, cacheKey: string): void {
+        Requests.get(`https://date.nager.at/api/v3/PublicHolidays/${year}/${code}`, text => {
             if (!text.trim()) {
-                applyHolidays(builtinNationalHolidays(year, countryCode));
+                holidayFetchFailed(cacheKey, qsTr("No public holiday data returned"));
                 return;
             }
 
@@ -130,32 +182,51 @@ Singleton {
             try {
                 values = JSON.parse(text);
             } catch (error) {
-                console.warn(lc, `Unable to parse national holidays: ${error}`);
+                holidayFetchFailed(cacheKey, error);
                 return;
             }
 
-            if (!Array.isArray(values))
-                return;
-
-            applyHolidays(values);
-        }, error => {
-            const fallback = builtinNationalHolidays(year, countryCode);
-            if (fallback.length > 0) {
-                applyHolidays(fallback);
+            if (!Array.isArray(values) || values.length === 0) {
+                holidayFetchFailed(cacheKey, qsTr("No public holiday data returned"));
                 return;
             }
-            console.warn(lc, `Unable to load national holidays for ${countryCode}: ${error}`);
+
+            cacheAndApplyHolidays(cacheKey, code, year, values, "nager-date");
+        }, error => holidayFetchFailed(cacheKey, error));
+    }
+
+    function holidayFetchFailed(cacheKey: string, error: var): void {
+        // Stale cached data remains visible while offline or when a provider is
+        // temporarily unavailable. Only make uncached failures retryable.
+        if (!holidayCache.entries?.[cacheKey]) {
+            console.warn(lc, `Unable to load national holidays for ${cacheKey}: ${error}`);
             const retryable = Object.assign({}, loadedHolidayYears);
             delete retryable[cacheKey];
             loadedHolidayYears = retryable;
-        });
+        }
     }
 
-    function applyHolidays(values: list<var>): void {
-        const next = Object.assign({}, holidaysByDate);
+    function cacheAndApplyHolidays(cacheKey: string, code: string, year: int, values: list<var>, source: string): void {
+        const entries = Object.assign({}, holidayCache.entries ?? {});
+        entries[cacheKey] = {
+            countryCode: code,
+            year,
+            fetchedAt: Date.now(),
+            source,
+            holidays: values
+        };
+        holidayCache = { version: 1, entries };
+        holidayCacheFile.setText(JSON.stringify(holidayCache));
+        // Country detection can finish while an earlier locale-based request is
+        // still in flight. Cache that response, but never display it for the
+        // newly detected country.
+        if (code === countryCode)
+            applyHolidays(values, cacheKey);
+    }
+
+    function applyHolidays(values: list<var>, cacheKey: string): void {
+        const bucket = {};
         for (const value of values) {
-            // API v3 calls this field "global". Only globally applicable
-            // public holidays are shown; regional observances stay hidden.
             if (value.global === false)
                 continue;
             const key = String(value.date ?? "");
@@ -167,32 +238,45 @@ Singleton {
                 allDay: true,
                 source: qsTr("National holiday")
             };
-            next[key] = (next[key] ?? []).concat([holiday]);
+            if (!(bucket[key] ?? []).some(existing => existing.title === holiday.title))
+                bucket[key] = (bucket[key] ?? []).concat([holiday]);
         }
-        holidaysByDate = next;
+
+        const buckets = Object.assign({}, holidayBuckets);
+        buckets[cacheKey] = bucket;
+        holidayBuckets = buckets;
+
+        const merged = {};
+        for (const value of Object.values(buckets)) {
+            for (const [key, holidays] of Object.entries(value))
+                merged[key] = (merged[key] ?? []).concat(holidays);
+        }
+        holidaysByDate = merged;
         revision++;
     }
 
-    function builtinNationalHolidays(year: int, code: string): list<var> {
-        // Nager.Date intentionally omits India because most Indian public
-        // holidays vary by state. These three are the fixed, country-wide
-        // national holidays, so they are safe to provide without regional noise.
-        if (code === "IN") {
-            return [{
-                date: `${year}-01-26`,
-                localName: qsTr("Republic Day"),
+    function parseGooglePublicHolidays(text: string, year: int): list<var> {
+        const unfolded = text.replace(/\r?\n[ \t]/g, "");
+        const values = [];
+        for (const block of unfolded.split("BEGIN:VEVENT").slice(1)) {
+            const dateMatch = block.match(/(?:^|\n)DTSTART(?:;[^:]*)?:(\d{8})(?:\r?\n|$)/);
+            const titleMatch = block.match(/(?:^|\n)SUMMARY(?:;[^:]*)?:(.*?)(?:\r?\n|$)/);
+            const descriptionMatch = block.match(/(?:^|\n)DESCRIPTION(?:;[^:]*)?:(.*?)(?:\r?\n|$)/);
+            if (!dateMatch || !titleMatch || !descriptionMatch)
+                continue;
+            if (!descriptionMatch[1].toLowerCase().startsWith("public holiday"))
+                continue;
+
+            const raw = dateMatch[1];
+            if (Number(raw.slice(0, 4)) !== year)
+                continue;
+            values.push({
+                date: `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`,
+                localName: unescapeIcalendar(titleMatch[1]),
                 global: true
-            }, {
-                date: `${year}-08-15`,
-                localName: qsTr("Independence Day"),
-                global: true
-            }, {
-                date: `${year}-10-02`,
-                localName: qsTr("Gandhi Jayanti"),
-                global: true
-            }];
+            });
         }
-        return [];
+        return values;
     }
 
     function parseIcalendar(text: string, sourceName: string): var {
@@ -344,6 +428,7 @@ Singleton {
     }
 
     onCountryCodeChanged: {
+        holidayBuckets = {};
         holidaysByDate = {};
         loadedHolidayYears = {};
         revision++;
@@ -356,12 +441,39 @@ Singleton {
             root.reload();
         }
         function onShowNationalHolidaysChanged(): void {
+            root.holidayBuckets = {};
             root.holidaysByDate = {};
             root.loadedHolidayYears = {};
             root.revision++;
             root.ensureYear(new Date().getFullYear());
         }
         target: GlobalConfig.dashboard
+    }
+
+    FileView {
+        id: holidayCacheFile
+
+        path: `${Paths.cache}/holiday-cache-v1.json`
+        printErrors: false
+        onLoaded: {
+            try {
+                const parsed = JSON.parse(text());
+                if (parsed?.version === 1 && typeof parsed.entries === "object")
+                    root.holidayCache = parsed;
+            } catch (error) {
+                console.warn(lc, `Unable to parse holiday cache: ${error}`);
+            }
+            root.holidayCacheReady = true;
+            root.ensureYear(new Date().getFullYear());
+            root.ensureYear(new Date().getFullYear() + 1);
+        }
+        onLoadFailed: error => {
+            root.holidayCacheReady = true;
+            if (error === FileViewError.FileNotFound)
+                Qt.callLater(() => setText(JSON.stringify(root.holidayCache)));
+            root.ensureYear(new Date().getFullYear());
+            root.ensureYear(new Date().getFullYear() + 1);
+        }
     }
 
     Timer {

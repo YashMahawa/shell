@@ -198,7 +198,9 @@ CustomMouseArea {
 
                     MouseArea {
                         anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        cursorShape: Qt.ArrowCursor
+                        onEntered: root.selectedDate = dayItem.model.date
                         onClicked: root.selectedDate = dayItem.model.date
                     }
                 }
