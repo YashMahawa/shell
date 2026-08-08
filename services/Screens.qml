@@ -17,11 +17,11 @@ Singleton {
         physicalScreens.find(s => !isInternalName(s.name))
         ?? physicalScreens.find(s => isInternalName(s.name))
         ?? null
-    readonly property list<ShellScreen> screens:
-        preferredScreen && GlobalConfig.forScreen(preferredScreen.name).enabled
-        ? [preferredScreen] : []
+    readonly property list<ShellScreen> screens: physicalScreens.filter(
+        screen => GlobalConfig.forScreen(screen.name).enabled
+    )
 
     function isExcluded(screen: ShellScreen): bool {
-        return screen !== preferredScreen || !GlobalConfig.forScreen(screen.name).enabled;
+        return !GlobalConfig.forScreen(screen.name).enabled;
     }
 }

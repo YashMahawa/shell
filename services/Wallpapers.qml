@@ -23,6 +23,45 @@ Searcher {
     property bool previewColourLock
     property bool pendingPreviewClear
     property list<QtObject> daemonWalls: []
+    property string wallpaperMode: "static"
+    property bool _refreshing: false
+    property string thumbnailVersion: "0"
+
+    function cleanPath(path: string): string {
+        const value = String(path ?? "");
+        if (!value.startsWith("file://"))
+            return value;
+
+        try {
+            return decodeURIComponent(value.slice(7).split("?")[0]);
+        } catch (error) {
+            return value.slice(7).split("?")[0];
+        }
+    }
+
+    function isVideo(path: string): bool {
+        const clean = cleanPath(path).toLowerCase();
+        return [".mp4", ".webm", ".mkv", ".mov", ".m4v"].some(ext => clean.endsWith(ext));
+    }
+
+    function videoThumbnailPath(path: string): string {
+        const clean = cleanPath(path);
+        let hash = 5381;
+        for (let i = 0; i < clean.length; ++i)
+            hash = (hash * 33 + clean.charCodeAt(i)) >>> 0;
+        return `file://${Paths.cache}/videothumbs/${hash}.jpg?v=${thumbnailVersion}`;
+    }
+
+    function setWallpaperMode(mode: string): void {
+        wallpaperMode = mode === "animated" ? "animated" : "static";
+    }
+
+    function refreshAnimatedThumbs(): void {
+        if (_refreshing || thumbnailProc.running)
+            return;
+        _refreshing = true;
+        thumbnailProc.running = true;
+    }
 
     function syncDaemonWalls(): void {
         const previous = daemonWalls;
@@ -64,6 +103,7 @@ Searcher {
     function setWallpaper(path: string): void {
         const clean = cleanPath(path);
         actualCurrent = clean;
+        wallpaperMode = isVideo(clean) ? "animated" : "static";
         Quickshell.execDetached(["caelestia", "wallpaper", "-f", clean, ...smartArg]);
     }
 
@@ -155,6 +195,7 @@ Searcher {
         }
         onLoadFailed: {
             root.actualCurrent = root.fallback;
+            root.wallpaperMode = "static";
             root.previewColourLock = false;
             Quickshell.execDetached(["caelestia", "wallpaper", "-f", root.fallback, ...root.smartArg]);
         }
