@@ -43,6 +43,41 @@ CustomMouseArea {
         return `${heading}\n${labels.join("\n")}`;
     }
 
+    function categoryForEvent(event: var): string {
+        const explicit = String(event.category ?? "").toLowerCase();
+        if (explicit && explicit !== "event")
+            return explicit;
+
+        const title = String(event.title ?? "").toLowerCase();
+        if (/exam|minor|major|test/.test(title))
+            return "exam";
+        if (/break|vacation|no class|holiday|festival|ignus|prometeo|varchas/.test(title))
+            return "break";
+        if (/deadline|registration|add\/drop|withdraw|grade|feedback|reporting/.test(title))
+            return "deadline";
+        if (/timetable|class|lecture/.test(title))
+            return "schedule";
+        return "event";
+    }
+
+    function categoryColour(category: string): color {
+        switch (category) {
+        case "exam":
+            return Colours.palette.m3error;
+        case "break":
+        case "no-class":
+            return Colours.palette.m3secondary;
+        case "schedule":
+        case "class":
+            return Colours.palette.m3tertiary;
+        case "deadline":
+        case "registration":
+            return Colours.palette.m3primary;
+        default:
+            return Colours.palette.m3primary;
+        }
+    }
+
     anchors.left: parent.left
     anchors.right: parent.right
     implicitHeight: inner.implicitHeight + inner.anchors.margins * 2
@@ -150,7 +185,16 @@ CustomMouseArea {
                     required property var model
                     readonly property int load: CalendarEvents.eventLoadForDate(model.date)
                     readonly property bool holiday: CalendarEvents.holidaysForDate(model.date).length > 0
-                    readonly property bool hasCalendarEvent: CalendarEvents.eventsForDate(model.date).some(event => !event.holiday)
+                    readonly property list<var> calendarEvents: CalendarEvents.eventsForDate(model.date).filter(event => !event.holiday)
+                    readonly property list<string> eventCategories: {
+                        const categories = [];
+                        for (const event of calendarEvents) {
+                            const category = root.categoryForEvent(event);
+                            if (!categories.includes(category))
+                                categories.push(category);
+                        }
+                        return categories.slice(0, 2);
+                    }
                     readonly property bool selected: CalendarEvents.dateKey(model.date) === CalendarEvents.dateKey(root.selectedDate)
                     readonly property bool hovered: dayHover.containsMouse
 
@@ -211,12 +255,17 @@ CustomMouseArea {
                             color: Colours.palette.m3tertiary
                         }
 
-                        StyledRect {
-                            visible: dayItem.hasCalendarEvent && dayItem.load === 0
-                            implicitWidth: 3
-                            implicitHeight: 3
-                            radius: 2
-                            color: Colours.palette.m3primary
+                        Repeater {
+                            model: dayItem.eventCategories
+
+                            StyledRect {
+                                required property string modelData
+
+                                implicitWidth: 3
+                                implicitHeight: 3
+                                radius: 2
+                                color: root.categoryColour(modelData)
+                            }
                         }
                     }
 
@@ -250,6 +299,8 @@ CustomMouseArea {
                 target: root.hoveredDayItem ?? grid
                 text: root.popupText(root.hoveredDate)
                 delay: 120
+                fixedContentWidth: 260
+                fixedContentHeight: 118
             }
 
             MaterialShape {

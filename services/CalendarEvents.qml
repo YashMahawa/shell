@@ -318,6 +318,8 @@ Singleton {
                 event.end = parseIcalendarDate(value, params);
             else if (key === "SUMMARY")
                 event.title = unescapeIcalendar(value);
+            else if (key === "CATEGORIES")
+                event.category = unescapeIcalendar(value.split(",")[0]).trim().toLowerCase();
             else if (key === "RRULE")
                 event.rule = parseRule(value);
             else if (key === "EXDATE") {
@@ -377,6 +379,7 @@ Singleton {
                 holiday: false,
                 allDay: event.start.allDay,
                 source: sourceName,
+                category: event.category || "event",
                 startMs: occurrence.getTime(),
                 durationMinutes
             };

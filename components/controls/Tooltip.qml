@@ -12,6 +12,8 @@ Popup {
     required property string text
     property int delay: 500
     property int timeout: 0
+    property real fixedContentWidth: 0
+    property real fixedContentHeight: 0
 
     property bool tooltipVisible: false
     property Timer showTimer: Timer {
@@ -116,8 +118,8 @@ Popup {
     contentItem: StyledRect {
         id: tooltipRect
 
-        implicitWidth: tooltipText.implicitWidth + Tokens.padding.medium * 2
-        implicitHeight: tooltipText.implicitHeight + Tokens.padding.large
+        implicitWidth: root.fixedContentWidth > 0 ? root.fixedContentWidth : tooltipText.implicitWidth + Tokens.padding.medium * 2
+        implicitHeight: root.fixedContentHeight > 0 ? root.fixedContentHeight : tooltipText.implicitHeight + Tokens.padding.large
 
         color: Colours.palette.m3surfaceContainerHighest
         radius: Tokens.rounding.medium
@@ -135,10 +137,14 @@ Popup {
             id: tooltipText
 
             anchors.centerIn: parent
+            width: root.fixedContentWidth > 0 ? root.fixedContentWidth - Tokens.padding.medium * 2 : implicitWidth
 
             text: root.text
             color: Colours.palette.m3onSurface
             font: Tokens.font.body.small
+            wrapMode: root.fixedContentWidth > 0 ? Text.Wrap : Text.NoWrap
+            maximumLineCount: root.fixedContentHeight > 0 ? 5 : 1000
+            elide: Text.ElideRight
         }
     }
 
