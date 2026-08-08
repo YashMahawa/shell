@@ -26,7 +26,9 @@ WlSessionLockSurface {
     contentItem.width: root.screen?.width ?? 1920
     contentItem.height: root.screen?.height ?? 1080
 
-    color: "transparent"
+    // Never expose an unblurred desktop while the pre-lock capture is loading
+    // or unavailable.
+    color: Colours.palette.m3surface
 
     function prepareContent(): void {
         background.opacity = 0;
@@ -208,7 +210,7 @@ WlSessionLockSurface {
         onTriggered: root.revealContent()
     }
 
-    ScreencopyView {
+    Image {
         id: background
 
         anchors.fill: parent

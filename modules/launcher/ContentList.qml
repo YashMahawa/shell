@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
 import qs.components.controls
@@ -19,7 +20,7 @@ Item {
     required property int rounding
 
     readonly property bool showWallpapers: search.text.startsWith(`${GlobalConfig.launcher.actionPrefix}wallpaper `)
-    readonly property var currentList: showWallpapers ? wallpaperList.item : appList.item // Can be either ListView or PathView, so can't type properly
+    readonly property var currentList: showWallpapers ? (wallpaperList.item ? wallpaperList.item.realList : null) : appList.item
 
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
@@ -47,7 +48,7 @@ Item {
 
             PropertyChanges {
                 root.implicitWidth: Math.max(root.Tokens.sizes.launcher.itemWidth * 1.2, wallpaperList.implicitWidth)
-                root.implicitHeight: root.Tokens.sizes.launcher.wallpaperHeight
+                root.implicitHeight: root.Tokens.sizes.launcher.wallpaperHeight + 56
                 wallpaperList.active: true
             }
         }
@@ -96,19 +97,89 @@ Item {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
 
-        sourceComponent: WallpaperList {
-            search: root.search
-            visibilities: root.visibilities
-            panels: root.panels
-            content: root.content
+        sourceComponent: ColumnLayout {
+            readonly property var realList: listComp
+            readonly property int count: listComp.count
+
+            spacing: Tokens.spacing.medium
+            implicitWidth: listComp.implicitWidth
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: Tokens.spacing.medium
+
+                IconTextButton {
+                    icon: "image"
+                    text: qsTr("Static")
+                    isRound: true
+                    horizontalPadding: Tokens.padding.medium
+                    verticalPadding: Tokens.padding.extraSmall
+                    type: Wallpapers.wallpaperMode === "static" ? IconTextButton.Filled : IconTextButton.Tonal
+                    onClicked: Wallpapers.setWallpaperMode("static")
+                }
+
+                IconTextButton {
+                    icon: "movie"
+                    text: qsTr("Animated")
+                    isRound: true
+                    horizontalPadding: Tokens.padding.medium
+                    verticalPadding: Tokens.padding.extraSmall
+                    type: Wallpapers.wallpaperMode === "animated" ? IconTextButton.Filled : IconTextButton.Tonal
+                    onClicked: Wallpapers.setWallpaperMode("animated")
+                }
+
+                IconTextButton {
+                    icon: "refresh"
+                    text: qsTr("Refresh")
+                    isRound: true
+                    horizontalPadding: Tokens.padding.medium
+                    verticalPadding: Tokens.padding.extraSmall
+                    visible: Wallpapers.wallpaperMode === "animated"
+                    type: IconTextButton.Tonal
+                    onClicked: Wallpapers.refreshAnimatedThumbs()
+                }
+
+                Timer {
+                    id: processingDotsTimer
+
+                    running: Wallpapers._refreshing && Wallpapers.wallpaperMode === "animated"
+                    repeat: true
+                    interval: 400
+                    onTriggered: processingText.dotCount = processingText.dotCount % 3 + 1
+                }
+
+                StyledText {
+                    id: processingText
+
+                    property int dotCount: 1
+
+                    visible: processingDotsTimer.running
+                    Layout.alignment: Qt.AlignVCenter
+                    text: qsTr("Processing") + ".".repeat(dotCount)
+                    color: Colours.palette.m3secondary
+                    font: Tokens.font.label.medium
+                }
+            }
+
+            WallpaperList {
+                id: listComp
+
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                search: root.search
+                visibilities: root.visibilities
+                panels: root.panels
+                content: root.content
+            }
         }
     }
 
     Row {
         id: empty
 
-        opacity: root.currentList?.count === 0 ? 1 : 0
-        scale: root.currentList?.count === 0 ? 1 : 0.5
+        readonly property int count: root.currentList?.count ?? 0
+        opacity: count === 0 ? 1 : 0
+        scale: count === 0 ? 1 : 0.5
 
         spacing: Tokens.spacing.medium
         padding: Tokens.padding.large

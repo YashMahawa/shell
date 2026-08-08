@@ -22,10 +22,35 @@ Singleton {
     property string input: "hdmi1"
     property string errorMessage: ""
     property var queuedWrite: null
+    property double lastRefreshAt: 0
+    property bool refreshPending: false
+    property string outputSignature: ""
 
-    function refresh(): void {
-        if (!statusProc.running)
-            statusProc.running = true;
+    function currentOutputSignature(): string {
+        const outputs = [];
+        for (const monitor of Hypr.monitors.values) {
+            if (!monitor.name.startsWith("eDP-")
+                    && !monitor.name.startsWith("LVDS-")
+                    && !monitor.name.startsWith("DSI-")) {
+                outputs.push(`${monitor.name}:${monitor.description ?? ""}`);
+            }
+        }
+        return outputs.sort().join("|");
+    }
+
+    function refresh(force = false): void {
+        if (statusProc.running) {
+            root.refreshPending = root.refreshPending || force;
+            return;
+        }
+
+        // Opening the display page remains effectively immediate, while duplicate
+        // construction/IPC events cannot launch several expensive DDC reads.
+        const now = Date.now();
+        if (!force && now - root.lastRefreshAt < 5000)
+            return;
+        root.lastRefreshAt = now;
+        statusProc.running = true;
     }
 
     function setControl(control: string, value): void {
@@ -49,10 +74,17 @@ Singleton {
         writeProc.running = true;
     }
 
-    Component.onCompleted: refresh()
+    Component.onCompleted: {
+        outputSignature = currentOutputSignature();
+        refresh(true);
+    }
 
     Connections {
         function onValuesChanged(): void {
+            const nextSignature = root.currentOutputSignature();
+            if (nextSignature === root.outputSignature)
+                return;
+            root.outputSignature = nextSignature;
             hotplugRefresh.restart();
         }
 
@@ -63,7 +95,7 @@ Singleton {
         id: hotplugRefresh
 
         interval: 900
-        onTriggered: root.refresh()
+        onTriggered: root.refresh(true)
     }
 
     Process {
@@ -71,6 +103,12 @@ Singleton {
 
         command: ["caelestia-monitor-control", "status"]
         onRunningChanged: root.busy = running
+        onExited: {
+            if (root.refreshPending) {
+                root.refreshPending = false;
+                Qt.callLater(() => root.refresh(true));
+            }
+        }
 
         stdout: StdioCollector {
             onStreamFinished: {

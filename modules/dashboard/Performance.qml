@@ -10,6 +10,9 @@ import qs.services
 Item {
     id: root
 
+    Component.onCompleted: IntelGpu.refCount++
+    Component.onDestruction: IntelGpu.refCount = Math.max(0, IntelGpu.refCount - 1)
+
     implicitWidth: placeholder.active ? Tokens.sizes.dashboard.perfPlaceholderWidth : content.implicitWidth
     implicitHeight: placeholder.active ? placeholder.implicitHeight + Tokens.padding.extraLarge * 2 : content.implicitHeight
 
@@ -100,6 +103,7 @@ Item {
                         ServiceRef {
                             service: Gpu
                         }
+
                     }
                 }
             }

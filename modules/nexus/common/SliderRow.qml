@@ -60,15 +60,10 @@ ConnectedRect {
                 }
             }
 
-            CustomMouseArea {
-                function onWheel(event: WheelEvent): void {
-                    const step = GlobalConfig.services.audioIncrement;
-                    if (event.angleDelta.y > 0)
-                        root.moved(Math.min(1, root.value + step));
-                    else if (event.angleDelta.y < 0)
-                        root.moved(Math.max(0, root.value - step));
-                }
-
+            Item {
+                // Wheel input is deliberately left unhandled so the enclosing
+                // settings Flickable scrolls. Sliders change only by click or
+                // drag, never because the pointer happened to be over one.
                 Layout.fillWidth: true
                 implicitHeight: Tokens.padding.medium * 2
 

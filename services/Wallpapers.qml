@@ -62,12 +62,13 @@ Searcher {
     }
 
     function setWallpaper(path: string): void {
-        actualCurrent = path;
-        Quickshell.execDetached(["caelestia", "wallpaper", "-f", path, ...smartArg]);
+        const clean = cleanPath(path);
+        actualCurrent = clean;
+        Quickshell.execDetached(["caelestia", "wallpaper", "-f", clean, ...smartArg]);
     }
 
     function preview(path: string): void {
-        previewPath = path;
+        previewPath = cleanPath(path);
         showPreview = true;
 
         if (Colours.scheme === "dynamic")
@@ -149,6 +150,7 @@ Searcher {
                 Quickshell.execDetached(["caelestia", "wallpaper", "-f", root.fallback, ...root.smartArg]);
             }
             root.actualCurrent = wall;
+            root.wallpaperMode = root.isVideo(wall) ? "animated" : "static";
             root.previewColourLock = false;
         }
         onLoadFailed: {
@@ -167,6 +169,16 @@ Searcher {
                 Colours.load(text, true);
                 Colours.showPreview = true;
             }
+        }
+    }
+
+    Process {
+        id: thumbnailProc
+
+        command: ["caelestia", "wallpaper", "--extract-thumbs"]
+        onExited: {
+            root._refreshing = false;
+            root.thumbnailVersion = Date.now().toString();
         }
     }
 }

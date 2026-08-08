@@ -14,10 +14,29 @@ Item {
 
     property string source: Wallpapers.current
     property bool completed
+    property string displayedVideoSource: ""
+    readonly property bool sourceIsVideo: Wallpapers.isVideo(source)
+    readonly property string backgroundSource: sourceIsVideo ? Wallpapers.videoThumbnailPath(source) : source
+
+    function toFileUrl(path: string): string {
+        const clean = Wallpapers.cleanPath(path);
+        return clean ? `file://${clean}` : "";
+    }
 
     Component.onCompleted: {
-        WallpaperEngine.source = Qt.binding(() => root.source);
+        WallpaperEngine.source = Qt.binding(() => root.backgroundSource);
+        if (sourceIsVideo)
+            displayedVideoSource = toFileUrl(source);
         completed = true;
+    }
+
+    onSourceChanged: {
+        if (sourceIsVideo) {
+            stopVideoTimer.stop();
+            displayedVideoSource = toFileUrl(source);
+        } else {
+            stopVideoTimer.restart();
+        }
     }
 
     Loader {
@@ -118,5 +137,42 @@ Item {
                 }
             }
         }
+    }
+
+    Loader {
+        id: videoLoader
+
+        anchors.fill: parent
+        active: root.displayedVideoSource !== ""
+        source: "VideoWallpaper.qml"
+        opacity: root.sourceIsVideo && item?.ready ? 1 : 0
+
+        onLoaded: {
+            item.videoSource = root.displayedVideoSource;
+        }
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.SlowEffects
+            }
+        }
+    }
+
+    onDisplayedVideoSourceChanged: {
+        if (videoLoader.item)
+            videoLoader.item.videoSource = displayedVideoSource;
+    }
+
+    Binding {
+        target: videoLoader.item
+        property: "autoStart"
+        value: !WallpaperPauser.paused
+        when: videoLoader.item !== null
+    }
+
+    Timer {
+        id: stopVideoTimer
+        interval: 600
+        onTriggered: root.displayedVideoSource = ""
     }
 }

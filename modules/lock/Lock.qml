@@ -10,6 +10,7 @@ Scope {
     id: root
 
     property alias lock: lock
+    property bool engagePending: false
 
     function writeLockState(state: string): void {
         lockStateProc.command = ["/home/yash/.local/bin/caelestia-lock-state", state];
@@ -17,12 +18,17 @@ Scope {
     }
 
     function engage(): bool {
-        writeLockState("locked");
-        lock.locked = true;
-        return lock.locked;
+        if (lock.locked || engagePending)
+            return true;
+        engagePending = true;
+        captureProc.running = true;
+        return true;
     }
 
     function release(): void {
+        engagePending = false;
+        if (captureProc.running)
+            captureProc.running = false;
         writeLockState("unlocked");
         if (lock.locked)
             lock.unlock();
@@ -30,6 +36,19 @@ Scope {
 
     Process {
         id: lockStateProc
+    }
+
+    Process {
+        id: captureProc
+
+        command: ["/home/yash/.local/bin/caelestia-lock-capture"]
+        onExited: {
+            if (!root.engagePending)
+                return;
+            root.engagePending = false;
+            root.writeLockState("locked");
+            lock.locked = true;
+        }
     }
 
     WlSessionLock {

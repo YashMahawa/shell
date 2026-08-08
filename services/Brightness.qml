@@ -19,6 +19,7 @@ Singleton {
     }
     readonly property list<Monitor> monitors: variants.instances // qmllint disable incompatible-type
     property bool appleDisplayPresent: false
+    property real pendingPointerDelta: 0
 
     function getMonitorForScreen(screen: ShellScreen): var {
         return monitors.find(m => m.modelData === screen); // qmllint disable missing-property
@@ -47,16 +48,18 @@ Singleton {
         return monitors.find(m => m.modelData.name === query); // qmllint disable missing-property
     }
 
+    function adjustBrightnessAtPointer(delta: real): void {
+        pendingPointerDelta += delta;
+        if (!cursorProc.running)
+            cursorProc.running = true;
+    }
+
     function increaseBrightness(): void {
-        const monitor = getMonitor("active");
-        if (monitor)
-            monitor.setBrightness(monitor.brightness + GlobalConfig.services.brightnessIncrement);
+        adjustBrightnessAtPointer(GlobalConfig.services.brightnessIncrement);
     }
 
     function decreaseBrightness(): void {
-        const monitor = getMonitor("active");
-        if (monitor)
-            monitor.setBrightness(monitor.brightness - GlobalConfig.services.brightnessIncrement);
+        adjustBrightnessAtPointer(-GlobalConfig.services.brightnessIncrement);
     }
 
     onMonitorsChanged: {
@@ -92,17 +95,51 @@ Singleton {
         running: true
         command: ["ddcutil", "detect", "--brief"]
         stdout: StdioCollector {
-            onStreamFinished: root.ddcMonitors = text.trim().split("\n\n").filter(d => d.startsWith("Display ")).map(d => {
-                        const busMatch = d.match(/I2C bus:[ ]*\/dev\/i2c-([0-9]+)/);
-                        const connectorMatch = d.match(/DRM connector:\s+(.*)/);
-                        if (!busMatch || !connectorMatch)
-                            return null;
+            onStreamFinished: {
+                try {
+                    const monitor = JSON.parse(text);
+                    root.ddcMonitors = [{
+                        busNum: monitor.bus,
+                        connector: monitor.connector
+                    }];
+                } catch (error) {
+                    root.ddcMonitors = [];
+                }
+            }
+        }
+    }
 
-                        return {
-                            busNum: busMatch[1],
-                            connector: connectorMatch[1].replace(/^card\d+-/, "") // strip "card1-"
-                        };
-                    }).filter(m => m !== null)
+    Process {
+        id: cursorProc
+
+        command: ["hyprctl", "cursorpos", "-j"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const delta = root.pendingPointerDelta;
+                root.pendingPointerDelta = 0;
+                try {
+                    const position = JSON.parse(text);
+                    const hyprMonitor = Hypr.monitors.values.find(candidate => {
+                        const scale = Math.max(candidate.scale ?? 1, 0.25);
+                        const width = (candidate.width ?? 0) / scale;
+                        const height = (candidate.height ?? 0) / scale;
+                        return position.x >= candidate.x && position.x < candidate.x + width
+                            && position.y >= candidate.y && position.y < candidate.y + height;
+                    });
+                    const monitor = root.getMonitor(hyprMonitor?.name ?? "")
+                        ?? root.getMonitor("active");
+                    if (monitor)
+                        monitor.setBrightness(monitor.brightness + delta);
+                } catch (error) {
+                    const monitor = root.getMonitor("active");
+                    if (monitor)
+                        monitor.setBrightness(monitor.brightness + delta);
+                }
+            }
+        }
+        onExited: {
+            if (root.pendingPointerDelta !== 0)
+                Qt.callLater(() => cursorProc.running = true);
         }
     }
 
@@ -190,17 +227,28 @@ Singleton {
             || name.startsWith("LVDS-") || name.startsWith("DSI-"))
         property real brightness
         property real queuedBrightness: NaN
+        property bool initPending: false
 
         readonly property Process initProc: Process {
             stdout: StdioCollector {
                 onStreamFinished: {
                     if (monitor.isAppleDisplay) {
                         const val = parseInt(text.trim());
-                        monitor.brightness = val / 101;
+                        if (Number.isFinite(val))
+                            monitor.brightness = val / 101;
                     } else {
-                        const [, , , cur, max] = text.split(" ");
-                        monitor.brightness = parseInt(cur) / parseInt(max);
+                        const parts = text.trim().split(/\s+/);
+                        const cur = parseInt(parts[3]);
+                        const max = parseInt(parts[4]);
+                        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0)
+                            monitor.brightness = cur / max;
                     }
+                }
+            }
+            onExited: {
+                if (monitor.initPending) {
+                    monitor.initPending = false;
+                    Qt.callLater(() => monitor.initBrightness());
                 }
             }
         }
@@ -221,6 +269,11 @@ Singleton {
             value = Math.max(0, Math.min(1, value));
             const rounded = Math.round(value * 100);
             if (Math.round(brightness * 100) === rounded)
+                return;
+
+            // Never fall back to brightnessctl for an external monitor while
+            // DDC discovery is still pending; that would dim the laptop panel.
+            if (!isAppleDisplay && !isDdc && !isInternalPanel)
                 return;
 
             if (isDdc && timer.running) {

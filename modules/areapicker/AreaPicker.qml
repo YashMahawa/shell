@@ -15,6 +15,13 @@ Scope {
         property bool closing
         property bool clipboardOnly
 
+        function activatePicker(shouldFreeze: bool, shouldCopyOnly: bool): void {
+            freeze = shouldFreeze;
+            closing = false;
+            clipboardOnly = shouldCopyOnly;
+            activeAsync = true;
+        }
+
         Variants {
             model: Screens.screens
 
@@ -49,31 +56,19 @@ Scope {
 
     IpcHandler {
         function open(): void {
-            root.freeze = false;
-            root.closing = false;
-            root.clipboardOnly = false;
-            root.activeAsync = true;
+            root.activatePicker(false, false);
         }
 
         function openFreeze(): void {
-            root.freeze = true;
-            root.closing = false;
-            root.clipboardOnly = false;
-            root.activeAsync = true;
+            root.activatePicker(true, false);
         }
 
         function openClip(): void {
-            root.freeze = false;
-            root.closing = false;
-            root.clipboardOnly = true;
-            root.activeAsync = true;
+            root.activatePicker(false, true);
         }
 
         function openFreezeClip(): void {
-            root.freeze = true;
-            root.closing = false;
-            root.clipboardOnly = true;
-            root.activeAsync = true;
+            root.activatePicker(true, true);
         }
 
         target: "picker"
@@ -85,10 +80,7 @@ Scope {
         name: "screenshot"
         description: "Open screenshot tool"
         onPressed: {
-            root.freeze = false;
-            root.closing = false;
-            root.clipboardOnly = false;
-            root.activeAsync = true;
+            root.activatePicker(false, false);
         }
     }
 
@@ -98,10 +90,7 @@ Scope {
         name: "screenshotFreeze"
         description: "Open screenshot tool (freeze mode)"
         onPressed: {
-            root.freeze = true;
-            root.closing = false;
-            root.clipboardOnly = false;
-            root.activeAsync = true;
+            root.activatePicker(true, false);
         }
     }
 
@@ -111,10 +100,7 @@ Scope {
         name: "screenshotClip"
         description: "Open screenshot tool (clipboard)"
         onPressed: {
-            root.freeze = false;
-            root.closing = false;
-            root.clipboardOnly = true;
-            root.activeAsync = true;
+            root.activatePicker(false, true);
         }
     }
 
@@ -124,10 +110,7 @@ Scope {
         name: "screenshotFreezeClip"
         description: "Open screenshot tool (freeze mode, clipboard)"
         onPressed: {
-            root.freeze = true;
-            root.closing = false;
-            root.clipboardOnly = true;
-            root.activeAsync = true;
+            root.activatePicker(true, true);
         }
     }
 }
