@@ -118,14 +118,7 @@ StyledClippingRect {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 0
-                        StyledText { text: qsTr("Calendar Centre"); font: Tokens.font.title.medium; color: Colours.palette.m3onSurface }
-                        StyledText {
-                            text: Timetable.loaded ? Timetable.data.profile : qsTr("Calendar and holidays")
-                            font: Tokens.font.label.small
-                            color: Colours.palette.m3onSurfaceVariant
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
+                        StyledText { text: qsTr("Calendar"); font: Tokens.font.title.medium; color: Colours.palette.m3onSurface }
                     }
                 }
 
