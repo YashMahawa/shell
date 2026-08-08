@@ -172,7 +172,9 @@ CustomMouseArea {
     // when a child panel or its full-screen item tree owned the pointer grab.
     MouseArea {
         anchors.fill: parent
-        enabled: root.popouts.detachedMode === "any" || root.popouts.detachedMode === "link"
+        enabled: root.popouts.detachedMode === "any"
+            || root.popouts.detachedMode === "link"
+            || root.popouts.detachedMode === "calendar"
         acceptedButtons: Qt.LeftButton
         onClicked: event => {
             if (!root.overDetachedContent(event.x, event.y))

@@ -20,6 +20,11 @@ StyledRect {
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, Config.bar.clock.background ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Tokens.rounding.full
 
+    StateLayer {
+        radius: parent.radius
+        onClicked: CalendarCentre.open("calendar")
+    }
+
     GridLayout {
         id: layout
         flow: root.isVertical ? GridLayout.TopToBottom : GridLayout.LeftToRight

@@ -98,6 +98,11 @@ CustomMouseArea {
             Layout.fillWidth: true
             spacing: Tokens.spacing.extraSmall
 
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onDoubleTapped: CalendarCentre.open("calendar")
+            }
+
             IconButton {
                 icon: "chevron_left"
                 type: IconButton.Text
@@ -302,12 +307,25 @@ CustomMouseArea {
                 property alias showTimer: popupDelay
                 readonly property point targetPosition: root.hoveredDayItem
                     ? root.hoveredDayItem.mapToItem(parent, 0, 0) : Qt.point(0, 0)
+                readonly property real targetWidth: root.hoveredDayItem?.width ?? 0
+                readonly property real targetHeight: root.hoveredDayItem?.height ?? 0
+                readonly property bool fitsRight: targetPosition.x + targetWidth + Tokens.spacing.small + width <= parent.width - Tokens.padding.small
+                readonly property bool fitsLeft: targetPosition.x - Tokens.spacing.small - width >= Tokens.padding.small
 
                 width: Math.min(260, parent.width - Tokens.padding.medium * 2)
                 height: 118
-                x: Math.max(Tokens.padding.medium, Math.min(parent.width - width - Tokens.padding.medium,
-                    targetPosition.x + (root.hoveredDayItem?.width ?? 0) / 2 - width / 2))
-                y: Math.max(Tokens.padding.small, targetPosition.y - height - Tokens.spacing.small)
+                x: fitsRight ? targetPosition.x + targetWidth + Tokens.spacing.small
+                    : fitsLeft ? targetPosition.x - width - Tokens.spacing.small
+                    : Math.max(Tokens.padding.small, Math.min(parent.width - width - Tokens.padding.small,
+                        targetPosition.x + targetWidth / 2 - width / 2))
+                y: fitsRight || fitsLeft
+                    ? Math.max(Tokens.padding.small, Math.min(parent.height - height - Tokens.padding.small,
+                        targetPosition.y + targetHeight / 2 - height / 2))
+                    : targetPosition.y < parent.height / 2
+                        ? Math.min(parent.height - height - Tokens.padding.small,
+                            targetPosition.y + targetHeight + Tokens.spacing.small)
+                        : Math.max(Tokens.padding.small,
+                            targetPosition.y - height - Tokens.spacing.small)
                 z: 100
                 visible: shown && root.hoveredDayItem !== null
                 color: Colours.palette.m3surfaceContainerHighest

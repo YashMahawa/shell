@@ -14,6 +14,8 @@ Scope {
         Brightness;
         Weather.reload();
         CalendarEvents.reload();
+        Timetable;
+        CalendarCentre;
 
         if (GlobalConfig.utilities.vpn.enabled)
             VPN;

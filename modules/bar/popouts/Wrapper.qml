@@ -10,6 +10,7 @@ import qs.services
 import qs.modules.nexus
 import qs.modules.windowinfo
 import qs.modules.continuity as ContinuityModule
+import qs.modules.calendar as CalendarModule
 
 Item {
     id: root
@@ -34,6 +35,7 @@ Item {
     property string detachedMode
     property string queuedMode
     property string linkPage: "overview"
+    property string calendarPage: "calendar"
     property HyprlandToplevel windowInfoClient: null
 
     function selectWindowInfoClientAt(globalX: real, globalY: real): void {
@@ -110,6 +112,8 @@ Item {
             detachedMode = "clipboard";
         } else if (mode === "link") {
             detachedMode = "link";
+        } else if (mode === "calendar") {
+            detachedMode = "calendar";
         } else {
             queuedMode = mode;
             detachedMode = "any";
@@ -275,6 +279,18 @@ Item {
 
         sourceComponent: ContinuityModule.LinkSettings {
             initialPage: root.linkPage
+            onCloseRequested: root.close()
+        }
+    }
+
+    Comp {
+        id: calendar
+
+        shouldBeActive: root.detachedMode === "calendar"
+        anchors.centerIn: parent
+
+        sourceComponent: CalendarModule.CalendarCentreView {
+            initialPage: root.calendarPage
             onCloseRequested: root.close()
         }
     }
