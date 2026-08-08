@@ -23,6 +23,10 @@ Singleton {
     readonly property int maxPersisted: 80
     readonly property int maxPersistedBodyChars: 1200
 
+    function isContinuityEcho(appName: string, summary: string): bool {
+        return appName === "KDE Connect" && summary === "Caelestia Link";
+    }
+
     function hasFullscreen(): bool {
         for (const monitor of Hypr.monitors.values) {
             if (monitor?.activeWorkspace?.lastIpcObject?.hasfullscreen)
@@ -118,6 +122,13 @@ Singleton {
         persistenceSupported: true
 
         onNotification: notif => {
+            // Caelestia Link's Android media controller mirrors laptop MPRIS
+            // state to the phone. Ignore the copy sent back by KDE Connect so
+            // laptop-originated track changes cannot form a notification loop.
+            if (root.isContinuityEcho(notif.appName, notif.summary)) {
+                notif.dismiss();
+                return;
+            }
             notif.tracked = true;
 
             const comp = notifComp.createObject(root, {
@@ -137,6 +148,8 @@ Singleton {
             const data = JSON.parse(text()).slice(0, root.maxPersisted);
             const loadedNotifs = [];
             for (const notif of data) {
+                if (root.isContinuityEcho(notif.appName ?? "", notif.summary ?? ""))
+                    continue;
                 const comp = notifComp.createObject(root, root.sanitisePersisted(notif));
                 if (comp)
                     loadedNotifs.push(comp);

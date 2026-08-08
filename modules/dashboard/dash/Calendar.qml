@@ -34,7 +34,7 @@ CustomMouseArea {
         const events = CalendarEvents.eventsForDate(date);
         const heading = grid.locale.toString(date, "ddd, d MMMM");
         if (events.length === 0)
-            return `${heading}\n${qsTr("No events")}`;
+            return "";
 
         const labels = events.slice(0, 4).map(event => `• ${event.title}`);
         const remaining = events.length - labels.length;
@@ -279,12 +279,14 @@ CustomMouseArea {
                             root.selectedDate = dayItem.model.date;
                             root.hoveredDate = dayItem.model.date;
                             root.hoveredDayItem = dayItem;
-                            dayPopup.showTimer.restart();
+                            dayPopup.shown = false;
+                            if (CalendarEvents.eventsForDate(dayItem.model.date).length > 0)
+                                dayPopup.showTimer.restart();
                         }
                         onExited: {
                             dayPopup.showTimer.stop();
                             if (root.hoveredDayItem === dayItem) {
-                                dayPopup.tooltipVisible = false;
+                                dayPopup.shown = false;
                                 root.hoveredDayItem = null;
                             }
                         }
@@ -293,14 +295,53 @@ CustomMouseArea {
                 }
             }
 
-            Tooltip {
+            StyledRect {
                 id: dayPopup
 
-                target: root.hoveredDayItem ?? grid
-                text: root.popupText(root.hoveredDate)
-                delay: 120
-                fixedContentWidth: 260
-                fixedContentHeight: 118
+                property bool shown: false
+                property alias showTimer: popupDelay
+                readonly property point targetPosition: root.hoveredDayItem
+                    ? root.hoveredDayItem.mapToItem(parent, 0, 0) : Qt.point(0, 0)
+
+                width: Math.min(260, parent.width - Tokens.padding.medium * 2)
+                height: 118
+                x: Math.max(Tokens.padding.medium, Math.min(parent.width - width - Tokens.padding.medium,
+                    targetPosition.x + (root.hoveredDayItem?.width ?? 0) / 2 - width / 2))
+                y: Math.max(Tokens.padding.small, targetPosition.y - height - Tokens.spacing.small)
+                z: 100
+                visible: shown && root.hoveredDayItem !== null
+                color: Colours.palette.m3surfaceContainerHighest
+                radius: Tokens.rounding.medium
+                antialiasing: true
+
+                Elevation {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    z: -1
+                    level: 3
+                }
+
+                StyledText {
+                    anchors.fill: parent
+                    anchors.margins: Tokens.padding.medium
+                    verticalAlignment: Text.AlignVCenter
+                    text: root.popupText(root.hoveredDate)
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.small
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 5
+                    elide: Text.ElideRight
+                }
+
+                Timer {
+                    id: popupDelay
+
+                    interval: 120
+                    onTriggered: {
+                        if (root.hoveredDayItem && CalendarEvents.eventsForDate(root.hoveredDate).length > 0)
+                            dayPopup.shown = true;
+                    }
+                }
             }
 
             MaterialShape {
