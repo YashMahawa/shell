@@ -39,6 +39,25 @@ Scope {
         }
     }
 
+    function openLink(page: string): void {
+        const focused = Hypr.focusedMonitor?.name ?? "";
+        let target = null;
+        for (const screen of Screens.screens) {
+            const popouts = Visibilities.bars.get(screen)?.popouts;
+            if (!popouts)
+                continue;
+            popouts.close();
+            if (screen.name === focused)
+                target = popouts;
+            else if (!target)
+                target = popouts;
+        }
+        if (target) {
+            target.linkPage = page;
+            target.detach("link");
+        }
+    }
+
     IpcHandler {
         function open(): void { root.openClipboard(); }
         function openPhone(): void { root.openClipboard(); }
@@ -58,5 +77,14 @@ Scope {
                 root.openClipboard();
         }
         target: "clipboard"
+    }
+
+    IpcHandler {
+        function open(): void { root.openLink("overview"); }
+        function openDevices(): void { root.openLink("devices"); }
+        function openCommands(): void { root.openLink("commands"); }
+        function openFeatures(): void { root.openLink("features"); }
+        function toggle(): void { root.openLink("overview"); }
+        target: "continuity"
     }
 }

@@ -4,7 +4,9 @@ import QtQuick
 import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
+import qs.components.controls
 import qs.modules.nexus.common
+import qs.services
 
 PageBase {
     id: root
@@ -74,6 +76,64 @@ PageBase {
             text: qsTr("Weather")
             checked: Config.dashboard.showWeather
             onToggled: GlobalConfig.dashboard.showWeather = checked
+        }
+
+        // Calendar
+        SectionHeader {
+            text: qsTr("Calendar")
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("National holidays")
+            subtext: qsTr("Show country-wide public holidays in the dashboard")
+            checked: Config.dashboard.showNationalHolidays
+            onToggled: GlobalConfig.dashboard.showNationalHolidays = checked
+        }
+
+        ConnectedRect {
+            Layout.fillWidth: true
+            last: true
+            implicitHeight: countryRow.implicitHeight + Tokens.padding.medium * 2
+
+            RowLayout {
+                id: countryRow
+
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.medium
+                anchors.leftMargin: Tokens.padding.largeIncreased
+                anchors.rightMargin: Tokens.padding.largeIncreased
+                spacing: Tokens.spacing.medium
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    StyledText {
+                        text: qsTr("Holiday country")
+                        font: Tokens.font.body.small
+                    }
+
+                    StyledText {
+                        text: qsTr("Auto-detected as %1; enter a two-letter code to override").arg(CalendarEvents.countryCode || qsTr("unknown"))
+                        color: Colours.palette.m3outline
+                        font: Tokens.font.label.small
+                    }
+                }
+
+                StyledTextField {
+                    Layout.preferredWidth: 52
+                    horizontalAlignment: Text.AlignHCenter
+                    text: Config.dashboard.calendarCountryCode
+                    placeholderText: CalendarEvents.countryCode || "IN"
+                    maximumLength: 2
+                    validator: RegularExpressionValidator {
+                        regularExpression: /[A-Za-z]{0,2}/
+                    }
+                    onEditingFinished: GlobalConfig.dashboard.calendarCountryCode = text.trim().toUpperCase()
+                }
+            }
         }
 
         // Performance widgets

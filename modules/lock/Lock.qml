@@ -57,8 +57,14 @@ Scope {
     }
 
     Loader {
+        id: screencopyPreloader
+
         asynchronous: true
-        active: false
+        // Prime Quickshell's screencopy/ICC backend while the session is still
+        // unlocked. If its first initialization happens after the session-lock
+        // protocol is active, Hyprland correctly refuses the capture and the
+        // lock surface has nothing available for its blur effect.
+        active: true
         onLoaded: active = false
 
         // Force a load of a screencopy so the one in the lock works

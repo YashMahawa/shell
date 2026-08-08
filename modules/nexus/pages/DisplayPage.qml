@@ -17,6 +17,7 @@ PageBase {
     title: qsTr("Display")
 
     property var monitor: Hypr.focusedMonitor ?? (Hypr.monitors.values[0] ?? null)
+    property string pointerMonitorName: monitor?.name ?? ""
     property string selectedResolution: monitor ? `${monitor.width}x${monitor.height}` : "preferred"
     property real selectedRefresh: Math.round((monitor?.refreshRate ?? 60) * 100) / 100
     property real selectedScale: monitor?.scale ?? 1
@@ -27,9 +28,10 @@ PageBase {
     property string statusMessage: ""
     property bool statusIsError: false
 
-    readonly property var brightnessMonitor: Brightness.getMonitor("active")
+    readonly property var brightnessMonitor: Brightness.getMonitor(monitor?.name ?? "")
     readonly property bool external: monitor && !monitor.name.startsWith("eDP-")
         && !monitor.name.startsWith("LVDS-") && !monitor.name.startsWith("DSI-")
+    readonly property bool hardwareControlsAvailable: external && MonitorControl.available
     readonly property list<MenuItem> scaleItems: [
         MenuItem { text: "100%" },
         MenuItem { text: "125%" },
@@ -103,7 +105,10 @@ PageBase {
         ]);
     }
 
-    Component.onCompleted: MonitorControl.refresh()
+    Component.onCompleted: {
+        MonitorControl.refresh();
+        cursorProc.running = true;
+    }
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -120,7 +125,8 @@ PageBase {
                 onStreamFinished: {
                     try {
                         const displays = JSON.parse(text);
-                        const live = displays.find(item => item.focused) ?? displays[0];
+                        const live = displays.find(item => item.name === root.pointerMonitorName)
+                            ?? displays.find(item => item.focused) ?? displays[0];
                         if (!live)
                             return;
                         root.monitor = live;
@@ -132,6 +138,44 @@ PageBase {
                     } catch (error) {
                         root.statusMessage = qsTr("Could not read display modes");
                         root.statusIsError = true;
+                    }
+                }
+            }
+        }
+
+        Timer {
+            interval: 300
+            repeat: true
+            running: root.visible
+            onTriggered: {
+                if (!cursorProc.running)
+                    cursorProc.running = true;
+            }
+        }
+
+        Process {
+            id: cursorProc
+
+            command: ["hyprctl", "cursorpos", "-j"]
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    try {
+                        const position = JSON.parse(text);
+                        const hovered = Hypr.monitors.values.find(candidate => {
+                            const scale = Math.max(candidate.scale ?? 1, 0.25);
+                            const width = (candidate.width ?? 0) / scale;
+                            const height = (candidate.height ?? 0) / scale;
+                            return position.x >= candidate.x && position.x < candidate.x + width
+                                && position.y >= candidate.y && position.y < candidate.y + height;
+                        });
+                        if (hovered && hovered.name !== root.pointerMonitorName) {
+                            root.pointerMonitorName = hovered.name;
+                            if (!modeProc.running)
+                                modeProc.running = true;
+                        }
+                    } catch (error) {
+                        // Preserve the last valid monitor if cursor lookup is
+                        // briefly unavailable during a hotplug transition.
                     }
                 }
             }
@@ -235,7 +279,7 @@ PageBase {
                     Layout.fillWidth: true
                     spacing: 1
                     StyledText {
-                        text: MonitorControl.available
+                        text: root.hardwareControlsAvailable
                             ? MonitorControl.model
                             : (root.monitor?.description ?? qsTr("Built-in display"))
                         font: Tokens.font.title.small
@@ -249,8 +293,8 @@ PageBase {
                     }
                     StyledText {
                         text: root.external
-                            ? qsTr("External-only · laptop panel disabled automatically")
-                            : qsTr("Laptop-only · an external monitor will take over automatically")
+                            ? qsTr("External display settings")
+                            : qsTr("Built-in laptop display settings")
                         font: Tokens.font.label.small
                         color: Colours.palette.m3primary
                     }
@@ -279,7 +323,7 @@ PageBase {
 
         SliderRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             icon: "contrast"
             label: qsTr("Contrast")
             valueLabel: `${Math.round(value * 100)}%`
@@ -288,13 +332,14 @@ PageBase {
         }
 
         SelectRow {
+            id: temperatureSelect
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             last: true
             label: qsTr("White point")
             subtext: qsTr("6500 K is recommended for accurate desktop colour")
             menuItems: root.temperatureItems
-            active: ["6500", "7500", "9300", "user"].indexOf(MonitorControl.temperature)
+            active: menuItems[Math.max(0, ["6500", "7500", "9300", "user"].indexOf(MonitorControl.temperature))] ?? null
             fallbackText: MonitorControl.temperature === "user" ? qsTr("Custom") : `${MonitorControl.temperature} K`
             fallbackIcon: "thermostat"
             onSelected: item => {
@@ -304,13 +349,13 @@ PageBase {
         }
 
         SectionHeader {
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             text: qsTr("Colour calibration")
         }
 
         SliderRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             first: true
             icon: "format_color_fill"
             label: qsTr("Red gain")
@@ -321,7 +366,7 @@ PageBase {
 
         SliderRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             icon: "format_color_fill"
             label: qsTr("Green gain")
             valueLabel: `${Math.round(value * 100)}`
@@ -331,7 +376,7 @@ PageBase {
 
         SliderRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             last: true
             icon: "format_color_fill"
             label: qsTr("Blue gain")
@@ -343,12 +388,13 @@ PageBase {
         SectionHeader { text: qsTr("Resolution and layout") }
 
         SelectRow {
+            id: resolutionSelect
             Layout.fillWidth: true
             first: true
             label: qsTr("Resolution")
             subtext: qsTr("Native resolution gives the sharpest image")
             menuItems: root.resolutions().map(value => dynamicMenuItem.createObject(root, { text: value }))
-            active: Math.max(0, root.resolutions().indexOf(root.selectedResolution))
+            active: menuItems[Math.max(0, root.resolutions().indexOf(root.selectedResolution))] ?? null
             fallbackText: root.selectedResolution
             fallbackIcon: "aspect_ratio"
             onSelected: item => {
@@ -358,22 +404,24 @@ PageBase {
         }
 
         SelectRow {
+            id: refreshSelect
             Layout.fillWidth: true
             label: qsTr("Refresh rate")
             subtext: qsTr("Rates supported by the current connection")
             menuItems: root.refreshRates().map(value => dynamicMenuItem.createObject(root, { text: `${value} Hz` }))
-            active: Math.max(0, root.refreshRates().findIndex(value => Math.abs(value - root.selectedRefresh) < 0.02))
+            active: menuItems[Math.max(0, root.refreshRates().findIndex(value => Math.abs(value - root.selectedRefresh) < 0.02))] ?? null
             fallbackText: `${root.selectedRefresh} Hz`
             fallbackIcon: "speed"
             onSelected: item => root.selectedRefresh = Number(item.text.replace(" Hz", ""))
         }
 
         SelectRow {
+            id: scaleSelect
             Layout.fillWidth: true
             label: qsTr("Scale")
             subtext: qsTr("Text and interface size")
             menuItems: root.scaleItems
-            active: root.scaleIndex(root.selectedScale)
+            active: menuItems[root.scaleIndex(root.selectedScale)] ?? null
             fallbackText: `${Math.round(root.selectedScale * 100)}%`
             fallbackIcon: "zoom_in"
             onSelected: item => {
@@ -383,30 +431,32 @@ PageBase {
         }
 
         SelectRow {
+            id: orientationSelect
             Layout.fillWidth: true
             last: true
             label: qsTr("Orientation")
             subtext: qsTr("Rotate the active display")
             menuItems: root.orientationItems
-            active: Math.max(0, Math.min(root.selectedTransform, 3))
+            active: menuItems[Math.max(0, Math.min(root.selectedTransform, 3))] ?? null
             fallbackText: root.orientationItems[Math.max(0, Math.min(root.selectedTransform, 3))].text
             fallbackIcon: "screen_rotation"
             onSelected: item => root.selectedTransform = root.orientationItems.indexOf(item)
         }
 
         SectionHeader {
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             text: qsTr("Monitor hardware")
         }
 
         SelectRow {
+            id: inputSelect
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             first: true
             label: qsTr("Input")
             subtext: qsTr("Switch the monitor's physical input")
             menuItems: root.inputItems
-            active: ["hdmi1", "hdmi2", "displayport"].indexOf(MonitorControl.input)
+            active: menuItems[Math.max(0, ["hdmi1", "hdmi2", "displayport"].indexOf(MonitorControl.input))] ?? null
             fallbackText: ({ hdmi1: "HDMI 1", hdmi2: "HDMI 2", displayport: "DisplayPort" })[MonitorControl.input] ?? MonitorControl.input
             fallbackIcon: "input"
             onSelected: item => {
@@ -417,7 +467,7 @@ PageBase {
 
         SliderRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             icon: MonitorControl.muted ? "volume_off" : "volume_up"
             label: qsTr("Built-in speaker volume")
             valueLabel: MonitorControl.muted ? qsTr("Muted") : `${Math.round(value * 100)}%`
@@ -427,7 +477,7 @@ PageBase {
 
         ToggleRow {
             Layout.fillWidth: true
-            visible: MonitorControl.available
+            visible: root.hardwareControlsAvailable
             last: true
             text: qsTr("Mute monitor speakers")
             subtext: qsTr("Controls the monitor amplifier, independent of PipeWire")

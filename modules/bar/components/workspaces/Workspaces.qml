@@ -14,8 +14,9 @@ StyledClippingRect {
     required property ShellScreen screen
     required property bool fullscreen
 
-    readonly property bool onSpecial: (GlobalConfig.bar.workspaces.perMonitorWorkspaces ? Hypr.monitorFor(screen) : Hypr.focusedMonitor)?.lastIpcObject.specialWorkspace?.name !== ""
-    readonly property int activeWsId: GlobalConfig.bar.workspaces.perMonitorWorkspaces ? (Hypr.monitorFor(screen).activeWorkspace?.id ?? 1) : Hypr.activeWsId
+    readonly property var boundMonitor: Hypr.monitorFor(screen)
+    readonly property bool onSpecial: (GlobalConfig.bar.workspaces.perMonitorWorkspaces ? boundMonitor : Hypr.focusedMonitor)?.lastIpcObject.specialWorkspace?.name !== ""
+    readonly property int activeWsId: GlobalConfig.bar.workspaces.perMonitorWorkspaces ? (boundMonitor?.activeWorkspace?.id ?? 1) : Hypr.activeWsId
 
     readonly property var occupied: {
         const occ = {};
@@ -105,7 +106,7 @@ StyledClippingRect {
                 if (Hypr.activeWsId !== ws)
                     Hypr.dispatch(Hypr.usingLua ? `hl.dsp.focus({ workspace = "${ws}" })` : `workspace ${ws}`);
                 else
-                    Hypr.dispatch(Hypr.usingLua ? 'hl.dsp.workspace.toggle_special("special")' : "togglespecialworkspace special");
+                    Quickshell.execDetached(["/home/yash/.local/bin/caelestia-star-workspace", "toggle", Hypr.monitorFor(root.screen).name]);
             }
         }
 

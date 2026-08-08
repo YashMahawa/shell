@@ -42,14 +42,9 @@ QtObject {
             return;
         }
 
-        if (Nmcli.active && Nmcli.active.ssid !== network.ssid) {
-            Nmcli.disconnectFromNetwork();
-            Qt.callLater(() => {
-                root.connectToNetwork(network, session, onPasswordNeeded);
-            });
-        } else {
-            root.connectToNetwork(network, session, onPasswordNeeded);
-        }
+        // NetworkManager performs an atomic handover when a new connection is
+        // activated. Disconnecting first races the following connect request.
+        root.connectToNetwork(network, session, onPasswordNeeded);
     }
 
     /**
@@ -67,7 +62,7 @@ QtObject {
         }
 
         if (network.isSecure) {
-            const hasSavedProfile = Nmcli.hasSavedProfile(network.ssid);
+            const hasSavedProfile = Nmcli.hasSavedProfile(network.ssid, network.bssid || "", network.frequency || 0);
 
             if (hasSavedProfile) {
                 Nmcli.connectToNetwork(network.ssid, "", network.bssid, null);

@@ -9,6 +9,7 @@ import qs.components
 import qs.services
 import qs.modules.nexus
 import qs.modules.windowinfo
+import qs.modules.continuity as ContinuityModule
 
 Item {
     id: root
@@ -32,6 +33,53 @@ Item {
 
     property string detachedMode
     property string queuedMode
+    property string linkPage: "overview"
+    property HyprlandToplevel windowInfoClient: null
+
+    function selectWindowInfoClientAt(globalX: real, globalY: real): void {
+        if (detachedMode !== "winfo")
+            return;
+
+        const monitor = Hypr.monitors.values.find(mon => {
+            const scale = Math.max(mon.scale ?? 1, 0.25);
+            const width = (mon.width ?? 0) / scale;
+            const height = (mon.height ?? 0) / scale;
+            return globalX >= mon.x && globalX < mon.x + width
+                && globalY >= mon.y && globalY < mon.y + height;
+        });
+        if (!monitor)
+            return;
+
+        const special = monitor.lastIpcObject.specialWorkspace;
+        const workspaceId = special?.name ? special.id : monitor.activeWorkspace?.id;
+        const candidates = Hypr.toplevels.values.filter(client => {
+            const data = client?.lastIpcObject;
+            if (!data)
+                return false;
+            const visible = client.workspace?.id === workspaceId
+                || (data.pinned && client.monitor?.id === monitor.id);
+            if (!visible)
+                return false;
+            const x = data.at?.[0] ?? 0;
+            const y = data.at?.[1] ?? 0;
+            const width = data.size?.[0] ?? 0;
+            const height = data.size?.[1] ?? 0;
+            return globalX >= x && globalX < x + width
+                && globalY >= y && globalY < y + height;
+        }).sort((a, b) => {
+            // Match the compositor's useful stacking classes: pinned above
+            // normal, then fullscreen, then floating, then tiled windows.
+            const ac = a.lastIpcObject;
+            const bc = b.lastIpcObject;
+            return (bc.pinned - ac.pinned)
+                || ((bc.fullscreen !== 0) - (ac.fullscreen !== 0))
+                || (bc.floating - ac.floating);
+        });
+
+        const hovered = candidates[0];
+        if (hovered && hovered.address !== windowInfoClient?.address)
+            windowInfoClient = hovered;
+    }
 
     // Never leave sticky latched after a hover closes (search used to do this).
     onHasCurrentChanged: {
@@ -56,9 +104,12 @@ Item {
         sticky = false;
         hasCurrent = false;
         if (mode === "winfo") {
+            windowInfoClient = Hypr.activeToplevel;
             detachedMode = mode;
         } else if (mode === "clipboard") {
             detachedMode = "clipboard";
+        } else if (mode === "link") {
+            detachedMode = "link";
         } else {
             queuedMode = mode;
             detachedMode = "any";
@@ -101,7 +152,7 @@ Item {
     }
 
     // Popouts that own a text field and must receive keys (not the focused client).
-    readonly property bool needsKeyboard: root.isDetached
+    readonly property bool needsKeyboard: (root.isDetached && root.detachedMode !== "winfo")
         || (root.hasCurrent && (root.currentName === "wirelesspassword"
             || root.currentName === "clipboardhover"))
 
@@ -127,7 +178,7 @@ Item {
     }
     property bool focusGrabReady: false
     onIsDetachedChanged: {
-        if (isDetached) {
+        if (isDetached && detachedMode !== "winfo") {
             focusGrabReady = false;
             focusGrabDelay.restart();
         } else {
@@ -137,8 +188,11 @@ Item {
     }
 
     HyprlandFocusGrab {
-        // Detached center panels only (clipboard / settings / window info).
-        active: root.focusGrabReady
+        // Clipboard owns a persistent search field. Settings and Caelestia
+        // Link use the full-screen scrim for click-outside dismissal instead;
+        // grabbing compositor focus there made focus-follows-mouse close them
+        // merely because the pointer crossed onto the underlying window.
+        active: root.focusGrabReady && root.detachedMode === "clipboard"
         windows: [QsWindow.window]
         onCleared: root.close()
     }
@@ -173,7 +227,7 @@ Item {
 
         sourceComponent: WindowInfo {
             screen: root.screen
-            client: Hypr.activeToplevel
+            client: root.windowInfoClient
         }
     }
 
@@ -210,6 +264,18 @@ Item {
 
         sourceComponent: Clipboard {
             onClosed: root.close()
+        }
+    }
+
+    Comp {
+        id: link
+
+        shouldBeActive: root.detachedMode === "link"
+        anchors.centerIn: parent
+
+        sourceComponent: ContinuityModule.LinkSettings {
+            initialPage: root.linkPage
+            onCloseRequested: root.close()
         }
     }
 

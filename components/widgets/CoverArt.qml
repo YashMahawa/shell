@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import Quickshell
 import M3Shapes
 import Caelestia.Config
 import qs.components
@@ -17,6 +18,40 @@ Item {
 
     property bool hadPrevious
     property color fallbackColour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
+    property bool highResolution: true
+    property bool retainedHighResolution: false
+
+    function syncHighResolution(): void {
+        if (highResolution && !retainedHighResolution) {
+            HighResArtwork.retain();
+            retainedHighResolution = true;
+        } else if (!highResolution && retainedHighResolution) {
+            HighResArtwork.release();
+            retainedHighResolution = false;
+        }
+        updateArtworkRequest();
+    }
+
+    function updateArtworkRequest(): void {
+        if (!highResolution || width <= 0 || height <= 0)
+            return;
+        const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
+        HighResArtwork.requestDashboardSize(Math.max(width, height) * dpr * 1.25);
+    }
+
+    Component.onCompleted: syncHighResolution()
+    Component.onDestruction: {
+        if (retainedHighResolution)
+            HighResArtwork.release();
+    }
+    onHighResolutionChanged: syncHighResolution()
+    onWidthChanged: updateArtworkRequest()
+    onHeightChanged: updateArtworkRequest()
+
+    Connections {
+        target: HighResArtwork
+        function onTrackKeyChanged(): void { root.updateArtworkRequest(); }
+    }
 
     // Slight glow to separate from bg
     layer.enabled: true
@@ -97,7 +132,7 @@ Item {
 
         anchors.fill: parent
 
-        source: Players.getArtUrl(Players.active)
+        source: root.highResolution ? HighResArtwork.dashboardSource : Players.getArtUrl(Players.active)
 
         layer.enabled: true
         layer.effect: Mask {

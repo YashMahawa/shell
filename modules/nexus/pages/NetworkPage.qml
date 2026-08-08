@@ -82,36 +82,23 @@ PageBase {
 
             Repeater {
                 model: Nmcli.ethernetDevices
-                delegate: ConnectedRect {
+                delegate: ToggleRow {
+                    required property int index
+                    required property var modelData
+
                     Layout.fillWidth: true
                     first: false
                     last: index === Nmcli.ethernetDevices.length - 1
-                    implicitHeight: ethLayout.implicitHeight + ethLayout.anchors.margins * 2
-
-                    RowLayout {
-                        id: ethLayout
-                        anchors.fill: parent
-                        anchors.margins: Tokens.padding.medium
-                        anchors.leftMargin: Tokens.padding.largeIncreased
-                        anchors.rightMargin: Tokens.padding.largeIncreased
-                        spacing: Tokens.spacing.medium
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 0
-
-                            StyledText {
-                                Layout.fillWidth: true
-                                text: modelData.name || modelData.interface
-                                font: Tokens.font.body.small
-                            }
-
-                            StyledText {
-                                Layout.fillWidth: true
-                                text: modelData.connected ? qsTr("Connected") : qsTr("Disconnected")
-                                color: Colours.palette.m3outline
-                                font: Tokens.font.label.small
-                            }
+                    text: modelData.connection || modelData.interface
+                    subtext: `${modelData.interface} · ${modelData.connected ? qsTr("Connected") : qsTr("Disconnected")}`
+                    checked: modelData.connected
+                    onClicked: {
+                        if (checked) {
+                            Nmcli.connectEthernet(modelData.connection, modelData.interface, () => {});
+                        } else {
+                            Nmcli.disconnect(modelData.interface, () => {
+                                Nmcli.getEthernetInterfaces(() => {});
+                            });
                         }
                     }
                 }
@@ -154,13 +141,16 @@ PageBase {
             Repeater {
                 model: Nmcli.vpnConnections
                 delegate: ToggleRow {
+                    required property int index
+                    required property var modelData
+
                     Layout.fillWidth: true
                     first: false
                     last: index === Nmcli.vpnConnections.length - 1
                     text: modelData.name
                     subtext: modelData.type
                     checked: modelData.active
-                    onToggled: {
+                    onClicked: {
                         if (checked) {
                             Nmcli.connectVpn(modelData.name);
                         } else {
@@ -178,7 +168,9 @@ PageBase {
             font: Tokens.font.body.medium
             horizontalPadding: Tokens.padding.largeIncreased
             checked: Nmcli.wifiEnabled
-            onToggled: Nmcli.enableWifi(checked)
+            // Avoid changing the hardware radio when status refreshes update
+            // the checked binding; only an explicit user click may do that.
+            onClicked: Nmcli.enableWifi(checked)
         }
 
         ItemList {
@@ -192,21 +184,34 @@ PageBase {
 
             model: ScriptModel {
                 values: {
-                    const connecting = Nmcli.connectingSsid();
                     // Lower rank sorts higher in the list
-                    const rank = n => n.active ? 0 : n.ssid === connecting ? 1 : Nmcli.hasSavedProfile(n.ssid) ? 2 : 3;
-                    return [...Nmcli.networks].sort((a, b) => rank(a) - rank(b) || b.strength - a.strength);
+                    const rank = n => n.active ? 0 : Nmcli.isWifiOperationPending(n.ssid, n.bssid) ? 1 : Nmcli.hasSavedProfile(n.ssid, n.bssid, n.frequency) ? 2 : 3;
+                    // NetworkManager briefly exposes null entries while it
+                    // tears Wi-Fi down for suspend. Do not incubate delegates
+                    // for objects that have already disappeared.
+                    return [...Nmcli.networks].filter(n => n).sort((a, b) => rank(a) - rank(b) || b.strength - a.strength);
                 }
             }
 
             delegate: StateLayer {
                 id: network
 
-                required property Nmcli.AccessPoint modelData
+                required property var modelData
                 property bool currentSelected
                 property real textOpacity: disabled ? 0.5 : 1
+                readonly property bool valid: modelData !== null && modelData !== undefined
+                readonly property string ssid: valid ? modelData.ssid : ""
+                readonly property string bssid: valid ? modelData.bssid : ""
+                readonly property string displayName: valid ? modelData.displayName : ""
+                readonly property int strength: valid ? modelData.strength : 0
+                readonly property int frequency: valid ? modelData.frequency : 0
+                readonly property bool active: valid && modelData.active
+                readonly property string security: valid ? modelData.security : ""
 
-                disabled: currentSelected || Nmcli.connectingSsid() === modelData.ssid
+                visible: valid
+                // Other rows remain clickable so a new selection can cancel
+                // and supersede a slow or stuck activation immediately.
+                disabled: !valid || Nmcli.isWifiOperationPending(ssid, bssid)
 
                 anchors.left: networkList.list.contentItem.left
                 anchors.right: networkList.list.contentItem.right
@@ -215,11 +220,11 @@ PageBase {
                 anchors.fill: undefined
 
                 onClicked: {
-                    if (!modelData.active) {
-                        NetworkConnection.handleConnect(modelData);
-                        currentSelected = true;
-                        root.networkSelected(modelData);
-                    }
+                    if (!valid)
+                        return;
+                    root.nState.selectedWifiSsid = ssid;
+                    root.nState.selectedWifiBssid = bssid;
+                    root.nState.openSubPage(1);
                 }
 
                 Behavior on textOpacity {
@@ -230,11 +235,11 @@ PageBase {
 
                 Connections {
                     function onActiveChanged(): void {
-                        if (network.modelData.active)
+                        if (network.active)
                             network.currentSelected = false;
                     }
 
-                    target: network.modelData
+                    target: network.valid ? network.modelData : null
                 }
 
                 Connections {
@@ -256,8 +261,8 @@ PageBase {
                     spacing: Tokens.spacing.medium
 
                     MaterialIcon {
-                        text: Icons.getNetworkIcon(network.modelData.strength)
-                        color: network.modelData.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
+                        text: Icons.getNetworkIcon(network.strength)
+                        color: network.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.icon.medium
                         opacity: network.textOpacity
                     }
@@ -269,14 +274,14 @@ PageBase {
 
                         StyledText {
                             Layout.fillWidth: true
-                            text: network.modelData.ssid
+                            text: network.displayName
                             font: Tokens.font.body.small
                             elide: Text.ElideRight
                         }
 
                         StyledText {
                             Layout.fillWidth: true
-                            text: qsTr("Security: %1%2").arg(network.modelData.security).arg(Nmcli.hasSavedProfile(network.modelData.ssid) ? qsTr(" • Saved") : "")
+                            text: qsTr("%1% signal • %2%3").arg(network.strength).arg(network.security || qsTr("Open")).arg(Nmcli.hasSavedProfile(network.ssid, network.bssid, network.frequency) ? qsTr(" • Saved") : "")
                             color: Colours.palette.m3outline
                             font: Tokens.font.label.small
                             elide: Text.ElideRight
@@ -284,14 +289,14 @@ PageBase {
                     }
 
                     AnimLoader {
-                        sourceComp: Nmcli.connectingSsid() === network.modelData.ssid ? loadingComp : iconComp
+                        sourceComp: Nmcli.isWifiOperationPending(network.ssid, network.bssid) ? loadingComp : iconComp
 
                         Component {
                             id: iconComp
 
                             MaterialIcon {
-                                text: network.modelData.active ? "settings" : "lock"
-                                color: network.modelData.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
+                                text: network.active || Nmcli.hasSavedProfile(network.ssid, network.bssid, network.frequency) ? "settings" : "chevron_right"
+                                color: network.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
                                 font: Tokens.font.icon.medium
                                 opacity: network.textOpacity
                             }

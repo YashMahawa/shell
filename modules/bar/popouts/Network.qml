@@ -15,6 +15,7 @@ ColumnLayout {
     required property PopoutState popouts
 
     property string connectingToSsid: ""
+    property string connectingToBssid: ""
     property string view: "wireless" // "wireless" or "ethernet"
     property var passwordNetwork: null
     property bool showPasswordDialog: false
@@ -37,7 +38,9 @@ ColumnLayout {
         Layout.preferredHeight: visible ? implicitHeight : 0
         label: qsTr("Enabled")
         checked: Nmcli.wifiEnabled
-        toggle.onToggled: Nmcli.enableWifi(checked)
+        // Only a real pointer/keyboard activation may change the radio.
+        // `toggled` is also emitted when the bound status is refreshed.
+        toggle.onClicked: Nmcli.enableWifi(toggle.checked)
     }
 
     StyledText {
@@ -53,7 +56,7 @@ ColumnLayout {
     Repeater {
         visible: root.view === "wireless"
         model: ScriptModel {
-            values: [...Nmcli.networks].sort((a, b) => {
+            values: [...Nmcli.networks].filter(n => n).sort((a, b) => {
                 if (a.active !== b.active)
                     return b.active - a.active;
                 return b.strength - a.strength;
@@ -63,11 +66,18 @@ ColumnLayout {
         RowLayout {
             id: networkItem
 
-            required property Nmcli.AccessPoint modelData
-            readonly property bool isConnecting: root.connectingToSsid === modelData.ssid
+            required property var modelData
+            readonly property bool valid: modelData !== null && modelData !== undefined
+            readonly property string ssid: valid ? modelData.ssid : ""
+            readonly property string bssid: valid ? modelData.bssid : ""
+            readonly property int strength: valid ? modelData.strength : 0
+            readonly property bool active: valid && modelData.active
+            readonly property bool isSecure: valid && modelData.isSecure
+            readonly property string displayName: valid ? modelData.displayName : ""
+            readonly property bool isConnecting: valid && root.connectingToSsid === ssid && root.connectingToBssid === bssid
             readonly property bool loading: networkItem.isConnecting
 
-            visible: root.view === "wireless"
+            visible: root.view === "wireless" && valid
             Layout.preferredHeight: visible ? implicitHeight : 0
             Layout.fillWidth: true
             Layout.rightMargin: Tokens.padding.extraSmall
@@ -92,12 +102,12 @@ ColumnLayout {
             }
 
             MaterialIcon {
-                text: Icons.getNetworkIcon(networkItem.modelData.strength)
-                color: networkItem.modelData.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
+                text: Icons.getNetworkIcon(networkItem.strength)
+                color: networkItem.active ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
             }
 
             MaterialIcon {
-                visible: networkItem.modelData.isSecure
+                visible: networkItem.isSecure
                 text: "lock"
                 fontStyle: Tokens.font.icon.small
             }
@@ -106,10 +116,10 @@ ColumnLayout {
                 Layout.leftMargin: Tokens.spacing.extraSmall
                 Layout.rightMargin: Tokens.spacing.extraSmall
                 Layout.fillWidth: true
-                text: networkItem.modelData.ssid
+                text: networkItem.displayName
                 elide: Text.ElideRight
-                font: Tokens.font.body.builders.medium.weight(networkItem.modelData.active ? Font.Medium : Font.Normal).build()
-                color: networkItem.modelData.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
+                font: Tokens.font.body.builders.medium.weight(networkItem.active ? Font.Medium : Font.Normal).build()
+                color: networkItem.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
             }
 
             StyledRect {
@@ -117,7 +127,7 @@ ColumnLayout {
                 implicitHeight: wirelessConnectIcon.implicitHeight + Tokens.padding.extraSmall
 
                 radius: Tokens.rounding.full
-                color: Qt.alpha(Colours.palette.m3primary, networkItem.modelData.active ? 1 : 0)
+                color: Qt.alpha(Colours.palette.m3primary, networkItem.active ? 1 : 0)
 
                 CircularIndicator {
                     anchors.fill: parent
@@ -125,14 +135,17 @@ ColumnLayout {
                 }
 
                 StateLayer {
-                    color: networkItem.modelData.active ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-                    disabled: networkItem.loading || !Nmcli.wifiEnabled
+                    color: networkItem.active ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
+                    disabled: !networkItem.valid || networkItem.loading || !Nmcli.wifiEnabled
 
                     onClicked: {
-                        if (networkItem.modelData.active) {
+                        if (!networkItem.valid)
+                            return;
+                        if (networkItem.active) {
                             Nmcli.disconnectFromNetwork();
                         } else {
-                            root.connectingToSsid = networkItem.modelData.ssid;
+                            root.connectingToSsid = networkItem.ssid;
+                            root.connectingToBssid = networkItem.bssid;
                             NetworkConnection.handleConnect(networkItem.modelData, null, network => {
                                 // Password is required - show password dialog
                                 root.passwordNetwork = network;
@@ -151,8 +164,8 @@ ColumnLayout {
 
                     anchors.centerIn: parent
                     animate: true
-                    text: networkItem.modelData.active ? "link_off" : "link"
-                    color: networkItem.modelData.active ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
+                    text: networkItem.active ? "link_off" : "link"
+                    color: networkItem.active ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
 
                     opacity: networkItem.loading ? 0 : 1
 
@@ -342,8 +355,9 @@ ColumnLayout {
 
     Connections {
         function onActiveChanged(): void {
-            if (Nmcli.active && root.connectingToSsid === Nmcli.active.ssid) {
+            if (Nmcli.active && root.connectingToSsid === Nmcli.active.ssid && root.connectingToBssid === Nmcli.active.bssid) {
                 root.connectingToSsid = "";
+                root.connectingToBssid = "";
                 // Close password dialog if we successfully connected
                 if (root.showPasswordDialog && root.passwordNetwork && Nmcli.active.ssid === root.passwordNetwork.ssid) {
                     root.showPasswordDialog = false;

@@ -12,17 +12,15 @@ Singleton {
     readonly property bool presented: active && !closing
 
     function open(targetScreen: string): void {
-        closeDelay.stop();
         screenName = targetScreen || "";
         closing = false;
         active = true;
     }
 
     function close(): void {
-        if (!active || closing)
+        if (!active)
             return;
         closing = true;
-        closeDelay.restart();
     }
 
     function toggle(targetScreen: string): void {
@@ -37,6 +35,7 @@ Singleton {
 
         interval: 460
         repeat: false
+        running: root.closing
         onTriggered: {
             root.active = false;
             root.closing = false;

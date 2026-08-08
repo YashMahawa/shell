@@ -2,6 +2,8 @@
 
 #include "configobject.hpp"
 
+#include <qvariant.h>
+
 namespace caelestia::config {
 
 class DashboardPerformance : public ConfigObject {
@@ -30,6 +32,9 @@ class DashboardConfig : public ConfigObject {
     CONFIG_PROPERTY(bool, showMedia, true)
     CONFIG_PROPERTY(bool, showPerformance, true)
     CONFIG_PROPERTY(bool, showWeather, true)
+    CONFIG_GLOBAL_PROPERTY(bool, showNationalHolidays, true)
+    CONFIG_GLOBAL_PROPERTY(QString, calendarCountryCode)
+    CONFIG_GLOBAL_PROPERTY(QVariantList, calendarSources)
     CONFIG_GLOBAL_PROPERTY(int, mediaUpdateInterval, 500)
     CONFIG_GLOBAL_PROPERTY(int, resourceUpdateInterval, 1000)
     CONFIG_PROPERTY(int, dragThreshold, 50)

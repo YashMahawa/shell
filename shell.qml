@@ -31,6 +31,7 @@ ShellRoot {
 
     ConfigToasts {}
     VoiceOverlay {}
+    CodexVoiceController {}
     Shortcuts {}
     BatteryMonitor {}
     IdleMonitors {

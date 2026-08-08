@@ -13,12 +13,28 @@ Singleton {
     property string artworkBaseUrl: ""
     property int requestId: 0
     property int requestedSize: 1200
+    property int dashboardRequestedSize: 300
+    property int consumerCount: 0
     property bool loading: false
     property bool transitioning: false
     property int revision: 0
+    readonly property bool active: ImmersiveLyricsState.active || consumerCount > 0
 
-    readonly property string fallbackUrl: Players.getArtUrl(Players.active)
-    readonly property string source: resolvedUrl || (_usableArtwork(fallbackUrl) ? fallbackUrl : "")
+    readonly property string dashboardFallbackUrl: Players.getArtUrl(Players.active)
+    readonly property string youtubeId: {
+        const player = Players.active;
+        const url = String(player ? (player.metadata["xesam:url"] || "") : "");
+        return url.match(/[?&]v=([\w-]{11})/)?.[1]
+            || url.match(/youtu\.be\/([\w-]{11})/)?.[1] || "";
+    }
+    readonly property string fallbackUrl: youtubeId
+        ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg`
+        : dashboardFallbackUrl
+    readonly property string source: resolvedKey === trackKey && resolvedUrl
+        ? resolvedUrl : (_usableArtwork(fallbackUrl) ? fallbackUrl : "")
+    readonly property string dashboardSource: resolvedKey === trackKey && artworkBaseUrl
+        ? _sizedArtwork(artworkBaseUrl, dashboardRequestedSize)
+        : (_usableArtwork(dashboardFallbackUrl) ? dashboardFallbackUrl : "")
     readonly property string trackKey: {
         const player = Players.active;
         const artist = player?.trackArtist || "";
@@ -26,15 +42,49 @@ Singleton {
         return artist || title ? `${artist}\n${title}` : "";
     }
 
-    onTrackKeyChanged: beginTransition()
+    onTrackKeyChanged: {
+        requestedSize = 1200;
+        dashboardRequestedSize = 300;
+        artworkBaseUrl = "";
+        if (active)
+            beginTransition();
+    }
+    onActiveChanged: {
+        if (active) {
+            beginTransition();
+        } else {
+            refreshDelay.stop();
+            fallbackDelay.stop();
+            transitionTimeout.stop();
+            requestId++;
+            loading = false;
+            transitioning = false;
+        }
+    }
 
     function requestSize(pixels: real): void {
         const wanted = Math.max(1000, Math.min(2400, Math.ceil(Number(pixels || root.requestedSize) / 200) * 200));
-        if (wanted === root.requestedSize)
+        if (wanted <= root.requestedSize)
             return;
         root.requestedSize = wanted;
         if (root.artworkBaseUrl && root.resolvedKey === root.trackKey)
             root.resolvedUrl = root._sizedArtwork(root.artworkBaseUrl, wanted);
+    }
+
+    function requestDashboardSize(pixels: real): void {
+        const wanted = Math.max(300, Math.min(2400, Math.ceil(Number(pixels || root.dashboardRequestedSize) / 100) * 100));
+        // Dashboard instances on multiple displays share only their own
+        // largest request; this never changes the immersive artwork source.
+        if (wanted > root.dashboardRequestedSize)
+            root.dashboardRequestedSize = wanted;
+    }
+
+    function retain(): void {
+        consumerCount++;
+    }
+
+    function release(): void {
+        consumerCount = Math.max(0, consumerCount - 1);
     }
 
     function beginTransition(): void {
@@ -171,7 +221,8 @@ Singleton {
     Connections {
         target: Players
         function onActiveChanged(): void {
-            root.beginTransition();
+            if (root.active)
+                root.beginTransition();
         }
     }
 
@@ -180,13 +231,16 @@ Singleton {
         ignoreUnknownSignals: true
 
         function onPostTrackChanged(): void {
-            root.beginTransition();
+            if (root.active)
+                root.beginTransition();
         }
         function onTrackTitleChanged(): void {
-            root.beginTransition();
+            if (root.active)
+                root.beginTransition();
         }
         function onTrackArtistChanged(): void {
-            root.beginTransition();
+            if (root.active)
+                root.beginTransition();
         }
         function onTrackArtUrlChanged(): void {
             if (root.transitioning)
@@ -194,5 +248,8 @@ Singleton {
         }
     }
 
-    Component.onCompleted: beginTransition()
+    Component.onCompleted: {
+        if (active)
+            beginTransition();
+    }
 }

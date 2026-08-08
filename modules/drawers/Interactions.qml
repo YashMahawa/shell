@@ -68,6 +68,45 @@ CustomMouseArea {
             && p.y <= Math.max(panel.height, panel.implicitHeight) + pad;
     }
 
+    function overDetachedContent(x: real, y: real): bool {
+        if (!popouts.isDetached)
+            return false;
+        const point = popouts.mapFromItem(root, x, y);
+        return point.x >= 0 && point.y >= 0
+            && point.x <= popouts.width && point.y <= popouts.height;
+    }
+
+    function overPanel(panel: Item, x: real, y: real, padding = 16): bool {
+        if (!panel)
+            return false;
+        const point = panel.mapFromItem(root, x, y);
+        const panelWidth = Math.max(panel.width, panel.implicitWidth, 0);
+        const panelHeight = Math.max(panel.height, panel.implicitHeight, 0);
+        return point.x >= -padding && point.y >= -padding
+            && point.x <= panelWidth + padding
+            && point.y <= panelHeight + padding;
+    }
+
+    function updateSidebarAutoHide(x: real, y: real): void {
+        if (!sidebarHoverActive || !visibilities.sidebar) {
+            sidebarHideTimer.stop();
+            return;
+        }
+        const overHotCorner = x >= width - topRightHotCornerSize
+            && y <= topRightHotCornerSize;
+        const overOverlay = overSidebarPanel(x, y) || overHotCorner;
+        if (overOverlay)
+            sidebarHideTimer.stop();
+        else if (!sidebarHideTimer.running)
+            sidebarHideTimer.restart();
+    }
+
+    function overSidebarPanel(x: real, y: real): bool {
+        const panelWidth = Math.max(panels.sidebar.width, panels.sidebar.implicitWidth, 0);
+        const visibleWidth = panelWidth * (1 - (panels.sidebar.offsetScale ?? 0));
+        return visibleWidth > 1 && x >= width - visibleWidth - 20;
+    }
+
     function overContinuityHoverPopout(x: real, y: real): bool {
         if (!hoverSidePopout)
             return false;
@@ -123,15 +162,26 @@ CustomMouseArea {
     onPressed: event => dragStart = Qt.point(event.x, event.y)
     onClicked: event => {
         // Center detach panels (clipboard / settings): click outside to close.
-        if (popouts.isDetached) {
-            if (!inPanelBounds(panels.popoutsWrapper, event.x, event.y)
-                && !overPopoutsPanel(event.x, event.y))
-                popouts.close();
+        if (popouts.isDetached && !overDetachedContent(event.x, event.y))
+            popouts.close();
+    }
+
+
+    // Dedicated click-away surface below the panels but above applications.
+    // The parent CustomMouseArea did not receive composed clicks consistently
+    // when a child panel or its full-screen item tree owned the pointer grab.
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.popouts.detachedMode === "any" || root.popouts.detachedMode === "link"
+        acceptedButtons: Qt.LeftButton
+        onClicked: event => {
+            if (!root.overDetachedContent(event.x, event.y))
+                root.popouts.close();
         }
     }
     onContainsMouseChanged: {
         if (containsMouse) {
-            sidebarHideTimer.stop();
+            updateSidebarAutoHide(mouseX, mouseY);
             return;
         }
         if (!containsMouse) {
@@ -168,7 +218,11 @@ CustomMouseArea {
 
         interval: 180
         onTriggered: {
-            if (!root.containsMouse && root.sidebarHoverActive) {
+            const stillOverOverlay = root.containsMouse
+                && (root.overSidebarPanel(root.mouseX, root.mouseY)
+                    || (root.mouseX >= root.width - root.topRightHotCornerSize
+                        && root.mouseY <= root.topRightHotCornerSize));
+            if (!stillOverOverlay && root.sidebarHoverActive) {
                 root.visibilities.sidebar = false;
                 root.sidebarHoverActive = false;
             }
@@ -198,11 +252,21 @@ CustomMouseArea {
     }
 
     onPositionChanged: event => {
-        if (popouts.isDetached)
-            return;
-
         const x = event.x;
         const y = event.y;
+        updateSidebarAutoHide(x, y);
+
+        if (popouts.isDetached) {
+            // The detached window-info surface sits above applications, so
+            // Hyprland cannot focus the underlying client directly.  Resolve
+            // it from the pointer and client rectangles instead.  Do not
+            // change selection while the pointer is over the controls.
+            if (popouts.detachedMode === "winfo"
+                && !overPopoutsPanel(event.x, event.y))
+                popouts.selectWindowInfoClientAt(screen.x + event.x, screen.y + event.y);
+            return;
+        }
+
         const dragX = x - dragStart.x;
         const dragY = y - dragStart.y;
 

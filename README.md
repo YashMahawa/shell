@@ -237,7 +237,8 @@ For example, to disable the bar on DP-1:
 > - `general` (`logo`, `apps`, `idle`, `battery`)
 > - `bar.workspaces` (`perMonitorWorkspaces`, `specialWorkspaceIcons`, `windowIcons`)
 > - `bar.tray` (`iconSubs`, `hiddenIcons`)
-> - `dashboard` (`mediaUpdateInterval`, `resourceUpdateInterval`)
+> - `dashboard` (`showNationalHolidays`, `calendarCountryCode`, `calendarSources`,
+>   `mediaUpdateInterval`, `resourceUpdateInterval`)
 > - `launcher` (`specialPrefix`, `actionPrefix`, `enableDangerousActions`, `vimKeybinds`,
 >   `favouriteApps`, `hiddenApps`, `actions`)
 > - `launcher.useFuzzy` (`apps`, `actions`, `schemes`, `variants`, `wallpapers`)
@@ -254,6 +255,33 @@ For example, to disable the bar on DP-1:
 > </details>
 
 ### Example configuration
+
+The dashboard calendar can merge national holidays with one or more iCalendar
+feeds. Sources may be HTTPS URLs or absolute paths to local `.ics` files. Weekly
+recurrence rules and excluded dates are supported, which makes exported class
+timetables work without duplicating every lecture. Private feed URLs should stay
+in `~/.config/caelestia/shell.json` and must not be committed.
+
+```json
+{
+    "dashboard": {
+        "showNationalHolidays": true,
+        "calendarCountryCode": "",
+        "calendarSources": [
+            {
+                "name": "Classes",
+                "url": "/home/example/Documents/timetable.ics"
+            }
+        ]
+    }
+}
+```
+
+When `calendarCountryCode` is empty, Caelestia reuses the weather service's
+country detection and falls back to the system locale while offline. Only
+country-wide public holidays are displayed. Calendar load is represented with
+one to three accent dots; holidays use one tertiary dot to keep the month view
+quiet.
 
 > [!NOTE]
 > The example configuration includes ALL configuration options in `shell.json`. You are
@@ -532,6 +560,9 @@ For example, to disable the bar on DP-1:
         "showMedia": true,
         "showPerformance": true,
         "showWeather": true,
+        "showNationalHolidays": true,
+        "calendarCountryCode": "",
+        "calendarSources": [],
         "mediaUpdateInterval": 500,
         "resourceUpdateInterval": 1000,
         "dragThreshold": 50,

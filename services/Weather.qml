@@ -11,6 +11,7 @@ Singleton {
 
     property string city
     property string loc
+    property string countryCode
     property var cc
     property list<var> forecast
     property list<var> hourlyForecast
@@ -46,7 +47,7 @@ Singleton {
         } else if ((!loc || timer.elapsed() > 900) && !ipApiRequestPending && Date.now() >= ipApiBlockedUntil) {
             ipApiRequestPending = true;
 
-            Requests.get("http://ip-api.com/json?fields=status,message,city,lat,lon", (text, metadata) => {
+            Requests.get("http://ip-api.com/json?fields=status,message,city,countryCode,lat,lon", (text, metadata) => {
                 ipApiRequestPending = false;
                 recordIpApiRateLimit(metadata);
 
@@ -72,6 +73,7 @@ Singleton {
                 }
 
                 city = fixCityName(response.city ?? "");
+                countryCode = String(response.countryCode ?? "").toUpperCase();
                 timer.restart();
                 loc = `${lat},${lon}`;
             }, (error, metadata) => {
@@ -164,6 +166,9 @@ Singleton {
             Requests.get(fallbackUrl, text => {
                 const geo = JSON.parse(text);
                 const geoCity = geo.city || geo.locality;
+                const geoCountry = geo.countryCode || geo.country_code;
+                if (geoCountry)
+                    countryCode = String(geoCountry).toUpperCase();
                 if (geoCity) {
                     city = geoCity;
                     cachedCities.set(coords, geoCity);
@@ -177,6 +182,8 @@ Singleton {
         Requests.get(nominatimUrl, text => {
             const geo = JSON.parse(text).features?.[0]?.properties.geocoding;
             if (geo) {
+                if (geo.country_code)
+                    countryCode = String(geo.country_code).toUpperCase();
                 const geoCity = geo.type === "city" ? geo.name : geo.city;
                 if (geoCity) {
                     city = geoCity;
@@ -197,6 +204,7 @@ Singleton {
                 const result = json.results[0];
                 loc = result.latitude + "," + result.longitude;
                 city = result.name;
+                countryCode = String(result.country_code ?? "").toUpperCase();
             } else {
                 loc = "";
                 reload();

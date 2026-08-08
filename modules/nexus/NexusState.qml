@@ -11,6 +11,8 @@ QtObject {
     property bool searchOpen
 
     property string selectedWallpaperCategory
+    property string selectedWifiSsid
+    property string selectedWifiBssid
     property BluetoothDevice selectedBtDevice
     property DesktopEntry selectedApp
 

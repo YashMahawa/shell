@@ -44,10 +44,9 @@ Scope {
         // Rebuild the one-screen layout after the GPU/display link has resumed.
         // This also powers the chosen physical output before any fallback can
         // become visible.
-        onResumed: Quickshell.execDetached([
-            Quickshell.env("HOME") + "/.local/bin/caelestia-display",
-            "auto"
-        ])
+        // Display recovery is deliberately handled once by the delayed system
+        // resume service. Running it here as user.slice thaws races Hyprland's
+        // DRM resume and caused duplicate layout changes and visible flashing.
         onLockRequested: root.lock.engage()
         onUnlockRequested: root.lock.release()
     }

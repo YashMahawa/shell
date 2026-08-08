@@ -13,11 +13,29 @@ Item {
     id: root
 
     required property bool active
+    property bool retained: false
     readonly property real fadeAmount: 0.15
     property int lyricRevision: SyllableLyrics.revision
     property real smoothPosition: Players.active?.position ?? 0
 
+    function syncRetention(): void {
+        if (active && !retained) {
+            SyllableLyrics.retain();
+            retained = true;
+        } else if (!active && retained) {
+            SyllableLyrics.release();
+            retained = false;
+        }
+    }
+
+    Component.onCompleted: syncRetention()
+    Component.onDestruction: {
+        if (retained)
+            SyllableLyrics.release();
+    }
+
     onActiveChanged: {
+        syncRetention();
         trackingDelay.stop();
         lyrics.animateTracking = false;
         if (!active)

@@ -20,12 +20,14 @@ Scope {
 
             screen: modelData
             name: "immersive-lyrics"
+            color: "transparent"
+            // The native static backdrop is a separate layer below this
+            // foreground, so this surface must preserve transparency.
+            surfaceFormat.opaque: false
             visible: ImmersiveLyricsState.active && isTarget
-
             WlrLayershell.exclusionMode: ExclusionMode.Ignore
             WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-
+            WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             anchors.top: true
             anchors.bottom: true
             anchors.left: true
@@ -33,15 +35,23 @@ Scope {
 
             onVisibleChanged: {
                 if (visible)
-                    surface.forceActiveFocus();
+                    Qt.callLater(() => surface.item?.forceActiveFocus());
             }
 
-            ImmersiveSurface {
+            Loader {
                 id: surface
 
                 anchors.fill: parent
-                active: ImmersiveLyricsState.presented
-                onExitRequested: ImmersiveLyricsState.close()
+                active: window.visible
+                asynchronous: true
+                onLoaded: {
+                    if (window.visible)
+                        item?.forceActiveFocus();
+                }
+                sourceComponent: ImmersiveSurface {
+                    active: ImmersiveLyricsState.presented
+                    onExitRequested: ImmersiveLyricsState.close()
+                }
             }
         }
     }

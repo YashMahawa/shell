@@ -11,6 +11,24 @@ Item {
 
     required property bool active
     property bool toolsOpen: false
+    property bool retained: false
+
+    function syncRetention(): void {
+        if (active && !retained) {
+            SyllableLyrics.retain();
+            retained = true;
+        } else if (!active && retained) {
+            SyllableLyrics.release();
+            retained = false;
+        }
+    }
+
+    onActiveChanged: syncRetention()
+    Component.onCompleted: syncRetention()
+    Component.onDestruction: {
+        if (retained)
+            SyllableLyrics.release();
+    }
 
     ColumnLayout {
         id: layout

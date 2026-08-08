@@ -12,17 +12,19 @@ Singleton {
     property var wirelessInterfaces: []
     property var ethernetInterfaces: []
     property bool isConnected: false
+    readonly property bool wifiConnected: wirelessInterfaces.some(i => isConnectedState(i.state))
     readonly property bool connecting: wirelessInterfaces.some(i => isConnectingState(i.state))
     property string activeInterface: ""
     property string activeConnection: ""
     property bool wifiEnabled: true
     readonly property bool scanning: rescanProc.running
     readonly property list<AccessPoint> networks: []
-    readonly property AccessPoint active: networks.find(n => n.active) ?? null
+    readonly property AccessPoint active: wifiConnected ? (networks.find(n => n.active) ?? null) : null
     property list<var> vpnConnections: []
     readonly property var activeVpnConnection: vpnConnections.find(v => v.active) ?? null
     property list<string> savedConnections: []
     property list<string> savedConnectionSsids: []
+    property list<var> savedWifiProfiles: []
 
     property var wifiConnectionQueue: []
     property int currentSsidQueryIndex: 0
@@ -32,6 +34,9 @@ Singleton {
     property list<var> ethernetDevices: []
     readonly property var activeEthernet: ethernetDevices.find(d => d.connected) ?? null
     property list<var> activeProcesses: []
+    property bool liveRefreshInFlight: false
+    property bool radioChangeInFlight: false
+    property string wifiConnectionChangeKey: ""
 
     readonly property alias connectionCheckTimer: connectionCheckTimer
     readonly property alias immediateCheckTimer: immediateCheckTimer
@@ -58,6 +63,8 @@ Singleton {
     readonly property string connectionParamSsid: "ssid"
     readonly property string connectionParamPassword: "password"
     readonly property string connectionParamBssid: "802-11-wireless.bssid"
+    readonly property string wifiConnectParamBssid: "bssid"
+    readonly property list<string> hiddenWifiSsids: ["IITJ_Guest", "eduroam"]
 
     signal connectionFailed(string ssid)
 
@@ -100,15 +107,17 @@ Singleton {
 
         const networkMap = new Map();
         for (const network of networks) {
-            const existing = networkMap.get(network.ssid);
+            const band = network.frequency >= 5925 ? "6" : network.frequency >= 4900 ? "5" : "2.4";
+            const key = `${network.ssid}|${band}`;
+            const existing = networkMap.get(key);
             if (!existing) {
-                networkMap.set(network.ssid, network);
+                networkMap.set(key, network);
             } else {
                 if (network.active && !existing.active) {
-                    networkMap.set(network.ssid, network);
+                    networkMap.set(key, network);
                 } else if (!network.active && !existing.active) {
                     if (network.strength > existing.strength) {
-                        networkMap.set(network.ssid, network);
+                        networkMap.set(key, network);
                     }
                 }
             }
@@ -117,12 +126,92 @@ Singleton {
         return Array.from(networkMap.values());
     }
 
+    function isHiddenWifiSsid(ssid: string): bool {
+        const candidate = (ssid || "").toLowerCase().trim();
+        return root.hiddenWifiSsids.some(hidden => hidden.toLowerCase() === candidate);
+    }
+
+    function networkBand(frequency: int): string {
+        return frequency >= 5925 ? "6" : frequency >= 4900 ? "5" : "2.4";
+    }
+
+    function networkKey(ssid: string, frequency: int): string {
+        return `${ssid}|${networkBand(frequency)}`;
+    }
+
+    function addMissingSavedBands(networks: list<var>): list<var> {
+        const combined = networks.slice();
+        const present = new Set(combined.map(n => networkKey(n.ssid, n.frequency)));
+
+        for (const profile of root.savedWifiProfiles) {
+            if (!profile.ssid || isHiddenWifiSsid(profile.ssid) || (profile.band !== "a" && profile.band !== "bg"))
+                continue;
+
+            const frequency = profile.band === "a" ? 5180 : 2412;
+            const key = networkKey(profile.ssid, frequency);
+            if (present.has(key))
+                continue;
+
+            combined.push({
+                active: false,
+                strength: 0,
+                frequency: frequency,
+                ssid: profile.ssid,
+                bssid: profile.bssid || "",
+                security: "802.1X",
+                savedOnly: true
+            });
+            present.add(key);
+        }
+
+        return combined;
+    }
+
     function isConnectionCommand(command: list<string>): bool {
         if (!command || command.length === 0) {
             return false;
         }
 
         return command.includes(root.nmcliCommandWifi) || command.includes(root.nmcliCommandConnection);
+    }
+
+    function isWifiActivationCommand(command: list<string>): bool {
+        if (!command || command.length === 0)
+            return false;
+        const connectionUp = command.includes(root.nmcliCommandConnection) && command.includes("up");
+        const wifiConnect = command.includes(root.nmcliCommandDevice) && command.includes(root.nmcliCommandWifi) && command.includes("connect");
+        return connectionUp || wifiConnect;
+    }
+
+    function cancelPendingWifiOperation(): void {
+        connectionCheckTimer.stop();
+        immediateCheckTimer.stop();
+        immediateCheckTimer.checkCount = 0;
+        root.pendingConnection = null;
+        root.wifiConnectionChangeKey = "";
+
+        for (const proc of root.activeProcesses) {
+            if (proc && proc.running && isWifiActivationCommand(proc.cmdArgs)) {
+                // Suppress callbacks/retries from the superseded request.
+                proc.callbackCalled = true;
+                proc.running = false;
+            }
+        }
+    }
+
+    function pendingConnectionMatchesActive(): bool {
+        if (!root.pendingConnection || !root.active)
+            return false;
+        if (root.active.ssid !== root.pendingConnection.ssid)
+            return false;
+        const wantedBssid = (root.pendingConnection.bssid || "").toUpperCase();
+        return wantedBssid.length === 0 || root.active.bssid.toUpperCase() === wantedBssid;
+    }
+
+    function isWifiOperationPending(ssid: string, bssid: string): bool {
+        if (!root.wifiConnectionChangeKey || root.wifiConnectionChangeKey === "disconnect")
+            return false;
+        return root.wifiConnectionChangeKey === `${ssid}|${(bssid || "").toUpperCase()}`;
     }
 
     function parseDeviceStatusOutput(output: string, filterType: string): list<var> {
@@ -208,6 +297,8 @@ Singleton {
         executeCommand(["-t", "-f", root.deviceStatusFields, root.nmcliCommandDevice, "status"], result => {
             const interfaces = parseDeviceStatusOutput(result.output, root.deviceTypeWifi);
             root.wirelessInterfaces = interfaces;
+            if (!root.wifiConnected)
+                root.wirelessDeviceDetails = null;
             if (callback)
                 callback(interfaces);
         });
@@ -387,7 +478,17 @@ Singleton {
     function connectWireless(ssid: string, password: string, bssid: string, callback: var, retryCount: int): void {
         const hasBssid = bssid !== undefined && bssid !== null && bssid.length > 0;
         const retries = retryCount !== undefined ? retryCount : 0;
-        const maxRetries = 2;
+        // Do not hammer enterprise APs after a failed activation. A new user
+        // selection supersedes this request and starts one fresh attempt.
+        const maxRetries = 0;
+        const requestKey = `${ssid}|${hasBssid ? bssid.toUpperCase() : ""}`;
+
+        if (retries === 0) {
+            // The latest explicit selection wins. NetworkManager will cancel
+            // the older activation when the new one is submitted.
+            cancelPendingWifiOperation();
+            root.wifiConnectionChangeKey = requestKey;
+        }
 
         if (callback) {
             root.pendingConnection = {
@@ -403,16 +504,30 @@ Singleton {
 
         if (password && password.length > 0 && hasBssid) {
             const bssidUpper = bssid.toUpperCase();
-            createConnectionWithPassword(ssid, bssidUpper, password, callback);
+            createConnectionWithPassword(ssid, bssidUpper, password, result => {
+                root.wifiConnectionChangeKey = "";
+                if (callback)
+                    callback(result);
+            });
             return;
         }
 
-        let cmd = [root.nmcliCommandDevice, root.nmcliCommandWifi, "connect", ssid];
+        const selectedAp = hasBssid ? root.networks.find(n => n.bssid.toUpperCase() === bssid.toUpperCase()) : null;
+        const savedProfile = !password ? root.profileForNetwork(ssid, hasBssid ? bssid : "", selectedAp?.frequency || 0) : "";
+        let cmd = savedProfile
+            ? [root.nmcliCommandConnection, "up", savedProfile]
+            : [root.nmcliCommandDevice, root.nmcliCommandWifi, "connect", ssid];
         if (password && password.length > 0) {
             cmd.push(root.connectionParamPassword, password);
         }
+        if (hasBssid && !savedProfile) {
+            // Preserve the AP selected in the UI. Without this, duplicate
+            // SSIDs such as IITJ_WLAN silently fall back from 5 GHz to 2.4 GHz.
+            cmd.push(root.wifiConnectParamBssid, bssid.toUpperCase());
+        }
         executeCommand(cmd, result => {
             if (result.needsPassword && callback) {
+                root.wifiConnectionChangeKey = "";
                 if (callback)
                     callback(result);
                 return;
@@ -421,9 +536,17 @@ Singleton {
             if (!result.success && root.pendingConnection && retries < maxRetries) {
                 console.warn(lc, "Connection failed, retrying... (attempt " + (retries + 1) + "/" + maxRetries + ")");
                 Qt.callLater(() => {
-                    connectWireless(ssid, password, bssid, callback, retries + 1);
+                    if (root.wifiConnectionChangeKey === requestKey)
+                        connectWireless(ssid, password, bssid, callback, retries + 1);
                 }, 1000);
-            } else if (!result.success && root.pendingConnection) {} else if (result.success && callback) {} else if (!result.success && !root.pendingConnection) {
+            } else if (!result.success && root.pendingConnection) {
+                root.wifiConnectionChangeKey = "";
+            } else if (result.success && callback) {
+                root.wifiConnectionChangeKey = "";
+            } else if (result.success) {
+                root.wifiConnectionChangeKey = "";
+            } else if (!result.success && !root.pendingConnection) {
+                root.wifiConnectionChangeKey = "";
                 if (callback)
                     callback(result);
             }
@@ -530,6 +653,7 @@ Singleton {
             root.wifiConnectionQueue = wifiConnections;
             root.currentSsidQueryIndex = 0;
             root.savedConnectionSsids = [];
+            root.savedWifiProfiles = [];
             queryNextSsid(callback);
         } else {
             root.savedConnectionSsids = [];
@@ -544,9 +668,9 @@ Singleton {
             const connectionName = root.wifiConnectionQueue[root.currentSsidQueryIndex];
             root.currentSsidQueryIndex++;
 
-            executeCommand(["-t", "-f", root.wirelessSsidField, root.nmcliCommandConnection, "show", connectionName], result => {
+            executeCommand(["-t", "-f", `${root.wirelessSsidField},802-11-wireless.bssid,802-11-wireless.band`, root.nmcliCommandConnection, "show", connectionName], result => {
                 if (result.success) {
-                    processSsidOutput(result.output);
+                    processSsidOutput(connectionName, result.output);
                 }
                 queryNextSsid(callback);
             });
@@ -558,11 +682,15 @@ Singleton {
         }
     }
 
-    function processSsidOutput(output: string): void {
+    function processSsidOutput(connectionName: string, output: string): void {
         const lines = output.trim().split("\n");
+        let profileSsid = "";
+        let profileBssid = "";
+        let profileBand = "";
         for (const line of lines) {
             if (line.startsWith("802-11-wireless.ssid:")) {
                 const ssid = line.substring("802-11-wireless.ssid:".length).trim();
+                profileSsid = ssid;
                 if (ssid && ssid.length > 0) {
                     const ssidLower = ssid.toLowerCase();
                     const exists = root.savedConnectionSsids.some(s => s && s.toLowerCase() === ssidLower);
@@ -572,14 +700,40 @@ Singleton {
                         root.savedConnectionSsids = newList;
                     }
                 }
+            } else if (line.startsWith("802-11-wireless.bssid:")) {
+                profileBssid = line.substring("802-11-wireless.bssid:".length).trim().toUpperCase();
+            } else if (line.startsWith("802-11-wireless.band:")) {
+                profileBand = line.substring("802-11-wireless.band:".length).trim();
             }
+        }
+
+        if (profileSsid) {
+            const profiles = root.savedWifiProfiles.slice();
+            profiles.push({ name: connectionName, ssid: profileSsid, bssid: profileBssid, band: profileBand });
+            root.savedWifiProfiles = profiles;
         }
     }
 
-    function hasSavedProfile(ssid: string): bool {
+    function profileForNetwork(ssid: string, bssid: string, frequency: int): string {
+        const ssidLower = (ssid || "").toLowerCase().trim();
+        const bssidUpper = (bssid || "").toUpperCase();
+        const wantedBand = frequency >= 4900 ? "a" : frequency > 0 ? "bg" : "";
+        const exact = root.savedWifiProfiles.find(p => p.ssid.toLowerCase().trim() === ssidLower && p.bssid && p.bssid === bssidUpper);
+        if (exact)
+            return exact.name;
+        const bandMatch = root.savedWifiProfiles.find(p => p.ssid.toLowerCase().trim() === ssidLower && wantedBand && p.band === wantedBand);
+        if (bandMatch)
+            return bandMatch.name;
+        const any = root.savedWifiProfiles.find(p => p.ssid.toLowerCase().trim() === ssidLower);
+        return any ? any.name : "";
+    }
+
+    function hasSavedProfile(ssid: string, bssid: string, frequency: int): bool {
         if (!ssid || ssid.length === 0) {
             return false;
         }
+        if (bssid || frequency)
+            return profileForNetwork(ssid, bssid || "", frequency || 0).length > 0;
         const ssidLower = ssid.toLowerCase().trim();
 
         if (root.active && root.active.ssid) {
@@ -600,7 +754,7 @@ Singleton {
         return hasConnectionName;
     }
 
-    function forgetNetwork(ssid: string, callback: var): void {
+    function forgetNetwork(ssid: string, callback: var, bssid: string, frequency: int): void {
         if (!ssid || ssid.length === 0) {
             if (callback)
                 callback({
@@ -612,7 +766,8 @@ Singleton {
             return;
         }
 
-        const connectionName = root.savedConnections.find(conn => conn && conn.toLowerCase().trim() === ssid.toLowerCase().trim()) || ssid;
+        const mappedProfile = root.profileForNetwork(ssid, bssid || "", frequency || 0);
+        const connectionName = mappedProfile || root.savedConnections.find(conn => conn && conn.toLowerCase().trim() === ssid.toLowerCase().trim()) || ssid;
 
         executeCommand([root.nmcliCommandConnection, "delete", connectionName], result => {
             if (result.success) {
@@ -639,20 +794,60 @@ Singleton {
         }
     }
 
-    function disconnectFromNetwork(): void {
-        if (active && active.ssid) {
-            executeCommand([root.nmcliCommandConnection, "down", active.ssid], result => {
+    function disconnectFromNetwork(callback: var): void {
+        cancelPendingWifiOperation();
+        root.wifiConnectionChangeKey = "disconnect";
+        const connectedInterface = root.wirelessInterfaces.find(i => isConnectedState(i.state));
+        if (connectedInterface && connectedInterface.connection) {
+            executeCommand([root.nmcliCommandConnection, "down", connectedInterface.connection], result => {
+                root.wifiConnectionChangeKey = "";
                 if (result.success) {
-                    getNetworks(() => {});
+                    refreshLiveWifiState();
                 }
+                if (callback)
+                    callback(result);
             });
         } else {
-            executeCommand([root.nmcliCommandDevice, "disconnect", root.deviceTypeWifi], result => {
+            const interfaceName = root.wirelessInterfaces.length > 0 ? root.wirelessInterfaces[0].device : "";
+            executeCommand([root.nmcliCommandDevice, "disconnect", interfaceName], result => {
+                root.wifiConnectionChangeKey = "";
                 if (result.success) {
-                    getNetworks(() => {});
+                    refreshLiveWifiState();
                 }
+                if (callback)
+                    callback(result);
             });
         }
+    }
+
+    function updateSavedNetworkPassword(ssid: string, password: string, callback: var, bssid: string, frequency: int): void {
+        if (!ssid || !password) {
+            if (callback)
+                callback({ success: false, error: "SSID and password are required" });
+            return;
+        }
+
+        const activeWifi = root.wirelessInterfaces.find(i => isConnectedState(i.state));
+        const mappedProfile = root.profileForNetwork(ssid, bssid || "", frequency || 0);
+        const connectionName = mappedProfile || (activeWifi && root.active && root.active.ssid === ssid
+            ? activeWifi.connection
+            : (root.savedConnections.find(name => name.toLowerCase().trim() === ssid.toLowerCase().trim()) || ssid));
+
+        executeCommand(["-g", "802-11-wireless-security.key-mgmt,802-1x.eap", root.nmcliCommandConnection, "show", connectionName], info => {
+            const enterprise = info.success && (info.output.includes("wpa-eap") || info.output.includes("802.1x") || info.output.includes("peap") || info.output.includes("ttls"));
+            const setting = enterprise ? "802-1x.password" : root.securityPsk;
+            executeCommand([root.nmcliCommandConnection, "modify", connectionName, setting, password], result => {
+                if (result.success) {
+                    executeCommand([root.nmcliCommandConnection, "up", connectionName], upResult => {
+                        refreshLiveWifiState();
+                        if (callback)
+                            callback(upResult);
+                    });
+                } else if (callback) {
+                    callback(result);
+                }
+            });
+        });
     }
 
     function getDeviceDetails(interfaceName: string, callback: var): void {
@@ -748,24 +943,40 @@ Singleton {
     }
 
     function enableWifi(enabled: bool, callback: var): void {
+        if (root.radioChangeInFlight) {
+            if (callback)
+                callback({ success: false, output: "", error: "A Wi-Fi radio change is already in progress", exitCode: -1 });
+            return;
+        }
+
+        root.radioChangeInFlight = true;
         const cmd = enabled ? "on" : "off";
-        executeCommand([root.nmcliCommandRadio, root.nmcliCommandWifi, cmd], result => {
-            if (result.success) {
+        executeCommand([root.nmcliCommandRadio, root.nmcliCommandWifi], statusResult => {
+            const current = statusResult.success ? statusResult.output.trim() === "enabled" : root.wifiEnabled;
+            root.wifiEnabled = current;
+
+            if (statusResult.success && current === enabled) {
+                root.radioChangeInFlight = false;
+                if (callback)
+                    callback({ success: true, output: "Wi-Fi radio already in requested state", error: "", exitCode: 0 });
+                return;
+            }
+
+            executeCommand([root.nmcliCommandRadio, root.nmcliCommandWifi, cmd], result => {
                 getWifiStatus(status => {
                     root.wifiEnabled = status;
+                    root.radioChangeInFlight = false;
                     if (callback)
                         callback(result);
                 });
-            } else {
-                if (callback)
-                    callback(result);
-            }
+            });
         });
     }
 
     function toggleWifi(callback: var): void {
-        const newState = !root.wifiEnabled;
-        enableWifi(newState, callback);
+        if (root.radioChangeInFlight)
+            return;
+        getWifiStatus(status => enableWifi(!status, callback));
     }
 
     function getWifiStatus(callback: var): void {
@@ -790,26 +1001,29 @@ Singleton {
                 return;
             }
 
-            const allNetworks = parseNetworkOutput(result.output);
-            const networks = deduplicateNetworks(allNetworks);
+            const allNetworks = parseNetworkOutput(result.output).filter(n => !isHiddenWifiSsid(n.ssid));
+            const networks = addMissingSavedBands(deduplicateNetworks(allNetworks));
             const rNetworks = root.networks;
 
             const newMap = new Map();
             for (const n of networks)
-                newMap.set(`${n.frequency}:${n.ssid}:${n.bssid}`, n);
+                // Keep 2.4/5/6 GHz variants independent and stable while the
+                // selected access point roams between BSSIDs on one band.
+                newMap.set(networkKey(n.ssid, n.frequency), n);
 
             for (let i = rNetworks.length - 1; i >= 0; i--) {
                 const rn = rNetworks[i];
-                const key = `${rn.frequency}:${rn.ssid}:${rn.bssid}`;
+                const key = networkKey(rn.ssid, rn.frequency);
                 if (!newMap.has(key)) {
                     rNetworks.splice(i, 1);
-                    rn.destroy();
+                    // Repeater observes list changes asynchronously.
+                    rn.destroy(250);
                 }
             }
 
             const existingMap = new Map();
             for (const rn of rNetworks)
-                existingMap.set(`${rn.frequency}:${rn.ssid}:${rn.bssid}`, rn);
+                existingMap.set(networkKey(rn.ssid, rn.frequency), rn);
 
             for (const [key, network] of newMap) {
                 const match = existingMap.get(key);
@@ -915,7 +1129,7 @@ Singleton {
     function checkPendingConnection(): void {
         if (root.pendingConnection) {
             Qt.callLater(() => {
-                const connected = root.active && root.active.ssid === root.pendingConnection.ssid;
+                const connected = root.pendingConnectionMatchesActive();
                 if (connected) {
                     connectionCheckTimer.stop();
                     immediateCheckTimer.stop();
@@ -1064,6 +1278,27 @@ Singleton {
     }
 
     function refreshOnConnectionChange(): void {
+        refreshLiveWifiState();
+    }
+
+    function refreshLiveWifiState(callback: var): void {
+        if (root.liveRefreshInFlight)
+            return;
+        root.liveRefreshInFlight = true;
+
+        getWirelessInterfaces(() => {
+            getWifiStatus(() => {
+                getNetworks(networks => {
+                    root.liveRefreshInFlight = false;
+                    refreshStatus(() => {});
+                    if (callback)
+                        callback();
+                });
+            });
+        });
+    }
+
+    function refreshConnectionDetails(): void {
         getNetworks(networks => {
             const newActive = root.active;
 
@@ -1092,7 +1327,6 @@ Singleton {
                 root.ethernetDeviceDetails = null;
             }
 
-            getWirelessInterfaces(() => {});
             getEthernetInterfaces(() => {
                 if (root.activeEthernet && root.activeEthernet.connected) {
                     Qt.callLater(() => {
@@ -1105,7 +1339,7 @@ Singleton {
 
     Component.onCompleted: {
         getWifiStatus(() => {});
-        getNetworks(() => {});
+        refreshLiveWifiState();
         loadSavedConnections(() => {});
         getEthernetInterfaces(() => {});
 
@@ -1148,7 +1382,7 @@ Singleton {
         interval: 4000
         onTriggered: {
             if (root.pendingConnection) {
-                const connected = root.active && root.active.ssid === root.pendingConnection.ssid;
+                const connected = root.pendingConnectionMatchesActive();
 
                 if (!connected && root.pendingConnection.callback) {
                     let foundPasswordError = false;
@@ -1223,7 +1457,7 @@ Singleton {
         onTriggered: {
             if (root.pendingConnection) {
                 checkCount++;
-                const connected = root.active && root.active.ssid === root.pendingConnection.ssid;
+                const connected = root.pendingConnectionMatchesActive();
 
                 if (connected) {
                     connectionCheckTimer.stop();
@@ -1303,7 +1537,7 @@ Singleton {
                 LC_ALL: "C.UTF-8"
             })
         stdout: SplitParser {
-            onRead: root.refreshOnConnectionChange()
+            onRead: connectionEventDebounce.restart()
         }
         onExited: monitorRestartTimer.start() // qmllint disable signal-handler-parameters
     }
@@ -1315,6 +1549,22 @@ Singleton {
         onTriggered: {
             monitorProc.running = true;
         }
+    }
+
+    Timer {
+        id: connectionEventDebounce
+
+        interval: 120
+        onTriggered: root.refreshOnConnectionChange()
+    }
+
+    Timer {
+        id: liveWifiStateTimer
+
+        running: true
+        repeat: true
+        interval: 2000
+        onTriggered: root.refreshLiveWifiState()
     }
 
     LoggingCategory {
@@ -1404,6 +1654,8 @@ Singleton {
         readonly property string bssid: lastIpcObject.bssid
         readonly property int strength: lastIpcObject.strength
         readonly property int frequency: lastIpcObject.frequency
+        readonly property string bandLabel: frequency >= 5925 ? "6 GHz" : frequency >= 4900 ? "5 GHz" : "2.4 GHz"
+        readonly property string displayName: `${ssid} (${bandLabel})`
         readonly property bool active: lastIpcObject.active
         readonly property string security: lastIpcObject.security
         readonly property bool isSecure: security.length > 0

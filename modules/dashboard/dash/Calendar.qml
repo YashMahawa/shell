@@ -17,6 +17,10 @@ CustomMouseArea {
 
     readonly property int currMonth: dashState.currentDate.getMonth()
     readonly property int currYear: dashState.currentDate.getFullYear()
+    property date selectedDate: new Date()
+    readonly property list<var> selectedEvents: CalendarEvents.eventsForDate(selectedDate)
+
+    onCurrYearChanged: CalendarEvents.ensureYear(currYear)
 
     function onWheel(event: WheelEvent): void {
         if (event.angleDelta.y > 0)
@@ -130,9 +134,21 @@ CustomMouseArea {
                     id: dayItem
 
                     required property var model
+                    readonly property int load: CalendarEvents.eventLoadForDate(model.date)
+                    readonly property bool holiday: CalendarEvents.holidaysForDate(model.date).length > 0
+                    readonly property bool selected: CalendarEvents.dateKey(model.date) === CalendarEvents.dateKey(root.selectedDate)
 
                     implicitWidth: implicitHeight
-                    implicitHeight: text.implicitHeight + Tokens.padding.small
+                    implicitHeight: text.implicitHeight + Tokens.padding.medium
+
+                    StyledRect {
+                        anchors.centerIn: parent
+                        implicitWidth: Math.max(text.implicitWidth, text.implicitHeight) + Tokens.padding.small
+                        implicitHeight: implicitWidth
+                        radius: width / 2
+                        color: Colours.palette.m3primary
+                        opacity: dayItem.selected && !dayItem.model.today ? 0.14 : 0
+                    }
 
                     StyledText {
                         id: text
@@ -150,6 +166,40 @@ CustomMouseArea {
                         }
                         opacity: dayItem.model.today || dayItem.model.month === grid.month ? 1 : 0.4
                         font: Tokens.font.body.small
+                    }
+
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        spacing: 2
+
+                        Repeater {
+                            model: dayItem.load
+
+                            StyledRect {
+                                required property int index
+
+                                implicitWidth: 3
+                                implicitHeight: 3
+                                radius: 2
+                                color: Colours.palette.m3primary
+                                opacity: 0.45 + index * 0.22
+                            }
+                        }
+
+                        StyledRect {
+                            visible: dayItem.holiday
+                            implicitWidth: 3
+                            implicitHeight: 3
+                            radius: 2
+                            color: Colours.palette.m3tertiary
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.selectedDate = dayItem.model.date
                     }
                 }
             }
@@ -208,6 +258,30 @@ CustomMouseArea {
                 Behavior on y {
                     Anim {}
                 }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.selectedEvents.length > 0
+            spacing: Tokens.spacing.small
+
+            MaterialIcon {
+                text: root.selectedEvents.some(event => event.holiday) ? "event_available" : "calendar_today"
+                color: root.selectedEvents.some(event => event.holiday) ? Colours.palette.m3tertiary : Colours.palette.m3primary
+                font: Tokens.font.icon.small
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: {
+                    const labels = root.selectedEvents.slice(0, 3).map(event => event.title);
+                    const remaining = root.selectedEvents.length - labels.length;
+                    return labels.join(" • ") + (remaining > 0 ? qsTr(" • +%1 more").arg(remaining) : "");
+                }
+                color: Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.label.small
+                elide: Text.ElideRight
             }
         }
     }

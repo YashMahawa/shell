@@ -42,12 +42,18 @@ Singleton {
     property bool userSelectedSource: false
     property bool restoringSources: false
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
+    property int consumerCount: 0
+    readonly property bool active: consumerCount > 0
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
     readonly property alias model: lyricsModel
     readonly property bool hasLyrics: lyricsModel.count > 0
     readonly property string cacheDir: `${Paths.state}/lyrics-plus`
     readonly property var trackSync: {
+        if (!root.active) {
+            Lyrics.clearTrack();
+            return "";
+        }
         const p = Players.active;
         if (p)
             Lyrics.setTrack(_queryArtist(), _queryTitle(), p.trackAlbum, p.length);
@@ -58,12 +64,37 @@ Singleton {
 
     onRomanizeLyricsChanged: {
         root.loadedKey = "";
-        root.load();
+        if (root.active)
+            root.load();
     }
 
     onPreferredBackendChanged: {
         root.loadedKey = "";
-        root.load();
+        if (root.active)
+            root.load();
+    }
+
+    function retain(): void {
+        consumerCount++;
+        if (consumerCount === 1)
+            load();
+    }
+
+    function release(): void {
+        consumerCount = Math.max(0, consumerCount - 1);
+        if (consumerCount === 0) {
+            loadDebounce.stop();
+            cacheDelay.stop();
+            paxPreferenceTimeout.stop();
+            onlineTimeout.stop();
+            youtubeStartDelay.stop();
+            youtubeFallbackDelay.stop();
+            youtubeTimeout.stop();
+            root.requestId++;
+            if (youtubeProcess.running)
+                youtubeProcess.running = false;
+            root.loading = false;
+        }
     }
 
     function _keyForPlayer(): string {
@@ -407,6 +438,8 @@ Singleton {
     }
 
     function load(): void {
+        if (!root.active)
+            return;
         loadDebounce.restart();
     }
 
@@ -844,7 +877,7 @@ Singleton {
 
     Timer {
         interval: 500
-        running: root.hasLyrics && !!Players.active
+        running: root.active && root.hasLyrics && !!Players.active
         repeat: true
         onTriggered: root.updatePosition()
     }
@@ -1047,7 +1080,8 @@ Singleton {
     Connections {
         target: Players
         function onActiveChanged(): void {
-            root.load();
+            if (root.active)
+                root.load();
         }
     }
 
@@ -1055,13 +1089,16 @@ Singleton {
         target: Players.active
         ignoreUnknownSignals: true
         function onPostTrackChanged(): void {
-            root.load();
+            if (root.active)
+                root.load();
         }
         function onTrackTitleChanged(): void {
-            root.load();
+            if (root.active)
+                root.load();
         }
         function onTrackArtistChanged(): void {
-            root.load();
+            if (root.active)
+                root.load();
         }
     }
 
@@ -1076,5 +1113,4 @@ Singleton {
         }
     }
 
-    Component.onCompleted: load()
 }

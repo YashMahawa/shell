@@ -14,12 +14,29 @@ Scope {
     readonly property bool hasFullscreen: Hypr.focusedWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1) ?? false
     readonly property bool lyricsServiceActive: SyllableLyrics.loading || SyllableLyrics.hasLyrics
 
+    function openNexus(page: string): void {
+        const focused = Hypr.focusedMonitor?.name ?? "";
+        let target = null;
+        for (const screen of Screens.screens) {
+            const popouts = Visibilities.bars.get(screen)?.popouts;
+            if (!popouts)
+                continue;
+            popouts.close();
+            if (screen.name === focused)
+                target = popouts;
+            else if (!target)
+                target = popouts;
+        }
+        if (target)
+            target.detach(page);
+    }
+
     // qmllint disable unresolved-type
     CustomShortcut {
         // qmllint enable unresolved-type
         name: "nexus"
         description: "Open nexus"
-        onPressed: WindowFactory.create()
+        onPressed: root.openNexus("appearance")
     }
 
     // qmllint disable unresolved-type
@@ -146,6 +163,16 @@ Scope {
     }
 
     IpcHandler {
+        function closeAll(): void {
+            for (const visibilities of Visibilities.screens.values()) {
+                visibilities.launcher = false;
+                visibilities.session = false;
+                visibilities.dashboard = false;
+                visibilities.utilities = false;
+                visibilities.sidebar = false;
+            }
+        }
+
         function toggle(drawer: string): void {
             if (list().split("\n").includes(drawer)) {
                 if (root.hasFullscreen && ["launcher", "session", "dashboard"].includes(drawer))
@@ -167,13 +194,15 @@ Scope {
 
     IpcHandler {
         function open(): void {
-            WindowFactory.create();
+            root.openNexus("appearance");
         }
 
         function openDisplay(): void {
-            WindowFactory.create(undefined, {
-                "initialPage": 1
-            });
+            root.openNexus("display");
+        }
+
+        function openNetwork(): void {
+            root.openNexus("network");
         }
 
         target: "nexus"

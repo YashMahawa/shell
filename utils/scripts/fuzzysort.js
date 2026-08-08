@@ -322,6 +322,7 @@ var getPrepared = (target) => {
     if(targetPrepared !== undefined) return targetPrepared
     targetPrepared = prepare(target)
     preparedCache.set(target, targetPrepared)
+    trimCache(preparedCache, 10000)
     return targetPrepared
 }
 var getPreparedSearch = (search) => {
@@ -330,7 +331,12 @@ var getPreparedSearch = (search) => {
     if(searchPrepared !== undefined) return searchPrepared
     searchPrepared = prepareSearch(search)
     preparedSearchCache.set(search, searchPrepared)
+    trimCache(preparedSearchCache, 1000)
     return searchPrepared
+}
+
+var trimCache = (cache, maxSize) => {
+    while(cache.size > maxSize) cache.delete(cache.keys().next().value)
 }
 
 
@@ -478,8 +484,6 @@ var algorithm = (preparedSearch, prepared, allowSpaces=false, allowPartialMatch=
 
         if(uniqueBeginningIndexes > 24) score *= (uniqueBeginningIndexes-24)*10 // quite arbitrary numbers here ...
     }
-
-    score -= (targetLen - searchLen)/2 // penality for longer targets
 
     if(isSubstring)          score /= 1+searchLen*searchLen*1 // bonus for being a full substring
     if(isSubstringBeginning) score /= 1+searchLen*searchLen*1 // bonus for substring starting on a beginningIndex
@@ -702,4 +706,3 @@ var noTarget = prepare('')
 // Hacked version of https://github.com/lemire/FastPriorityQueue.js
 var fastpriorityqueue=r=>{var e=[],o=0,a={},v=r=>{for(var a=0,v=e[a],c=1;c<o;){var s=c+1;a=c,s<o&&e[s]._score<e[c]._score&&(a=s),e[a-1>>1]=e[a],c=1+(a<<1)}for(var f=a-1>>1;a>0&&v._score<e[f]._score;f=(a=f)-1>>1)e[a]=e[f];e[a]=v};return a.add=(r=>{var a=o;e[o++]=r;for(var v=a-1>>1;a>0&&r._score<e[v]._score;v=(a=v)-1>>1)e[a]=e[v];e[a]=r}),a.poll=(r=>{if(0!==o){var a=e[0];return e[0]=e[--o],v(),a}}),a.peek=(r=>{if(0!==o)return e[0]}),a.replaceTop=(r=>{e[0]=r,v()}),a}
 var q = fastpriorityqueue() // reuse this
-

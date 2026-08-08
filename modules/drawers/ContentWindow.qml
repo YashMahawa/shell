@@ -73,7 +73,7 @@ StyledWindow {
     WlrLayershell.keyboardFocus: {
         if (visibilities.launcher || visibilities.session)
             return WlrKeyboardFocus.OnDemand;
-        if (panels.popouts.isDetached)
+        if (panels.popouts.isDetached && panels.popouts.detachedMode !== "winfo")
             return WlrKeyboardFocus.OnDemand;
         if (panels.popouts.hasCurrent
             && (panels.popouts.currentName === "wirelesspassword"
@@ -140,6 +140,7 @@ StyledWindow {
     }
 
     StyledRect {
+        id: detachedScrim
         anchors.fill: parent
         opacity: (visibilities.session && Config.session.enabled)
             || (panels.popouts.detachedMode !== "" && panels.popouts.detachedMode !== "clipboard") ? 0.5 : 0
@@ -155,7 +156,9 @@ StyledWindow {
     Item {
         anchors.fill: parent
         opacity: root.surfaceColour.a
-        layer.enabled: true
+        // Fullscreen already drives shadowOpacity to zero. Avoid allocating a
+        // monitor-sized intermediate texture while preserving direct drawing.
+        layer.enabled: root.shadowOpacity > 0
         layer.effect: MultiEffect {
             shadowEnabled: true
             blurMax: 15

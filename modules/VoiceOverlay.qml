@@ -57,9 +57,15 @@ Scope {
                 anchors.fill: parent
                 anchors.margins: Tokens.padding.small
                 radius: Tokens.rounding.full
-                color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 1)
+                color: Colours.layer(
+                    Colours.palette.m3surfaceContainerHigh,
+                    TrueLite.effectsEnabled ? 0.72 : 0.96
+                )
                 border.width: 1
-                border.color: root.status === "error" ? Colours.palette.m3error : Colours.palette.m3primary
+                border.color: Colours.layer(
+                    root.status === "error" ? Colours.palette.m3error : Colours.palette.m3primary,
+                    0.72
+                )
 
                 Row {
                     anchors.fill: parent

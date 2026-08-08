@@ -15,6 +15,7 @@ StyledRect {
 
     required property var popouts
     property var bar: null
+    readonly property bool linkEnabled: true
     readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     function clipboardContains(x: real, y: real): bool {
@@ -26,6 +27,8 @@ StyledRect {
     }
 
     function linkContains(x: real, y: real): bool {
+        if (!linkEnabled)
+            return false;
         const point = linkAction.mapFromItem(root, x, y);
         const pad = 10;
         return point.x >= -pad && point.y >= -pad
@@ -64,6 +67,9 @@ StyledRect {
 
         ActionIcon {
             id: linkAction
+            visible: root.linkEnabled
+            Layout.preferredWidth: visible ? implicitWidth : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
             materialIcon: "hub"
             colour: Colours.palette.m3primary
         }
@@ -91,11 +97,9 @@ StyledRect {
                     else
                         Quickshell.execDetached(["caelestia", "shell", "clipboard", "open"]);
                 } else {
-                    // Click Link → same as hover open (side panel).
-                    root.setLinkCenter();
-                    root.popouts.sticky = false;
-                    root.popouts.currentName = "continuity";
-                    root.popouts.hasCurrent = true;
+                    // Click Link → centered, keyboard-safe Caelestia window.
+                    root.popouts.linkPage = "overview";
+                    root.popouts.detach("link");
                 }
             }
         }

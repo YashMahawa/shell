@@ -178,11 +178,16 @@ Singleton {
     component Monitor: QtObject {
         id: monitor
 
-        required property ShellScreen modelData
-        readonly property var ddcInfo: root.ddcMonitorMap[modelData.name] ?? null
+        required property var modelData
+        readonly property bool valid: modelData !== null && modelData !== undefined
+        readonly property string name: valid ? modelData.name : ""
+        readonly property string model: valid ? modelData.model : ""
+        readonly property var ddcInfo: valid ? (root.ddcMonitorMap[name] ?? null) : null
         readonly property bool isDdc: ddcInfo !== null
         readonly property string busNum: ddcInfo?.busNum ?? ""
-        readonly property bool isAppleDisplay: root.appleDisplayPresent && modelData.model.startsWith("StudioDisplay")
+        readonly property bool isAppleDisplay: valid && root.appleDisplayPresent && model.startsWith("StudioDisplay")
+        readonly property bool isInternalPanel: valid && (name.startsWith("eDP-")
+            || name.startsWith("LVDS-") || name.startsWith("DSI-"))
         property real brightness
         property real queuedBrightness: NaN
 
@@ -211,6 +216,8 @@ Singleton {
         }
 
         function setBrightness(value: real): void {
+            if (!valid)
+                return;
             value = Math.max(0, Math.min(1, value));
             const rounded = Math.round(value * 100);
             if (Math.round(brightness * 100) === rounded)
@@ -227,7 +234,7 @@ Singleton {
                 Quickshell.execDetached(["asdbctl", "set", rounded]);
             else if (isDdc)
                 Quickshell.execDetached(["ddcutil", "-b", busNum, "setvcp", "10", rounded]);
-            else
+            else if (isInternalPanel)
                 Quickshell.execDetached(["brightnessctl", "s", `${rounded}%`]);
 
             if (isDdc)
@@ -235,12 +242,18 @@ Singleton {
         }
 
         function initBrightness(): void {
+            if (!valid)
+                return;
             if (isAppleDisplay)
                 initProc.command = ["asdbctl", "get"];
             else if (isDdc)
                 initProc.command = ["ddcutil", "-b", busNum, "getvcp", "10", "--brief"];
-            else
+            else if (isInternalPanel)
                 initProc.command = ["sh", "-c", "echo a b c $(brightnessctl g) $(brightnessctl m)"];
+            else {
+                brightness = 0;
+                return;
+            }
 
             initProc.running = true;
         }
