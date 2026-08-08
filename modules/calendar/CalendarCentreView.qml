@@ -473,7 +473,7 @@ StyledClippingRect {
                         }
 
                         SettingsCard {
-                            title: Timetable.loaded ? Timetable.data.profile : qsTr("No timetable configured")
+                            title: Timetable.loaded ? qsTr("Timetable") : qsTr("No timetable configured")
                             detail: Timetable.loaded ? qsTr("Active %1 to %2 · private local file").arg(Timetable.data.termStart).arg(Timetable.data.termEnd) : Timetable.error
                             icon: "school"
                         }

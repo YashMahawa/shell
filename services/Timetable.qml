@@ -86,7 +86,7 @@ Singleton {
                 holiday: false,
                 allDay: false,
                 category: "class",
-                source: data.profile || qsTr("Timetable"),
+                source: qsTr("Timetable"),
                 startMs: start.getTime(),
                 durationMinutes: Math.max(1, minutes(entry.end) - minutes(entry.start))
             };
