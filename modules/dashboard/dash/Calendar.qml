@@ -18,6 +18,8 @@ CustomMouseArea {
     readonly property int currMonth: dashState.currentDate.getMonth()
     readonly property int currYear: dashState.currentDate.getFullYear()
     property date selectedDate: new Date()
+    property date hoveredDate: new Date()
+    property Item hoveredDayItem: null
     readonly property list<var> selectedEvents: CalendarEvents.eventsForDate(selectedDate)
 
     onCurrYearChanged: CalendarEvents.ensureYear(currYear)
@@ -27,6 +29,19 @@ CustomMouseArea {
             root.dashState.currentDate = new Date(root.currYear, root.currMonth - 1, 1);
         else if (event.angleDelta.y < 0)
             root.dashState.currentDate = new Date(root.currYear, root.currMonth + 1, 1);
+    }
+
+    function popupText(date: date): string {
+        const events = CalendarEvents.eventsForDate(date);
+        const heading = grid.locale.toString(date, "ddd, d MMMM");
+        if (events.length === 0)
+            return `${heading}\n${qsTr("No events")}`;
+
+        const labels = events.slice(0, 4).map(event => `• ${event.title}`);
+        const remaining = events.length - labels.length;
+        if (remaining > 0)
+            labels.push(qsTr("+%1 more").arg(remaining));
+        return `${heading}\n${labels.join("\n")}`;
     }
 
     anchors.left: parent.left
@@ -137,6 +152,7 @@ CustomMouseArea {
                     readonly property int load: CalendarEvents.eventLoadForDate(model.date)
                     readonly property bool holiday: CalendarEvents.holidaysForDate(model.date).length > 0
                     readonly property bool selected: CalendarEvents.dateKey(model.date) === CalendarEvents.dateKey(root.selectedDate)
+                    readonly property bool hovered: dayHover.containsMouse
 
                     implicitWidth: implicitHeight
                     implicitHeight: text.implicitHeight + Tokens.padding.medium
@@ -197,13 +213,35 @@ CustomMouseArea {
                     }
 
                     MouseArea {
+                        id: dayHover
+
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.ArrowCursor
-                        onEntered: root.selectedDate = dayItem.model.date
+                        onEntered: {
+                            root.selectedDate = dayItem.model.date;
+                            root.hoveredDate = dayItem.model.date;
+                            root.hoveredDayItem = dayItem;
+                            dayPopup.showTimer.restart();
+                        }
+                        onExited: {
+                            dayPopup.showTimer.stop();
+                            if (root.hoveredDayItem === dayItem) {
+                                dayPopup.tooltipVisible = false;
+                                root.hoveredDayItem = null;
+                            }
+                        }
                         onClicked: root.selectedDate = dayItem.model.date
                     }
                 }
+            }
+
+            Tooltip {
+                id: dayPopup
+
+                target: root.hoveredDayItem ?? grid
+                text: root.popupText(root.hoveredDate)
+                delay: 120
             }
 
             MaterialShape {
