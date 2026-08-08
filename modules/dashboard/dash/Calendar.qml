@@ -20,7 +20,6 @@ CustomMouseArea {
     property date selectedDate: new Date()
     property date hoveredDate: new Date()
     property Item hoveredDayItem: null
-    readonly property list<var> selectedEvents: CalendarEvents.eventsForDate(selectedDate)
 
     onCurrYearChanged: CalendarEvents.ensureYear(currYear)
 
@@ -151,6 +150,7 @@ CustomMouseArea {
                     required property var model
                     readonly property int load: CalendarEvents.eventLoadForDate(model.date)
                     readonly property bool holiday: CalendarEvents.holidaysForDate(model.date).length > 0
+                    readonly property bool hasCalendarEvent: CalendarEvents.eventsForDate(model.date).some(event => !event.holiday)
                     readonly property bool selected: CalendarEvents.dateKey(model.date) === CalendarEvents.dateKey(root.selectedDate)
                     readonly property bool hovered: dayHover.containsMouse
 
@@ -209,6 +209,14 @@ CustomMouseArea {
                             implicitHeight: 3
                             radius: 2
                             color: Colours.palette.m3tertiary
+                        }
+
+                        StyledRect {
+                            visible: dayItem.hasCalendarEvent && dayItem.load === 0
+                            implicitWidth: 3
+                            implicitHeight: 3
+                            radius: 2
+                            color: Colours.palette.m3primary
                         }
                     }
 
@@ -301,28 +309,5 @@ CustomMouseArea {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            visible: root.selectedEvents.length > 0
-            spacing: Tokens.spacing.small
-
-            MaterialIcon {
-                text: root.selectedEvents.some(event => event.holiday) ? "event_available" : "calendar_today"
-                color: root.selectedEvents.some(event => event.holiday) ? Colours.palette.m3tertiary : Colours.palette.m3primary
-                font: Tokens.font.icon.small
-            }
-
-            StyledText {
-                Layout.fillWidth: true
-                text: {
-                    const labels = root.selectedEvents.slice(0, 3).map(event => event.title);
-                    const remaining = root.selectedEvents.length - labels.length;
-                    return labels.join(" • ") + (remaining > 0 ? qsTr(" • +%1 more").arg(remaining) : "");
-                }
-                color: Colours.palette.m3onSurfaceVariant
-                font: Tokens.font.label.small
-                elide: Text.ElideRight
-            }
-        }
     }
 }

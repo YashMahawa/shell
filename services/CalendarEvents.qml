@@ -384,8 +384,19 @@ Singleton {
         };
 
         if (!event.rule?.FREQ) {
-            if (start >= rangeStart && start < rangeEnd)
+            if (event.start.allDay) {
+                // DTEND is exclusive for all-day iCalendar events. Expand the
+                // range so breaks and multi-day examinations appear on every
+                // affected date rather than only their first day.
+                const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                while (cursor < end && cursor < rangeEnd) {
+                    if (cursor >= rangeStart)
+                        append(new Date(cursor));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            } else if (start >= rangeStart && start < rangeEnd) {
                 append(start);
+            }
             return;
         }
 
