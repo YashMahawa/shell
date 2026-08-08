@@ -210,7 +210,7 @@ WlSessionLockSurface {
         onTriggered: root.revealContent()
     }
 
-    Image {
+    ScreencopyView {
         id: background
 
         anchors.fill: parent
