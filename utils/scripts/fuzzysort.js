@@ -82,6 +82,10 @@ var go = (search, targets, options) => {
     } else if(options?.keys) {
     var keys = options.keys
     var keysLen = keys.length
+    // These arrays are reused to reduce allocations. Trim them when a later
+    // query has fewer keys so stale prepared targets can be garbage collected.
+    tmpTargets.length = keysLen
+    tmpResults.length = keysLen
 
     outer: for(var i = 0; i < targetsLen; ++i) { var obj = targets[i]
 

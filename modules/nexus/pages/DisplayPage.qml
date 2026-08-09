@@ -243,9 +243,28 @@ PageBase {
             }
         }
 
-        Component {
-            id: dynamicMenuItem
-            MenuItem {}
+        Variants {
+            id: resolutionVariants
+
+            model: root.resolutions()
+
+            MenuItem {
+                required property string modelData
+
+                text: modelData
+            }
+        }
+
+        Variants {
+            id: refreshVariants
+
+            model: root.refreshRates()
+
+            MenuItem {
+                required property real modelData
+
+                text: `${modelData} Hz`
+            }
         }
 
         ConnectedRect {
@@ -393,7 +412,7 @@ PageBase {
             first: true
             label: qsTr("Resolution")
             subtext: qsTr("Native resolution gives the sharpest image")
-            menuItems: root.resolutions().map(value => dynamicMenuItem.createObject(root, { text: value }))
+            menuItems: resolutionVariants.instances
             active: menuItems[Math.max(0, root.resolutions().indexOf(root.selectedResolution))] ?? null
             fallbackText: root.selectedResolution
             fallbackIcon: "aspect_ratio"
@@ -408,7 +427,7 @@ PageBase {
             Layout.fillWidth: true
             label: qsTr("Refresh rate")
             subtext: qsTr("Rates supported by the current connection")
-            menuItems: root.refreshRates().map(value => dynamicMenuItem.createObject(root, { text: `${value} Hz` }))
+            menuItems: refreshVariants.instances
             active: menuItems[Math.max(0, root.refreshRates().findIndex(value => Math.abs(value - root.selectedRefresh) < 0.02))] ?? null
             fallbackText: `${root.selectedRefresh} Hz`
             fallbackIcon: "speed"

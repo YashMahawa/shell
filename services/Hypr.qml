@@ -39,11 +39,21 @@ Singleton {
 
     property bool hadKeyboard
     property string lastSpecialWorkspace: ""
+    property bool refreshWorkspacesPending: false
+    property bool refreshMonitorsPending: false
+    property bool refreshToplevelsPending: false
 
     signal configReloaded
 
     function dispatch(request: string): string {
         return Hyprland.dispatch(request);
+    }
+
+    function scheduleRefresh(workspaces: bool, monitors: bool, toplevels: bool): void {
+        refreshWorkspacesPending = refreshWorkspacesPending || workspaces;
+        refreshMonitorsPending = refreshMonitorsPending || monitors;
+        refreshToplevelsPending = refreshToplevelsPending || toplevels;
+        refreshTimer.restart();
     }
 
     function cycleSpecialWorkspace(direction: string): void {
@@ -134,17 +144,15 @@ Singleton {
                 root.configReloaded();
                 root.reloadDynamicConfs();
             } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(n)) {
-                Hyprland.refreshWorkspaces();
-                Hyprland.refreshMonitors();
+                root.scheduleRefresh(true, true, false);
             } else if (["openwindow", "closewindow", "movewindow"].includes(n)) {
-                Hyprland.refreshToplevels();
-                Hyprland.refreshWorkspaces();
+                root.scheduleRefresh(true, false, true);
             } else if (n.includes("mon")) {
-                Hyprland.refreshMonitors();
+                root.scheduleRefresh(false, true, false);
             } else if (n.includes("workspace")) {
-                Hyprland.refreshWorkspaces();
+                root.scheduleRefresh(true, false, false);
             } else if (n.includes("window") || n.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(n)) {
-                Hyprland.refreshToplevels();
+                root.scheduleRefresh(false, false, true);
             }
         }
 
@@ -153,7 +161,7 @@ Singleton {
 
     Connections {
         function onLastIpcObjectChanged(): void {
-            const specialName = root.focusedMonitor.lastIpcObject.specialWorkspace.name;
+            const specialName = root.focusedMonitor?.lastIpcObject?.specialWorkspace?.name ?? "";
 
             if (specialName && specialName.startsWith("special:")) {
                 root.lastSpecialWorkspace = specialName;
@@ -161,6 +169,27 @@ Singleton {
         }
 
         target: root.focusedMonitor
+    }
+
+    Timer {
+        id: refreshTimer
+
+        interval: 24
+        onTriggered: {
+            const refreshWorkspaces = root.refreshWorkspacesPending;
+            const refreshMonitors = root.refreshMonitorsPending;
+            const refreshToplevels = root.refreshToplevelsPending;
+            root.refreshWorkspacesPending = false;
+            root.refreshMonitorsPending = false;
+            root.refreshToplevelsPending = false;
+
+            if (refreshWorkspaces)
+                Hyprland.refreshWorkspaces();
+            if (refreshMonitors)
+                Hyprland.refreshMonitors();
+            if (refreshToplevels)
+                Hyprland.refreshToplevels();
+        }
     }
 
     FileView {

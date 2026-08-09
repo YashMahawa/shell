@@ -76,23 +76,48 @@ Singleton {
         return (error.includes("Secrets were required") || error.includes("Secrets were required, but not provided") || error.includes("No secrets provided") || error.includes("802-11-wireless-security.psk") || error.includes("password for") || (error.includes("password") && !error.includes("Connection activated") && !error.includes("successfully")) || (error.includes("Secrets") && !error.includes("Connection activated") && !error.includes("successfully")) || (error.includes("802.11") && !error.includes("Connection activated") && !error.includes("successfully"))) && !error.includes("Connection activated") && !error.includes("successfully");
     }
 
+    // nmcli's terse output escapes field separators (for example BSSID
+    // colons) with a backslash. A plain split(":") corrupts those fields and
+    // can make the UI report the wrong profile, AP, or connection state.
+    function splitTerseLine(line: string): list<string> {
+        const fields = [];
+        let field = "";
+        let escaped = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const character = line[i];
+            if (escaped) {
+                field += character;
+                escaped = false;
+            } else if (character === "\\") {
+                escaped = true;
+            } else if (character === ":") {
+                fields.push(field);
+                field = "";
+            } else {
+                field += character;
+            }
+        }
+
+        if (escaped)
+            field += "\\";
+        fields.push(field);
+        return fields;
+    }
+
     function parseNetworkOutput(output: string): list<var> {
         if (!output || output.length === 0) {
             return [];
         }
 
-        const PLACEHOLDER = "STRINGWHICHHOPEFULLYWONTBEUSED";
-        const rep = new RegExp("\\\\:", "g");
-        const rep2 = new RegExp(PLACEHOLDER, "g");
-
         const allNetworks = output.trim().split("\n").filter(line => line && line.length > 0).map(n => {
-            const net = n.replace(rep, PLACEHOLDER).split(":");
+            const net = splitTerseLine(n);
             return {
                 active: net[0] === "yes",
                 strength: parseInt(net[1] || "0", 10) || 0,
                 frequency: parseInt(net[2] || "0", 10) || 0,
-                ssid: (net[3]?.replace(rep2, ":") ?? "").trim(),
-                bssid: (net[4]?.replace(rep2, ":") ?? "").trim(),
+                ssid: (net[3] ?? "").trim(),
+                bssid: (net[4] ?? "").trim(),
                 security: (net[5] ?? "").trim()
             };
         }).filter(n => n.ssid && n.ssid.length > 0);
@@ -223,7 +248,7 @@ Singleton {
         const lines = output.trim().split("\n");
 
         for (const line of lines) {
-            const parts = line.split(":");
+            const parts = splitTerseLine(line);
             if (parts.length >= 2) {
                 const deviceType = parts[1];
                 let shouldInclude = false;
@@ -624,7 +649,7 @@ Singleton {
         const vpns = [];
 
         for (const line of lines) {
-            const parts = line.split(":");
+            const parts = splitTerseLine(line);
             if (parts.length >= 2) {
                 let name = parts[0];
                 let type = parts[1];
@@ -865,7 +890,7 @@ Singleton {
             let activeConn = "";
 
             for (const line of lines) {
-                const parts = line.split(":");
+                const parts = splitTerseLine(line);
                 if (parts.length >= 4) {
                     const state = parts[2] || "";
                     if (isConnectedState(state)) {
@@ -1062,7 +1087,7 @@ Singleton {
                 if (!line || line.length === 0)
                     continue;
 
-                const parts = line.split(":");
+                const parts = splitTerseLine(line);
                 if (parts.length >= 1) {
                     const ssid = parts[0].trim();
                     if (ssid && ssid.length > 0 && !seenSSIDs.has(ssid)) {

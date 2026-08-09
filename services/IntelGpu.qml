@@ -11,6 +11,7 @@ Singleton {
     readonly property string name: "Intel iGPU"
     property real percentage: 0
     property bool available: false
+    property int refCount: 0
 
     function refresh(): void {
         activeFreq.reload();
@@ -35,7 +36,7 @@ Singleton {
 
     Timer {
         interval: GlobalConfig.dashboard.resourceUpdateInterval
-        running: true
+        running: root.refCount > 0
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refresh()

@@ -25,15 +25,6 @@ Scope {
         return true;
     }
 
-    function release(): void {
-        engagePending = false;
-        if (captureProc.running)
-            captureProc.running = false;
-        writeLockState("unlocked");
-        if (lock.locked)
-            lock.unlock();
-    }
-
     Process {
         id: lockStateProc
     }
@@ -103,14 +94,6 @@ Scope {
         onPressed: root.engage()
     }
 
-    // qmllint disable unresolved-type
-    CustomShortcut {
-        // qmllint enable unresolved-type
-        name: "unlock"
-        description: "Unlock the current session"
-        onPressed: root.release()
-    }
-
     IpcHandler {
         function safeLock(): bool {
             if (lock.locked)
@@ -120,10 +103,6 @@ Scope {
 
         function lock(): void {
             safeLock();
-        }
-
-        function unlock(): void {
-            root.release();
         }
 
         function isLocked(): bool {
