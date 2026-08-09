@@ -195,7 +195,7 @@ CustomMouseArea {
             if (!dashboardShortcutActive)
                 visibilities.dashboard = false;
 
-            if (!utilitiesShortcutActive)
+            if (!utilitiesShortcutActive && !root.panels.utilities.interactionPinned)
                 visibilities.utilities = false;
 
             if (sidebarHoverActive)
@@ -397,7 +397,9 @@ CustomMouseArea {
         const showUtilities = !visibilities.sidebar && !sidebarHoverActive && inBottomPanel(panels.utilities, x, y, true);
 
         // Always update visibility based on hover if not in shortcut mode
-        if (!utilitiesShortcutActive) {
+        if (panels.utilities.interactionPinned) {
+            visibilities.utilities = true;
+        } else if (!utilitiesShortcutActive) {
             visibilities.utilities = showUtilities;
         } else if (showUtilities) {
             // If hovering over utilities area while in shortcut mode, transition to hover control

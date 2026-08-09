@@ -25,6 +25,7 @@ Item {
         reloadableId: "utilities"
     }
     readonly property bool shouldBeActive: visibilities.utilities && !visibilities.sidebar && Config.utilities.enabled && !(visibilities.session && Config.session.enabled)
+    readonly property bool interactionPinned: (content.item as Content)?.recorderMenuExpanded ?? false
     readonly property real totalPadding: content.anchors.margins + CUtils.clamp(content.anchors.margins - Config.border.thickness, 0, content.anchors.margins)
     readonly property real nonAnimHeight: ((content.item as Content)?.nonAnimHeight ?? 0) + totalPadding
     property real offsetScale: shouldBeActive ? 0 : 1

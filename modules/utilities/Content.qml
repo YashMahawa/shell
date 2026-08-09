@@ -14,6 +14,7 @@ Item {
     required property matrix4x4 deformMatrix
 
     readonly property real nonAnimHeight: idleInhibit.nonAnimHeight + record.nonAnimHeight + toggles.implicitHeight + layout.spacing * 2
+    readonly property alias recorderMenuExpanded: record.menuExpanded
 
     implicitWidth: layout.implicitWidth
     implicitHeight: layout.implicitHeight
