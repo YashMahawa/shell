@@ -7,52 +7,12 @@ import Quickshell.Wayland
 import qs.components.misc
 
 Scope {
-    id: root
-
     property alias lock: lock
-    property bool engagePending: false
-
-    function writeLockState(state: string): void {
-        lockStateProc.command = ["/home/yash/.local/bin/caelestia-lock-state", state];
-        lockStateProc.running = true;
-    }
-
-    function engage(): bool {
-        if (lock.locked || engagePending)
-            return true;
-        engagePending = true;
-        captureProc.running = true;
-        return true;
-    }
-
-    Process {
-        id: lockStateProc
-    }
-
-    Process {
-        id: captureProc
-
-        command: ["/home/yash/.local/bin/caelestia-lock-capture"]
-        onExited: {
-            if (!root.engagePending)
-                return;
-            root.engagePending = false;
-            root.writeLockState("locked");
-            lock.locked = true;
-        }
-    }
 
     WlSessionLock {
         id: lock
 
         signal unlock
-        onSecureChanged: {
-            lockStateProc.command = [
-                "/home/yash/.local/bin/caelestia-lock-state",
-                secure ? "locked" : "unlocked"
-            ];
-            lockStateProc.running = true;
-        }
 
         LockSurface {
             lock: lock
@@ -67,13 +27,7 @@ Scope {
     }
 
     Loader {
-        id: screencopyPreloader
-
         asynchronous: true
-        // Prime Quickshell's screencopy/ICC backend while the session is still
-        // unlocked. If its first initialization happens after the session-lock
-        // protocol is active, Hyprland correctly refuses the capture and the
-        // lock surface has nothing available for its blur effect.
         active: true
         onLoaded: active = false
 
@@ -91,18 +45,29 @@ Scope {
         // qmllint enable unresolved-type
         name: "lock"
         description: "Lock the current session"
-        onPressed: root.engage()
+        onPressed: lock.locked = true
+    }
+
+    // qmllint disable unresolved-type
+    CustomShortcut {
+        // qmllint enable unresolved-type
+        name: "unlock"
+        description: "Unlock the current session"
+        onPressed: lock.unlock()
     }
 
     IpcHandler {
         function safeLock(): bool {
-            if (lock.locked)
-                return true;
-            return root.engage();
+            lock.locked = true;
+            return true;
         }
 
         function lock(): void {
-            safeLock();
+            lock.locked = true;
+        }
+
+        function unlock(): void {
+            lock.unlock();
         }
 
         function isLocked(): bool {

@@ -2,10 +2,10 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
-import Quickshell
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
+import qs.components.images
 import qs.services
 
 WlSessionLockSurface {
@@ -15,58 +15,13 @@ WlSessionLockSurface {
     required property Pam pam
 
     readonly property alias unlocking: unlockAnim.running
-    readonly property ShellScreen captureScreen: Quickshell.screens.find(
-        candidate => candidate === root.screen
-    ) ?? null
 
     contentItem.Config.screen: screen.name
     contentItem.Tokens.screen: screen.name
-    contentItem.implicitWidth: root.screen?.width ?? 1920
-    contentItem.implicitHeight: root.screen?.height ?? 1080
-    contentItem.width: root.screen?.width ?? 1920
-    contentItem.height: root.screen?.height ?? 1080
 
-    // Never expose an unblurred desktop while the pre-lock capture is loading
-    // or unavailable.
-    color: Colours.palette.m3surface
-
-    function prepareContent(): void {
-        background.opacity = 0;
-        lockContent.opacity = 1;
-        lockContent.scale = 0;
-        lockContent.rotation = 180;
-        lockContent.implicitWidth = lockContent.size;
-        lockContent.implicitHeight = lockContent.size;
-        lockBg.radius = lockContent.radius;
-        lockIcon.opacity = 1;
-        lockIcon.rotation = 180;
-        content.opacity = 0;
-        content.scale = 0;
-    }
-
-    function revealContent(): void {
-        background.opacity = 1;
-        lockContent.opacity = 1;
-        lockContent.scale = 1;
-        lockContent.rotation = 360;
-        lockContent.implicitWidth = lockContent.expandedWidth;
-        lockContent.implicitHeight = lockContent.expandedHeight;
-        lockBg.radius = lockContent.Tokens.rounding.extraLarge * 1.5;
-        lockIcon.opacity = 0;
-        content.opacity = 1;
-        content.scale = 1;
-    }
+    color: "transparent"
 
     Connections {
-        function onLockedChanged(): void {
-            if (!root.lock.locked)
-                return;
-
-            root.prepareContent();
-            initAnim.restart();
-            revealFallback.restart();
-        }
-
         function onUnlock(): void {
             unlockAnim.start();
         }
@@ -134,7 +89,6 @@ WlSessionLockSurface {
         id: initAnim
 
         running: true
-        onStopped: root.revealContent()
 
         Anim {
             target: background
@@ -201,25 +155,11 @@ WlSessionLockSurface {
         }
     }
 
-    Timer {
-        id: revealFallback
-
-        interval: 1800
-        running: true
-        repeat: false
-        onTriggered: root.revealContent()
-    }
-
-    ScreencopyView {
+    Item {
         id: background
 
         anchors.fill: parent
-        // An unlocked shell does not need a continuous screen capture. More
-        // importantly, clearing this before an output disappears prevents the
-        // ext-image-copy object from retaining a destroyed Wayland output.
-        captureSource: root.lock.locked ? root.captureScreen : null
         opacity: 0
-        z: -1
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -228,6 +168,27 @@ WlSessionLockSurface {
             blur: 1
             blurMax: 64
             blurMultiplier: 1
+        }
+
+        Loader {
+            anchors.fill: parent
+            sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
+        }
+    }
+
+    Component {
+        id: screencopyBackground
+
+        ScreencopyView {
+            captureSource: root.screen
+        }
+    }
+
+    Component {
+        id: wallpaperBackground
+
+        CachingImage {
+            path: Wallpapers.current
         }
     }
 
@@ -244,8 +205,8 @@ WlSessionLockSurface {
         anchors.centerIn: parent
         implicitWidth: size
         implicitHeight: size
-        z: 1
 
+        visible: Config.lock.enabled
         rotation: 180
         scale: 0
 

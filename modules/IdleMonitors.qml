@@ -27,9 +27,9 @@ Scope {
             return;
 
         if (action === "lock")
-            lock.engage();
+            lock.lock.locked = true;
         else if (action === "unlock")
-            lock.release();
+            lock.lock.unlock();
         else if (typeof action === "string")
             Hypr.dispatch(Hypr.usingLua && ["dpms off", "dpms on"].includes(action) ? `hl.dsp.dpms({ action = "${action === "dpms off" ? "disable" : "enable"}" })` : action);
         else
@@ -39,16 +39,13 @@ Scope {
     LogindManager {
         onAboutToSleep: {
             if (GlobalConfig.general.idle.lockBeforeSleep)
-                root.lock.engage();
+                root.lock.lock.locked = true;
         }
-        // Rebuild the one-screen layout after the GPU/display link has resumed.
-        // This also powers the chosen physical output before any fallback can
-        // become visible.
-        // Display recovery is deliberately handled once by the delayed system
-        // resume service. Running it here as user.slice thaws races Hyprland's
-        // DRM resume and caused duplicate layout changes and visible flashing.
-        onLockRequested: root.lock.engage()
-        onUnlockRequested: root.lock.release()
+        // Output recovery is handled by the persistent display watcher after
+        // Hyprland reports a real connector change. Do not reconfigure outputs
+        // from the sleep transition itself; the GPU may still be resuming.
+        onLockRequested: root.lock.lock.locked = true
+        onUnlockRequested: root.lock.lock.unlock()
     }
 
     Variants {
