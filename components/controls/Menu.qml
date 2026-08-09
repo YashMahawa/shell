@@ -30,6 +30,7 @@ MouseArea {
     property list<MenuItem> items
     property MenuItem active: items[0] ?? null
     property bool expanded
+    property bool dismissReady: false
 
     signal itemSelected(item: MenuItem)
 
@@ -41,7 +42,18 @@ MouseArea {
     anchors.fill: parent
 
     enabled: expanded
-    onClicked: expanded = false
+    onClicked: {
+        // The click that opens a reparented menu can reach this full-window
+        // dismissal surface in the same pointer sequence. Ignore that opening
+        // click, then enable normal click-away behaviour immediately after it.
+        if (dismissReady)
+            expanded = false;
+    }
+    onExpandedChanged: {
+        dismissReady = false;
+        if (expanded)
+            dismissGuard.restart();
+    }
 
     opacity: expanded ? 1 : 0
     layer.enabled: opacity < 1
@@ -50,6 +62,13 @@ MouseArea {
         Anim {
             type: Anim.DefaultEffects
         }
+    }
+
+    Timer {
+        id: dismissGuard
+
+        interval: 120
+        onTriggered: root.dismissReady = root.expanded
     }
 
     TransformWatcher {
