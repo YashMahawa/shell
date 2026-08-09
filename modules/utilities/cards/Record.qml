@@ -77,7 +77,7 @@ StyledRect {
 
             SplitButton {
                 disabled: Recorder.running
-                menuOnTop: true
+                menuOnTop: false
 
                 active: menuItems.find(m => root.props.recordingMode === m.icon + m.text) ?? menuItems[0]
                 menu.onItemSelected: item => root.props.recordingMode = item.icon + item.text

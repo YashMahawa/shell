@@ -9,7 +9,7 @@ import qs.components.effects
 import qs.services
 import qs.modules.drawers
 
-MouseArea {
+Item {
     id: root
 
     enum Side {
@@ -41,14 +41,6 @@ MouseArea {
     }
     anchors.fill: parent
 
-    enabled: expanded
-    onClicked: {
-        // The click that opens a reparented menu can reach this full-window
-        // dismissal surface in the same pointer sequence. Ignore that opening
-        // click, then enable normal click-away behaviour immediately after it.
-        if (dismissReady)
-            expanded = false;
-    }
     onExpandedChanged: {
         dismissReady = false;
         if (expanded)
@@ -71,6 +63,12 @@ MouseArea {
         onTriggered: root.dismissReady = root.expanded
     }
 
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.expanded && root.dismissReady
+        onClicked: root.expanded = false
+    }
+
     TransformWatcher {
         id: watcher
 
@@ -80,6 +78,8 @@ MouseArea {
 
     Elevation {
         id: menu
+
+        z: 1
 
         x: {
             watcher.transform; // mapToItem is not reactive so this forces updates
