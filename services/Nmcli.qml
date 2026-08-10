@@ -1019,7 +1019,10 @@ Singleton {
     }
 
     function getNetworks(callback: var): void {
-        executeCommand(["-g", root.networkDetailFields, "d", "w"], result => {
+        // Reading the list must not implicitly trigger an off-channel scan.
+        // MT79xx adapters can pause traffic for the duration of that scan,
+        // causing periodic latency spikes and misleading signal jumps.
+        executeCommand(["-g", root.networkDetailFields, root.nmcliCommandDevice, root.nmcliCommandWifi, "list", "--rescan", "no"], result => {
             if (!result.success) {
                 if (callback)
                     callback([]);

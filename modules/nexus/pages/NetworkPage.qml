@@ -24,7 +24,10 @@ PageBase {
         spacing: Tokens.spacing.extraSmall / 2
 
         Timer {
-            running: root.visible && Nmcli.wifiEnabled
+            // Keep discovery fresh while disconnected. While connected, use
+            // NetworkManager's cache and leave active scans to the rescan
+            // button so traffic is not interrupted every interval.
+            running: root.visible && Nmcli.wifiEnabled && !Nmcli.wifiConnected
             repeat: true
             triggeredOnStart: true
             interval: GlobalConfig.nexus.networkRescanInterval
@@ -40,7 +43,7 @@ PageBase {
 
         Connections {
             function onWifiEnabledChanged(): void {
-                if (Nmcli.wifiEnabled)
+                if (Nmcli.wifiEnabled && !Nmcli.wifiConnected)
                     wifiScanDelay.start();
             }
 
