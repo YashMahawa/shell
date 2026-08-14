@@ -136,7 +136,7 @@ Scope {
     Process {
         id: unlockStateProc
 
-        command: ["/home/yash/.local/bin/caelestia-lock-state", "unlocked"]
+        command: [Quickshell.env("HOME") + "/.local/bin/caelestia-lock-state", "unlocked"]
     }
 
     Process {

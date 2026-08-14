@@ -37,10 +37,9 @@ Scope {
     }
 
     LogindManager {
-        onAboutToSleep: {
-            if (GlobalConfig.general.idle.lockBeforeSleep)
-                root.lock.lock.locked = true;
-        }
+        // The system pre-sleep service is the single lock owner. PrepareForSleep
+        // is only a notification and arrives too late to safely race another
+        // lock request from the root sleep transaction.
         // Output recovery is handled by the persistent display watcher after
         // Hyprland reports a real connector change. Do not reconfigure outputs
         // from the sleep transition itself; the GPU may still be resuming.

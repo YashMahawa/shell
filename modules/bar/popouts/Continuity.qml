@@ -44,7 +44,7 @@ Column {
     }
 
     FileView {
-        path: "/home/yash/.local/state/caelestia/continuity.json"
+        path: `${Paths.state}/continuity.json`
         watchChanges: true
         printErrors: false
         onFileChanged: reload()

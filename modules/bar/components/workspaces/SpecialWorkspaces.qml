@@ -253,7 +253,7 @@ Item {
             if (ws?.modelData)
                 Hypr.dispatch(Hypr.usingLua ? `hl.dsp.workspace.toggle_special("${ws.modelData.name.slice(8)}")` : `togglespecialworkspace ${ws.modelData.name.slice(8)}`);
             else
-                Quickshell.execDetached(["/home/yash/.local/bin/caelestia-star-workspace", "toggle", root.monitor.name]);
+                Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/caelestia-star-workspace", "toggle", root.monitor.name]);
         }
     }
 

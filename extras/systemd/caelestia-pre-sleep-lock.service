@@ -8,4 +8,4 @@ Type=oneshot
 ExecStart=/usr/local/bin/caelestia-pre-sleep-lock
 
 [Install]
-WantedBy=sleep.target
+RequiredBy=sleep.target

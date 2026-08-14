@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Io
+import Caelestia.Config
 
 Singleton {
     id: root
@@ -28,18 +29,18 @@ Singleton {
     }
 
     function toggle(): void {
-        Quickshell.execDetached(["/home/yash/.local/bin/caelestia-ultra-power", "toggle"]);
+        Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/caelestia-ultra-power", "toggle"]);
     }
 
     function selectProfile(profile: string): void {
         if (active)
-            Quickshell.execDetached(["/home/yash/.local/bin/caelestia-ultra-power", "off", profile]);
+            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/caelestia-ultra-power", "off", profile]);
         else
             Quickshell.execDetached(["powerprofilesctl", "set", profile]);
     }
 
     FileView {
-        path: "/home/yash/.local/state/caelestia/ultra-power.json"
+        path: `${Paths.state}/ultra-power.json`
         watchChanges: true
         printErrors: false
         onFileChanged: reload()

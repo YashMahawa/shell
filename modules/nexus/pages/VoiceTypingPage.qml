@@ -21,7 +21,7 @@ PageBase {
 
     function refresh(): void {
         if (!statusProc.running)
-            statusProc.exec(["/home/yash/.local/bin/caelestia-voice-settings", "status"]);
+            statusProc.exec([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "status"]);
     }
 
     function submit(command: var, data: string): void {
@@ -155,7 +155,7 @@ PageBase {
                         text: qsTr("Save")
                         enabled: keyField.text.length >= 20 && !manager.running
                         onClicked: {
-                            root.submit(["/home/yash/.local/bin/caelestia-voice-settings", "store", String(keyRow.index + 1)], keyField.text);
+                            root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "store", String(keyRow.index + 1)], keyField.text);
                             keyField.text = "";
                         }
                     }
@@ -163,7 +163,7 @@ PageBase {
                     TextButton {
                         text: qsTr("Remove")
                         enabled: root.storedKeys[keyRow.index] && !manager.running
-                        onClicked: root.submit(["/home/yash/.local/bin/caelestia-voice-settings", "clear", String(keyRow.index + 1)], "")
+                        onClicked: root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "clear", String(keyRow.index + 1)], "")
                     }
                 }
             }
@@ -216,7 +216,7 @@ PageBase {
                     Layout.alignment: Qt.AlignRight
                     text: qsTr("Save prompt")
                     enabled: promptField.text.length >= 40 && !manager.running
-                    onClicked: root.submit(["/home/yash/.local/bin/caelestia-voice-settings", "set-prompt"], JSON.stringify(promptField.text))
+                    onClicked: root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "set-prompt"], JSON.stringify(promptField.text))
                 }
             }
         }

@@ -1,32 +1,52 @@
 #!/usr/bin/env bash
-set -u
-
-USER_NAME="${CAELESTIA_USER:-yash}"
-USER_ID="${CAELESTIA_UID:-1000}"
-RUNTIME_DIR="/run/user/${USER_ID}"
-BUS="unix:path=${RUNTIME_DIR}/bus"
-IPC="${CAELESTIA_IPC:-/home/yash/.local/bin/caelestia-qs-ipc}"
-LOG="/var/log/caelestia-sleep-guard.log"
+set -euo pipefail
 
 log() {
-    printf '%s %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG" 2>/dev/null || true
+    printf '%s\n' "$*" >&2
 }
 
-run_user() {
-    /usr/bin/runuser -u "$USER_NAME" -- env \
-        XDG_RUNTIME_DIR="$RUNTIME_DIR" \
-        DBUS_SESSION_BUS_ADDRESS="$BUS" \
-        "$@"
-}
+session_id=""
+user_id=""
+user_name=""
+while read -r candidate _; do
+    [[ -n "$candidate" ]] || continue
+    active="$(loginctl show-session "$candidate" -p Active --value 2>/dev/null || true)"
+    remote="$(loginctl show-session "$candidate" -p Remote --value 2>/dev/null || true)"
+    type="$(loginctl show-session "$candidate" -p Type --value 2>/dev/null || true)"
+    if [[ "$active" == yes && "$remote" == no && ( "$type" == wayland || "$type" == x11 ) ]]; then
+        session_id="$candidate"
+        user_id="$(loginctl show-session "$candidate" -p User --value)"
+        user_name="$(loginctl show-session "$candidate" -p Name --value)"
+        break
+    fi
+done < <(loginctl list-sessions --no-legend 2>/dev/null || true)
 
-qs_ipc() {
-    run_user /usr/bin/timeout 4 "$IPC" "$@"
-}
-
-log "pre-sleep: requesting Caelestia lock before suspend"
-if qs_ipc lock safeLock >> "$LOG" 2>&1; then
-    log "pre-sleep: lock request accepted; waiting for lock animation"
-    /usr/bin/sleep 2.2
-else
-    log "pre-sleep: lock request failed; allowing suspend without restart"
+if [[ -z "$session_id" || -z "$user_id" || -z "$user_name" ]]; then
+    log "pre-sleep: no active local graphical session; nothing to lock"
+    exit 0
 fi
+
+user_home="$(getent passwd "$user_id" | cut -d: -f6)"
+runtime_dir="/run/user/${user_id}"
+ipc="${user_home}/.local/bin/caelestia-qs-ipc"
+run_user() {
+    /usr/bin/setpriv --reuid="$user_id" --regid="$user_id" --init-groups \
+        /usr/bin/env HOME="$user_home" USER="$user_name" LOGNAME="$user_name" \
+        XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus" "$@"
+}
+
+[[ -x "$ipc" ]] || { log "pre-sleep: IPC unavailable; refusing unsafe sleep"; exit 1; }
+run_user /usr/bin/timeout 4 "$ipc" lock safeLock >&2 || {
+    log "pre-sleep: lock request failed; refusing unsafe sleep"
+    exit 1
+}
+
+for _ in $(/usr/bin/seq 1 20); do
+    if run_user /usr/bin/timeout 1 "$ipc" lock isLocked 2>/dev/null | /usr/bin/grep -qx true; then
+        log "pre-sleep: secure lock confirmed"
+        exit 0
+    fi
+    /usr/bin/sleep 0.15
+done
+log "pre-sleep: lock confirmation timed out; refusing unsafe sleep"
+exit 1

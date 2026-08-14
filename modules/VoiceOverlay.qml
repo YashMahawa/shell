@@ -19,7 +19,7 @@ Scope {
 
     FileView {
         id: stateFile
-        path: "/home/yash/.local/state/caelestia/voice-state.json"
+        path: `${Paths.state}/voice-state.json`
         watchChanges: true
         printErrors: false
         onFileChanged: reload()

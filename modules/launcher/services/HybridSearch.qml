@@ -44,7 +44,7 @@ Singleton {
         }
         pending = false;
         searchProcess.requested = text;
-        searchProcess.command = ["/home/yash/.local/bin/caelestia-semantic-query", text, "-n", "10"];
+        searchProcess.command = [Quickshell.env("HOME") + "/.local/bin/caelestia-semantic-query", text, "-n", "10"];
         searchProcess.running = true;
     }
 

@@ -106,7 +106,7 @@ StyledClippingRect {
                 if (Hypr.activeWsId !== ws)
                     Hypr.dispatch(Hypr.usingLua ? `hl.dsp.focus({ workspace = "${ws}" })` : `workspace ${ws}`);
                 else
-                    Quickshell.execDetached(["/home/yash/.local/bin/caelestia-star-workspace", "toggle", Hypr.monitorFor(root.screen).name]);
+                    Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/caelestia-star-workspace", "toggle", Hypr.monitorFor(root.screen).name]);
             }
         }
 
