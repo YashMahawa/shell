@@ -69,6 +69,12 @@ QtObject {
             category: "shell"
         },
         {
+            label: qsTr("Windows"),
+            icon: "select_window",
+            description: qsTr("Window actions, behaviour and appearance"),
+            category: "shell"
+        },
+        {
             label: qsTr("Services"),
             icon: "build",
             description: qsTr("Poll intervals, lyrics backend"),

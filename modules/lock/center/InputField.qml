@@ -29,10 +29,7 @@ Item {
 
     Connections {
         function onBufferChanged(): void {
-            if (root.pam.buffer.length > root.buffer.length) {
-                charList.bindImWidth();
-            } else if (root.pam.buffer.length === 0) {
-                charList.implicitWidth = charList.implicitWidth;
+            if (root.pam.buffer.length === 0) {
                 placeholder.animate = true;
             }
 
@@ -79,18 +76,7 @@ Item {
     ListView {
         id: charList
 
-        readonly property int fullWidth: {
-            let w = (count - 1) * spacing;
-            for (let i = 0; i < count; i++)
-                w += ((itemAtIndex(i) as CharItem)?.nonAnimWidthScale ?? 1) * implicitHeight;
-            return w + implicitHeight; // Extra padding at ends
-        }
-
-        function bindImWidth(): void {
-            imWidthBehavior.enabled = false;
-            implicitWidth = Qt.binding(() => fullWidth);
-            imWidthBehavior.enabled = true;
-        }
+        readonly property real fullWidth: Math.max(implicitHeight, contentWidth + implicitHeight)
 
         anchors.centerIn: parent
         anchors.horizontalCenterOffset: implicitWidth > root.width ? -(implicitWidth - root.width) / 2 : 0

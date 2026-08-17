@@ -159,7 +159,7 @@ Scope {
     Timer {
         id: stateReset
 
-        interval: 4000
+        interval: 1200
         onTriggered: {
             if (root.state !== "max")
                 root.state = "";
