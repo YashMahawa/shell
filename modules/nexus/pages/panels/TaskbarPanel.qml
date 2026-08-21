@@ -45,25 +45,25 @@ PageBase {
                     id: itemLeft
 
                     text: qsTr("Left")
-                    onTriggered: GlobalConfig.bar.edge = "left"
+                    onClicked: GlobalConfig.bar.edge = "left"
                 },
                 MenuItem {
                     id: itemTop
 
                     text: qsTr("Top")
-                    onTriggered: GlobalConfig.bar.edge = "top"
+                    onClicked: GlobalConfig.bar.edge = "top"
                 },
                 MenuItem {
                     id: itemRight
 
                     text: qsTr("Right")
-                    onTriggered: GlobalConfig.bar.edge = "right"
+                    onClicked: GlobalConfig.bar.edge = "right"
                 },
                 MenuItem {
                     id: itemBottom
 
                     text: qsTr("Bottom")
-                    onTriggered: GlobalConfig.bar.edge = "bottom"
+                    onClicked: GlobalConfig.bar.edge = "bottom"
                 }
             ]
         }
