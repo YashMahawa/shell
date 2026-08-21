@@ -1,6 +1,7 @@
 #include "qalculator.hpp"
 
 #include <libqalculate/qalculate.h>
+#include <qscopeguard.h>
 #include <qtconcurrentrun.h>
 
 namespace caelestia {
@@ -9,23 +10,38 @@ QMutex Qalculator::s_calculatorMutex;
 
 Qalculator::Qalculator(QObject* parent)
     : QObject(parent) {
-    if (!CALCULATOR) {
-        // Calculator constructor sets the global `calculator` pointer (CALCULATOR macro),
-        // but we need to assign it to a var so compiler doesn't flag it as a leak
-        static const auto* const instance = new Calculator();
-        Q_UNUSED(instance)
-        CALCULATOR->loadExchangeRates();
-        CALCULATOR->loadGlobalDefinitions();
-        CALCULATOR->loadLocalDefinitions();
-    }
+    m_throttleTimer = new QTimer(this);
+    m_throttleTimer->setSingleShot(true);
+    m_throttleTimer->setInterval(250);
+    connect(m_throttleTimer, &QTimer::timeout, this, &Qalculator::onThrottleTimeout);
+
+    QtConcurrent::run([]() {
+        QMutexLocker locker(&s_calculatorMutex);
+        if (!CALCULATOR) {
+            // Calculator constructor sets the global `calculator` pointer (CALCULATOR macro),
+            // but we need to assign it to a var so compiler doesn't flag it as a leak
+            static const auto* const instance = new Calculator();
+            Q_UNUSED(instance)
+            CALCULATOR->loadExchangeRates();
+            CALCULATOR->loadGlobalDefinitions();
+            CALCULATOR->loadLocalDefinitions();
+        }
+    }).then(this, [this]() {
+        m_initialized = true;
+        emit initializedChanged();
+        checkPending();
+    });
 }
 
 QString Qalculator::eval(const QString& expr, bool printExpr) const {
-    if (expr.isEmpty()) {
+    if (expr.isEmpty() || !m_initialized) {
         return QString();
     }
 
-    QMutexLocker locker(&s_calculatorMutex);
+    if (!s_calculatorMutex.tryLock()) {
+        return QString();
+    }
+    const auto unlocker = qScopeGuard([]() { s_calculatorMutex.unlock(); });
 
     EvaluationOptions eo;
     PrintOptions po;
@@ -58,9 +74,13 @@ QString Qalculator::eval(const QString& expr, bool printExpr) const {
 }
 
 void Qalculator::evalAsync(const QString& expr) {
-    const quint64 gen = ++m_generation;
-
     if (expr.isEmpty()) {
+        m_pending = false;
+        m_pendingExpr.clear();
+        m_throttleTimer->stop();
+        const quint64 gen = ++m_generation;
+        Q_UNUSED(gen)
+
         if (!m_result.isEmpty()) {
             m_result.clear();
             emit resultChanged();
@@ -69,17 +89,39 @@ void Qalculator::evalAsync(const QString& expr) {
             m_rawResult.clear();
             emit rawResultChanged();
         }
-        if (m_busy) {
+        if (m_busy && !m_calcRunning) {
             m_busy = false;
             emit busyChanged();
         }
         return;
     }
 
+    m_pendingExpr = expr;
+    m_pending = true;
+    m_generation++;
+
     if (!m_busy) {
         m_busy = true;
         emit busyChanged();
     }
+
+    m_throttleTimer->start(250);
+}
+
+void Qalculator::onThrottleTimeout() {
+    checkPending();
+}
+
+void Qalculator::checkPending() {
+    if (!m_pending || !m_initialized || m_calcRunning) {
+        return;
+    }
+
+    m_pending = false;
+    m_calcRunning = true;
+
+    const QString expr = m_pendingExpr;
+    const quint64 gen = m_generation;
 
     QtConcurrent::run([expr]() -> QPair<QString, QString> {
         QMutexLocker locker(&s_calculatorMutex);
@@ -112,21 +154,26 @@ void Qalculator::evalAsync(const QString& expr) {
         const QString rawStr = QString::fromStdString(result);
         return { QString("%1 = %2").arg(parsed).arg(result), rawStr };
     }).then(this, [this, gen](QPair<QString, QString> result) {
-        if (gen != m_generation) {
-            return;
+        m_calcRunning = false;
+
+        if (gen == m_generation) {
+            const auto& [formatted, raw] = result;
+
+            if (m_result != formatted) {
+                m_result = formatted;
+                emit resultChanged();
+            }
+            if (m_rawResult != raw) {
+                m_rawResult = raw;
+                emit rawResultChanged();
+            }
         }
 
-        const auto& [formatted, raw] = result;
-
-        if (m_result != formatted) {
-            m_result = formatted;
-            emit resultChanged();
-        }
-        if (m_rawResult != raw) {
-            m_rawResult = raw;
-            emit rawResultChanged();
-        }
-        if (m_busy) {
+        if (m_pending) {
+            if (!m_throttleTimer->isActive()) {
+                checkPending();
+            }
+        } else if (m_busy) {
             m_busy = false;
             emit busyChanged();
         }
@@ -143,6 +190,10 @@ QString Qalculator::rawResult() const {
 
 bool Qalculator::busy() const {
     return m_busy;
+}
+
+bool Qalculator::initialized() const {
+    return m_initialized;
 }
 
 } // namespace caelestia
