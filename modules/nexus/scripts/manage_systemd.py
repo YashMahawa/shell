@@ -258,7 +258,54 @@ def get_services(user=False) -> dict:
         "services": services
     }
 
-def get_impact_preview(unit_name: str, user=False) -> dict:
+ALLOWED_ACTIONS = {"start", "stop", "restart", "enable", "disable", "reload", "mask", "unmask"}
+
+def execute_action(action: str, unit_name: str, scope: str = "user", expert: bool = False) -> dict:
+    action = action.lower().strip()
+    if action not in ALLOWED_ACTIONS:
+        err = f"Error: Invalid action '{action}'. Allowed actions: {', '.join(sorted(ALLOWED_ACTIONS))}"
+        sys.stderr.write(f"{err}\n")
+        return {"success": False, "error": err}
+
+    if not unit_name or not re.match(r'^[a-zA-Z0-9_@.:\\/\-]+$', unit_name) or unit_name.startswith('-'):
+        err = f"Error: Invalid unit name '{unit_name}'"
+        sys.stderr.write(f"{err}\n")
+        return {"success": False, "error": err}
+
+    is_user = (scope.lower() == "user")
+
+    if not is_user:
+        info = resolve_unit_info(unit_name, user=False)
+        is_crit, crit_reason = evaluate_critical_status(unit_name, info["aliases"])
+        allowlisted = is_allowlisted(unit_name, info["aliases"])
+
+        if not expert:
+            if is_crit:
+                err = f"Action rejected: Service '{unit_name}' is a critical system service ({crit_reason}). Enable Expert Mode to modify critical system services."
+                sys.stderr.write(f"{err}\n")
+                return {"success": False, "error": err}
+            if not allowlisted:
+                err = f"Action rejected: Service '{unit_name}' is not in the system allowlist. Enable Expert Mode to modify non-allowlisted system services."
+                sys.stderr.write(f"{err}\n")
+                return {"success": False, "error": err}
+
+        cmd = ["pkexec", "systemctl", action, unit_name]
+    else:
+        cmd = ["systemctl", "--user", action, unit_name]
+
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0:
+            err_msg = res.stderr.strip() or f"Command failed with exit code {res.returncode}"
+            sys.stderr.write(f"{err_msg}\n")
+            return {"success": False, "error": err_msg, "returncode": res.returncode}
+        return {"success": True, "error": None, "returncode": 0}
+    except Exception as e:
+        err_msg = f"Failed to execute command: {str(e)}"
+        sys.stderr.write(f"{err_msg}\n")
+        return {"success": False, "error": err_msg}
+
+def get_impact_preview(unit_name: str, user=False, nonce=None) -> dict:
     """Analyzes unit dependencies and impact on other services."""
     base_cmd = ["systemctl", "--user"] if user else ["systemctl"]
     try:
@@ -316,6 +363,7 @@ def get_impact_preview(unit_name: str, user=False) -> dict:
         return {
             "success": True,
             "unit": unit_name,
+            "nonce": nonce,
             "isCritical": is_crit,
             "criticalReason": crit_reason,
             "requiredBy": required_by,
@@ -331,6 +379,7 @@ def get_impact_preview(unit_name: str, user=False) -> dict:
         return {
             "success": False,
             "unit": unit_name,
+            "nonce": nonce,
             "isCritical": False,
             "criticalReason": "",
             "requiredBy": [],
@@ -352,10 +401,32 @@ def main():
             if len(sys.argv) > 2:
                 unit_name = sys.argv[2]
                 is_user = len(sys.argv) > 3 and sys.argv[3] == "user"
-                res = get_impact_preview(unit_name, user=is_user)
+                nonce = None
+                if len(sys.argv) > 4:
+                    raw_nonce = sys.argv[4]
+                    try:
+                        nonce = int(raw_nonce)
+                    except ValueError:
+                        nonce = raw_nonce
+                res = get_impact_preview(unit_name, user=is_user, nonce=nonce)
                 print(json.dumps(res))
             else:
                 sys.stderr.write("Error: missing unit name for impact subcommand\n")
+                sys.exit(1)
+        elif mode == "execute":
+            if len(sys.argv) > 3:
+                action = sys.argv[2]
+                unit_name = sys.argv[3]
+                scope = sys.argv[4] if len(sys.argv) > 4 else "user"
+                expert = False
+                if len(sys.argv) > 5:
+                    expert = (sys.argv[5] == "--expert")
+                res = execute_action(action, unit_name, scope=scope, expert=expert)
+                if not res["success"]:
+                    sys.exit(1)
+                print(json.dumps(res))
+            else:
+                sys.stderr.write("Error: missing action or unit name for execute subcommand\n")
                 sys.exit(1)
         else:
             sys.stderr.write(f"Error: unknown mode '{mode}'\n")

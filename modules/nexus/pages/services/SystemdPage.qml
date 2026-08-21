@@ -23,9 +23,10 @@ PageBase {
     property string discoveryError: ""
     property string actionError: ""
 
+    property var pendingImpactRequest: null
     property var pendingImpactData: null
-    property string currentActionUnit: ""
-    property string currentActionType: ""
+    property int nextNonce: 1
+    property string activeActionUnit: ""
     property string confirmTypedText: ""
 
     title: qsTr("Systemd Unit Manager")
@@ -82,11 +83,24 @@ PageBase {
 
     function requestServiceAction(unitName: string, action: string, scope: string, itemData: var): void {
         actionError = "";
-        currentActionUnit = unitName;
-        currentActionType = action;
+
+        if (impactProc.running || actionProc.running || pendingImpactRequest !== null || pendingImpactData !== null) {
+            return;
+        }
+
+        const nonce = nextNonce++;
+        const req = {
+            unit: unitName,
+            action: action,
+            scope: scope,
+            nonce: nonce,
+            isCritical: !!(itemData && itemData.isCritical)
+        };
+
+        pendingImpactRequest = req;
 
         const isDestructive = action === "stop" || action === "disable" || action === "restart";
-        const isCritical = itemData && itemData.isCritical;
+        const isCritical = req.isCritical;
         const isSystemScope = scope === "system";
 
         if (isDestructive || isCritical || isSystemScope) {
@@ -94,41 +108,57 @@ PageBase {
             newBusy[unitName] = true;
             busyUnits = newBusy;
 
-            impactProc.command = ["python3", `${Quickshell.shellDir}/modules/nexus/scripts/manage_systemd.py`, "impact", unitName, scope];
+            impactProc.command = [
+                "python3",
+                `${Quickshell.shellDir}/modules/nexus/scripts/manage_systemd.py`,
+                "impact",
+                unitName,
+                scope,
+                nonce.toString()
+            ];
             impactProc.running = true;
             return;
         }
 
-        confirmAndRunAction(unitName, action, scope);
+        confirmAndRunAction(req);
     }
 
-    function confirmAndRunAction(unitName: string, action: string, scope: string): void {
+    function confirmAndRunAction(req: var): void {
+        if (!req || !req.unit || !req.action || !req.scope) return;
+        if (actionProc.running) return;
+
+        const unitName = req.unit;
+        const action = req.action;
+        const scope = req.scope;
+
         const newBusy = Object.assign({}, busyUnits);
         newBusy[unitName] = true;
         busyUnits = newBusy;
 
-        currentActionUnit = unitName;
-        currentActionType = action;
+        activeActionUnit = unitName;
 
-        if (scope === "system") {
-            actionProc.command = ["pkexec", "systemctl", action, unitName];
-        } else {
-            actionProc.command = ["systemctl", "--user", action, unitName];
-        }
+        actionProc.command = [
+            "python3",
+            `${Quickshell.shellDir}/modules/nexus/scripts/manage_systemd.py`,
+            "execute",
+            action,
+            unitName,
+            scope,
+            root.expertMode ? "--expert" : "--no-expert"
+        ];
 
         actionProc.running = true;
     }
 
     function cancelImpactAction(): void {
-        if (currentActionUnit) {
+        if (pendingImpactRequest && pendingImpactRequest.unit) {
             const newBusy = Object.assign({}, busyUnits);
-            delete newBusy[currentActionUnit];
+            delete newBusy[pendingImpactRequest.unit];
             busyUnits = newBusy;
         }
+        pendingImpactRequest = null;
         pendingImpactData = null;
         confirmTypedText = "";
-        currentActionUnit = "";
-        currentActionType = "";
     }
 
     Component.onCompleted: fetchServices()
@@ -207,14 +237,21 @@ PageBase {
             onStreamFinished: {
                 try {
                     const res = JSON.parse(text);
-                    root.pendingImpactData = res;
-                    root.confirmTypedText = "";
+                    const req = root.pendingImpactRequest;
+                    if (req && res && res.unit === req.unit && (res.nonce === undefined || res.nonce === req.nonce)) {
+                        root.pendingImpactData = res;
+                        root.confirmTypedText = "";
+                    } else {
+                        root.cancelImpactAction();
+                    }
                 } catch (e) {
                     root.actionError = "Failed to analyze unit dependency impact: " + e.message;
+                    root.cancelImpactAction();
                 }
-                if (root.currentActionUnit) {
+
+                if (root.pendingImpactRequest && root.pendingImpactRequest.unit) {
                     const newBusy = Object.assign({}, root.busyUnits);
-                    delete newBusy[root.currentActionUnit];
+                    delete newBusy[root.pendingImpactRequest.unit];
                     root.busyUnits = newBusy;
                 }
             }
@@ -223,11 +260,7 @@ PageBase {
             onStreamFinished: {
                 if (text && text.trim().length > 0) {
                     root.actionError = text.trim();
-                }
-                if (root.currentActionUnit) {
-                    const newBusy = Object.assign({}, root.busyUnits);
-                    delete newBusy[root.currentActionUnit];
-                    root.busyUnits = newBusy;
+                    root.cancelImpactAction();
                 }
             }
         }
@@ -237,11 +270,11 @@ PageBase {
         id: actionProc
 
         onExited: (exitCode, exitStatus) => {
-            if (root.currentActionUnit) {
+            if (root.activeActionUnit) {
                 const newBusy = Object.assign({}, root.busyUnits);
-                delete newBusy[root.currentActionUnit];
+                delete newBusy[root.activeActionUnit];
                 root.busyUnits = newBusy;
-                root.currentActionUnit = "";
+                root.activeActionUnit = "";
             }
             if (exitCode !== 0) {
                 if (!root.actionError) {
@@ -284,6 +317,7 @@ PageBase {
                     text: qsTr("User Services (%1)").arg(root.userServices.length)
                     icon: "person"
                     type: root.selectedScope === "user" ? TextButton.Filled : TextButton.Tonal
+                    enabled: root.pendingImpactRequest === null && !impactProc.running && !actionProc.running
                     onClicked: root.selectedScope = "user"
                 }
 
@@ -291,6 +325,7 @@ PageBase {
                     text: qsTr("System Services (%1)").arg(root.systemServices.length)
                     icon: "dns"
                     type: root.selectedScope === "system" ? TextButton.Filled : TextButton.Tonal
+                    enabled: root.pendingImpactRequest === null && !impactProc.running && !actionProc.running
                     onClicked: root.selectedScope = "system"
                 }
 
@@ -717,7 +752,7 @@ PageBase {
         readonly property var impactData: root.pendingImpactData
 
         anchors.fill: parent
-        visible: impactData !== null
+        visible: impactData !== null && root.pendingImpactRequest !== null
         z: 9999
 
         Rectangle {
@@ -757,7 +792,7 @@ PageBase {
 
                 StyledText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Confirm %1: %2").arg((root.currentActionType || "action").toUpperCase()).arg(impactDialogOverlay.impactData ? impactDialogOverlay.impactData.unit : "")
+                    text: qsTr("Confirm %1: %2").arg((root.pendingImpactRequest ? root.pendingImpactRequest.action : "action").toUpperCase()).arg(impactDialogOverlay.impactData ? impactDialogOverlay.impactData.unit : "")
                     font: Tokens.font.title.medium
                 }
 
@@ -855,17 +890,18 @@ PageBase {
                         text: qsTr("Proceed & Execute")
                         type: TextButton.Filled
                         enabled: {
-                            if (!impactDialogOverlay.impactData) return false;
+                            if (!impactDialogOverlay.impactData || !root.pendingImpactRequest) return false;
                             const target = (impactDialogOverlay.impactData.unit || "").trim().toLowerCase();
                             const val = root.confirmTypedText.trim().toLowerCase();
                             return val === target || val + ".service" === target;
                         }
                         onClicked: {
-                            const unit = impactDialogOverlay.impactData.unit;
-                            const act = root.currentActionType;
+                            if (!root.pendingImpactRequest) return;
+                            const req = root.pendingImpactRequest;
                             root.pendingImpactData = null;
+                            root.pendingImpactRequest = null;
                             root.confirmTypedText = "";
-                            root.confirmAndRunAction(unit, act, root.selectedScope);
+                            root.confirmAndRunAction(req);
                         }
                     }
                 }

@@ -62,11 +62,55 @@ def test_system_allowlist():
         assert manage_systemd.is_allowlisted(unit) is False
 
 def test_impact_preview_critical_chain():
-    impact = manage_systemd.get_impact_preview("dbus.service")
+    impact = manage_systemd.get_impact_preview("dbus.service", nonce=42)
     assert impact["success"] is True
     assert impact["unit"] == "dbus.service"
+    assert impact["nonce"] == 42
     assert impact["isCritical"] is True
     assert impact["isCriticalChain"] is True
+
+def test_execute_action_policy_enforcement(monkeypatch):
+    # Test invalid action rejection
+    res = manage_systemd.execute_action("invalid_cmd", "cups.service", scope="system")
+    assert res["success"] is False
+    assert "Invalid action" in res["error"]
+
+    # Test invalid unit name rejection
+    res = manage_systemd.execute_action("start", "; reboot", scope="system")
+    assert res["success"] is False
+    assert "Invalid unit name" in res["error"]
+
+    # Test system scope rejection for critical service when expert=False
+    res = manage_systemd.execute_action("stop", "NetworkManager.service", scope="system", expert=False)
+    assert res["success"] is False
+    assert "critical system service" in res["error"]
+
+    # Test system scope rejection for non-allowlisted service when expert=False
+    res = manage_systemd.execute_action("stop", "custom_daemon.service", scope="system", expert=False)
+    assert res["success"] is False
+    assert "not in the system allowlist" in res["error"]
+
+    # Mock subprocess.run for policy pass cases so no actual pkexec is invoked
+    called_cmd = []
+    def mock_run(cmd, **kwargs):
+        called_cmd.append(cmd)
+        class DummyRes:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return DummyRes()
+
+    monkeypatch.setattr(manage_systemd.subprocess, "run", mock_run)
+
+    # Allowlisted service with expert=False should pass policy check and call pkexec
+    res_allow = manage_systemd.execute_action("restart", "cups.service", scope="system", expert=False)
+    assert res_allow["success"] is True
+    assert called_cmd[-1] == ["pkexec", "systemctl", "restart", "cups.service"]
+
+    # Critical service with expert=True should pass policy check and call pkexec
+    res_expert = manage_systemd.execute_action("stop", "NetworkManager.service", scope="system", expert=True)
+    assert res_expert["success"] is True
+    assert called_cmd[-1] == ["pkexec", "systemctl", "stop", "NetworkManager.service"]
 
 def test_stderr_error_reporting(capsys):
     # Call get_services with invalid setup or inspect response
