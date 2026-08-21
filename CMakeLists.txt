@@ -28,6 +28,8 @@ string(REGEX REPLACE "^v" "" VERSION "${VERSION}")
 
 project(caelestia-shell VERSION ${VERSION} LANGUAGES CXX)
 
+enable_testing()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -78,6 +80,10 @@ if("shell" IN_LIST ENABLE_MODULES)
 endif()
 
 if("m3shapes" IN_LIST ENABLE_MODULES)
+    if(NOT COMMAND qt_policy)
+        macro(qt_policy)
+        endmacro()
+    endif()
     message(STATUS "Fetching M3Shapes module")
     include(FetchContent)
     set(M3SHAPES_REV bdc327b29f95394a732baf3c9b19658ba23755b6)

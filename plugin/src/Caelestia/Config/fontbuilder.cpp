@@ -17,13 +17,17 @@ FontBuilder FontBuilder::size(int pointSize) {
     if (pointSize <= 0)
         pointSize = 1;
     m_font.setPointSize(pointSize);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     m_font.setVariableAxis("opsz", static_cast<float>(pointSize));
+#endif
     return *this;
 }
 
 FontBuilder FontBuilder::weight(QFont::Weight weight) {
     m_font.setWeight(weight);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     m_font.setVariableAxis("wght", weight);
+#endif
     return *this;
 }
 
@@ -48,14 +52,20 @@ FontBuilder FontBuilder::capitalisation(QFont::Capitalization cap) {
 }
 
 FontBuilder FontBuilder::vaxis(const QString& tag, float value) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     if (auto t = QFont::Tag::fromString(tag))
         m_font.setVariableAxis(*t, value);
     else
         qCWarning(lcFontBuilder) << "Unable to convert tag" << tag << "to QFont::Tag";
+#else
+    Q_UNUSED(tag);
+    Q_UNUSED(value);
+#endif
     return *this;
 }
 
 FontBuilder FontBuilder::vaxes(QVariantMap axes) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     for (auto it = axes.constBegin(); it != axes.constEnd(); ++it) {
         if (it.value().canConvert<float>()) {
             if (auto tag = QFont::Tag::fromString(it.key()))
@@ -66,6 +76,9 @@ FontBuilder FontBuilder::vaxes(QVariantMap axes) {
             qCWarning(lcFontBuilder) << "Unable to convert value" << it.value() << "to float";
         }
     }
+#else
+    Q_UNUSED(axes);
+#endif
     return *this;
 }
 

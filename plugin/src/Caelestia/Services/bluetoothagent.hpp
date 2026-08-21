@@ -4,6 +4,7 @@
 #include <QString>
 #include <QVariantMap>
 #include <QtDBus/QDBusConnection>
+#include <QtDBus/QDBusContext>
 #include <QtDBus/QDBusMessage>
 #include <QtDBus/QDBusObjectPath>
 #include <QtDBus/QDBusServiceWatcher>
@@ -11,7 +12,7 @@
 
 namespace caelestia::services {
 
-class BluetoothAgent : public QObject {
+class BluetoothAgent : public QObject, public QDBusContext {
     Q_OBJECT
     QML_ELEMENT
     QML_SINGLETON

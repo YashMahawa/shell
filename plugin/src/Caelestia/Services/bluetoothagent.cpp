@@ -189,19 +189,22 @@ void BluetoothAgent::Release() {
 
 QString BluetoothAgent::RequestPinCode(const QDBusObjectPath& device) {
     qCInfo(lcBtAgent) << "RequestPinCode for" << device.path();
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
+    QDBusMessage msg;
     if (calledFromDBus()) {
-        QDBusMessage msg = message();
-        msg.setDelayedReply(true);
-        fetchDeviceInfo(device);
-        m_pinCode.clear();
-        emit pinCodeChanged();
-        setPendingRequest(msg, QStringLiteral("pincode"), device);
+        setDelayedReply(true);
+        msg = message();
     }
+    fetchDeviceInfo(device);
+    m_pinCode.clear();
+    emit pinCodeChanged();
+    setPendingRequest(msg, QStringLiteral("pincode"), device);
     return QString();
 }
 
 void BluetoothAgent::DisplayPinCode(const QDBusObjectPath& device, const QString& pincode) {
     qCInfo(lcBtAgent) << "DisplayPinCode for" << device.path() << ":" << pincode;
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
     fetchDeviceInfo(device);
     m_pinCode = pincode;
     emit pinCodeChanged();
@@ -210,19 +213,22 @@ void BluetoothAgent::DisplayPinCode(const QDBusObjectPath& device, const QString
 
 quint32 BluetoothAgent::RequestPasskey(const QDBusObjectPath& device) {
     qCInfo(lcBtAgent) << "RequestPasskey for" << device.path();
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
+    QDBusMessage msg;
     if (calledFromDBus()) {
-        QDBusMessage msg = message();
-        msg.setDelayedReply(true);
-        fetchDeviceInfo(device);
-        m_passkey = 0;
-        emit passkeyChanged();
-        setPendingRequest(msg, QStringLiteral("passkey"), device);
+        setDelayedReply(true);
+        msg = message();
     }
+    fetchDeviceInfo(device);
+    m_passkey = 0;
+    emit passkeyChanged();
+    setPendingRequest(msg, QStringLiteral("passkey"), device);
     return 0;
 }
 
 void BluetoothAgent::DisplayPasskey(const QDBusObjectPath& device, quint32 passkey, quint16 entered) {
     qCInfo(lcBtAgent) << "DisplayPasskey for" << device.path() << ":" << passkey << "(" << entered << "entered)";
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
     fetchDeviceInfo(device);
     m_passkey = passkey;
     emit passkeyChanged();
@@ -233,34 +239,40 @@ void BluetoothAgent::DisplayPasskey(const QDBusObjectPath& device, quint32 passk
 
 void BluetoothAgent::RequestConfirmation(const QDBusObjectPath& device, quint32 passkey) {
     qCInfo(lcBtAgent) << "RequestConfirmation for" << device.path() << "passkey:" << passkey;
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
+    QDBusMessage msg;
     if (calledFromDBus()) {
-        QDBusMessage msg = message();
-        msg.setDelayedReply(true);
-        fetchDeviceInfo(device);
-        m_passkey = passkey;
-        emit passkeyChanged();
-        setPendingRequest(msg, QStringLiteral("confirmation"), device);
+        setDelayedReply(true);
+        msg = message();
     }
+    fetchDeviceInfo(device);
+    m_passkey = passkey;
+    emit passkeyChanged();
+    setPendingRequest(msg, QStringLiteral("confirmation"), device);
 }
 
 void BluetoothAgent::RequestAuthorization(const QDBusObjectPath& device) {
     qCInfo(lcBtAgent) << "RequestAuthorization for" << device.path();
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
+    QDBusMessage msg;
     if (calledFromDBus()) {
-        QDBusMessage msg = message();
-        msg.setDelayedReply(true);
-        fetchDeviceInfo(device);
-        setPendingRequest(msg, QStringLiteral("authorization"), device);
+        setDelayedReply(true);
+        msg = message();
     }
+    fetchDeviceInfo(device);
+    setPendingRequest(msg, QStringLiteral("authorization"), device);
 }
 
 void BluetoothAgent::AuthorizeService(const QDBusObjectPath& device, const QString& uuid) {
     qCInfo(lcBtAgent) << "AuthorizeService for" << device.path() << "UUID:" << uuid;
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
+    QDBusMessage msg;
     if (calledFromDBus()) {
-        QDBusMessage msg = message();
-        msg.setDelayedReply(true);
-        fetchDeviceInfo(device);
-        setPendingRequest(msg, QStringLiteral("authorization"), device);
+        setDelayedReply(true);
+        msg = message();
     }
+    fetchDeviceInfo(device);
+    setPendingRequest(msg, QStringLiteral("authorization"), device);
 }
 
 void BluetoothAgent::Cancel() {
