@@ -47,7 +47,7 @@ Item {
                 return qsTr("Authenticating...");
             if (root.pam.state === "max")
                 return qsTr("Max tries reached");
-            if (root.pam.fprint.available && root.pam.fprint.active && root.pam.fprint.tries < GlobalConfig.lock.maxFprintTries && root.pam.fprint.errorTries < 2)
+            if (root.pam.fprint.available && root.pam.fprint.active && root.pam.fprint.tries < GlobalConfig.lock.maxFprintTries && root.pam.fprint.errorTries < GlobalConfig.lock.maxFprintErrors)
                 return qsTr("Enter password or scan fingerprint");
             return qsTr("Enter your password");
         }

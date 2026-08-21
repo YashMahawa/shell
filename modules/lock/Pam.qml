@@ -27,35 +27,48 @@ Scope {
         let clean = msg.replace(/^pam_\w+\([^)]+\):\s*/i, "").trim();
 
         // Check for lockout
-        const lockoutMatch = clean.match(/(\d+)\s*(?:seconds|sec|s)?\s*left to unlock/i) || clean.match(/locked for (\d+)\s*(?:seconds|sec|s)?/i);
-        if (lockoutMatch || /account is locked/i.test(clean) || /account locked/i.test(clean)) {
-            const secs = lockoutMatch ? lockoutMatch[1] : null;
-            let text = secs ? qsTr("Account locked (%1s remaining)").arg(secs) : qsTr("Account locked due to failed attempts.");
-            return { type: "lockout", text: text, seconds: secs ? parseInt(secs, 10) : null };
+        const lockoutMatch = clean.match(/(\d+)\s*(?:seconds|sec|sekunden|secondes|segundos|s)\s*(?:left|remaining|verbleibend|restantes)?\s*(?:to unlock)?/i)
+            || clean.match(/(\d+)\s*(?:seconds|sec|sekunden|secondes|segundos|s)?\s*(?:left|remaining|verbleibend|restantes)\s*(?:to unlock)?/i)
+            || clean.match(/(?:locked|gesperrt|verrouillé|bloqueado)\s*(?:for|für|pendant|por)?\s*(\d+)\s*(?:seconds|sec|sekunden|secondes|segundos|s)?/i);
+        if (lockoutMatch && lockoutMatch[1]) {
+            const secs = lockoutMatch[1];
+            let text = qsTr("Account locked (%1s remaining)").arg(secs);
+            return { type: "lockout", text: text, seconds: parseInt(secs, 10), raw: clean };
+        }
+
+        if (/account is locked|account locked|kontosperre|compte verrouillé|cuenta bloqueada/i.test(clean)) {
+            let text = qsTr("Account locked due to failed attempts.");
+            return { type: "lockout", text: text, seconds: null, raw: clean };
         }
 
         // Check for remaining attempt counts
-        const attemptsMatch = clean.match(/(\d+)\s*(?:more\s+)?attempts?\s*(?:remaining|left)/i) || clean.match(/(\d+)\s*failed login attempts?/i);
-        if (attemptsMatch) {
+        const attemptsMatch = clean.match(/(\d+)\s*(?:more\s+)?attempts?\s*(?:remaining|left)/i)
+            || clean.match(/(\d+)\s*failed login attempts?/i)
+            || clean.match(/(\d+)\s*(?:verbleibende|restant|restantes)\s*(?:versuche|essais|intentos)/i);
+        if (attemptsMatch && attemptsMatch[1]) {
             const count = parseInt(attemptsMatch[1], 10);
             let text = qsTr("Incorrect password (%1 attempt%2 remaining)").arg(count).arg(count === 1 ? "" : "s");
-            return { type: "attempts", text: text, count: count };
+            return { type: "attempts", text: text, count: count, raw: clean };
         }
 
         // Check for standard invalid password / auth failure
-        if (/authentication (?:failure|failed)/i.test(clean) || /invalid password/i.test(clean) || /incorrect password/i.test(clean) || /password incorrect/i.test(clean)) {
-            return { type: "invalid_creds", text: qsTr("Incorrect password. Please try again.") };
+        if (/authentication (?:failure|failed)|invalid password|incorrect password|password incorrect|falsches passwort|mot de passe incorrect|contraseña incorrecta/i.test(clean)) {
+            return { type: "invalid_creds", text: qsTr("Incorrect password. Please try again."), raw: clean };
         }
 
-        // Fallback sanitized info string to prevent display layout overflow
+        // Fallback sanitized info string to prevent display layout overflow while preserving raw message
         let sanitized = clean.replace(/[\r\n]+/g, " ");
         if (sanitized.length > 80) {
             sanitized = sanitized.substring(0, 77) + "...";
         }
-        return { type: "info", text: sanitized };
+        return { type: "info", text: sanitized, raw: clean };
     }
 
     function finishUnlock(): void {
+        fprint.abort();
+        errorRetry.stop();
+        stateReset.stop();
+        fprintStateReset.stop();
         unlockStateProc.running = true;
         root.lock.unlock();
     }
@@ -87,11 +100,13 @@ Scope {
         onMessageChanged: {
             if (message) {
                 const parsed = root.parsePamMessage(message);
-                if (parsed) {
-                    root.classifiedMessage = parsed;
-                    if (parsed.type === "lockout") {
-                        root.lockMessage = parsed.text;
-                    }
+                root.classifiedMessage = parsed;
+
+                const textToUse = (parsed && (parsed.type === "lockout" || parsed.type === "attempts")) ? parsed.text : message;
+                if (!root.lockMessage) {
+                    root.lockMessage = textToUse;
+                } else if (!root.lockMessage.includes(textToUse) && !root.lockMessage.includes(message)) {
+                    root.lockMessage += "\n" + textToUse;
                 }
             }
         }
@@ -155,7 +170,7 @@ Scope {
 
             if (res === PamResult.Error) {
                 errorTries++;
-                if (errorTries < 2) {
+                if (errorTries < GlobalConfig.lock.maxFprintErrors) {
                     root.fprintState = "error";
                     abort();
                     errorRetry.restart();
@@ -218,7 +233,7 @@ Scope {
 
         interval: 4000
         onTriggered: {
-            if (fprint.errorTries < 2 && fprint.tries < GlobalConfig.lock.maxFprintTries) {
+            if (fprint.errorTries < GlobalConfig.lock.maxFprintErrors && fprint.tries < GlobalConfig.lock.maxFprintTries) {
                 root.fprintState = "";
             }
         }
@@ -235,11 +250,19 @@ Scope {
                 root.classifiedMessage = null;
                 fprint.tries = 0;
                 fprint.errorTries = 0;
+            } else {
+                fprint.abort();
+                errorRetry.stop();
+                stateReset.stop();
+                fprintStateReset.stop();
             }
         }
 
         function onUnlock(): void {
             fprint.abort();
+            errorRetry.stop();
+            stateReset.stop();
+            fprintStateReset.stop();
         }
 
         target: root.lock

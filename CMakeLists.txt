@@ -95,3 +95,6 @@ if("m3shapes" IN_LIST ENABLE_MODULES)
         set_target_properties(m3shapesplugin PROPERTIES INSTALL_RPATH "$ORIGIN")
     endif()
 endif()
+
+enable_testing()
+add_test(NAME pam_lock_tests COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/test_pam_lock.py")

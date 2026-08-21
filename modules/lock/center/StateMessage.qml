@@ -18,10 +18,10 @@ Item {
         if (pam.classifiedMessage && pam.classifiedMessage.text && (pam.state === "error" || pam.state === "fail" || pam.state === "max"))
             return pam.classifiedMessage.text;
 
-        if (pam.fprintState === "error_max" || (pam.fprintState === "error" && pam.fprint.errorTries >= 2))
-            return qsTr("Fingerprint reader error (2/2). Please use password.");
+        if (pam.fprintState === "error_max" || (pam.fprintState === "error" && pam.fprint.errorTries >= GlobalConfig.lock.maxFprintErrors))
+            return qsTr("Fingerprint reader error (%1/%2). Please use password.").arg(pam.fprint.errorTries).arg(GlobalConfig.lock.maxFprintErrors);
         if (pam.fprintState === "error")
-            return qsTr("Fingerprint reader error (1/2). Please try again.");
+            return qsTr("Fingerprint reader error (%1/%2). Please try again.").arg(pam.fprint.errorTries).arg(GlobalConfig.lock.maxFprintErrors);
 
         if (pam.state === "max" && (pam.fprintState === "max" || pam.fprintState === "error_max"))
             return qsTr("Maximum password and fingerprint attempts reached.");
@@ -39,7 +39,7 @@ Item {
             return qsTr("Incorrect password. Please try again.");
         }
         if (pam.fprintState === "fail")
-            return qsTr("Fingerprint not recognized (%1/%2). Please try again or use password.").arg(pam.fprint.tries).arg(Config.lock.maxFprintTries);
+            return qsTr("Fingerprint not recognized (%1/%2). Please try again or use password.").arg(pam.fprint.tries).arg(GlobalConfig.lock.maxFprintTries);
 
         return "";
     }

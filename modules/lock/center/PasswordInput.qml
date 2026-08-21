@@ -117,13 +117,13 @@ StyledRect {
                 MaterialIcon {
                     animate: true
                     text: {
-                        if (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= 2 || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max")
+                        if (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= GlobalConfig.lock.maxFprintErrors || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max")
                             return "fingerprint_off";
                         if (root.lock.pam.fprint.active)
                             return "fingerprint";
                         return "lock";
                     }
-                    color: (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= 2 || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max") ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                    color: (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= GlobalConfig.lock.maxFprintErrors || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max") ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale).build()
                 }
             }
