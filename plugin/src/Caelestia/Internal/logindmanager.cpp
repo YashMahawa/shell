@@ -39,13 +39,6 @@ LogindManager::LogindManager(QObject* parent)
     if (!ok) {
         qCWarning(lcLogindManager) << "Failed to connect to Lock signal:" << bus.lastError().message();
     }
-
-    ok = bus.connect("org.freedesktop.login1", sessionPath, "org.freedesktop.login1.Session", "Unlock", this,
-        SLOT(handleUnlockRequested()));
-
-    if (!ok) {
-        qCWarning(lcLogindManager) << "Failed to connect to Unlock signal:" << bus.lastError().message();
-    }
 }
 
 void LogindManager::handlePrepareForSleep(bool sleep) {
@@ -58,10 +51,6 @@ void LogindManager::handlePrepareForSleep(bool sleep) {
 
 void LogindManager::handleLockRequested() {
     emit lockRequested();
-}
-
-void LogindManager::handleUnlockRequested() {
-    emit unlockRequested();
 }
 
 } // namespace caelestia::internal
