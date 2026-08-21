@@ -56,8 +56,6 @@ Singleton {
     function setControl(control: string, value): void {
         if (!root.available)
             return;
-        if (control in root)
-            root[control] = value;
         root.queuedWrite = ({ control, value });
         writeDebounce.restart();
     }
@@ -96,6 +94,53 @@ Singleton {
 
         interval: 900
         onTriggered: root.refresh(true)
+    }
+
+    // HDMI HPD commonly stays asserted while the monitor changes HDR/input or
+    // briefly loses mains power, so Hyprland emits no useful connector change.
+    // A cheap single-VCP probe makes controls recover without repeatedly
+    // reading every supported monitor property.
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.outputSignature !== ""
+        triggeredOnStart: false
+        onTriggered: {
+            if (!healthProc.running)
+                healthProc.running = true;
+        }
+    }
+
+    Process {
+        id: healthProc
+        command: ["caelestia-monitor-control", "brightness"]
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const state = JSON.parse(text);
+                    const recovered = !root.available;
+                    root.available = state.available ?? false;
+                    root.connector = state.connector ?? root.connector;
+                    root.model = state.model ?? root.model;
+                    root.brightness = state.brightness ?? root.brightness;
+                    root.errorMessage = "";
+                    if (recovered)
+                        root.refresh(true);
+                } catch (error) {
+                    root.available = false;
+                }
+            }
+        }
+
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim()) {
+                    root.available = false;
+                    root.errorMessage = qsTr("Monitor controls will retry automatically");
+                }
+            }
+        }
     }
 
     Process {
@@ -153,6 +198,22 @@ Singleton {
 
     Process {
         id: writeProc
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text.trim()) {
+                    try {
+                        const result = JSON.parse(text);
+                        if (result.control in root)
+                            root[result.control] = result.value;
+                        root.available = true;
+                        root.errorMessage = "";
+                    } catch (error) {
+                        root.errorMessage = qsTr("Monitor did not confirm the change");
+                    }
+                }
+            }
+        }
 
         stderr: StdioCollector {
             onStreamFinished: {

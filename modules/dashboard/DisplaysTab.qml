@@ -14,7 +14,11 @@ Item {
     id: root
 
     readonly property var monitor: Hypr.focusedMonitor ?? (Hypr.monitors.values[0] ?? null)
-    readonly property var brightnessMonitor: Brightness.getMonitor("active")
+    // Use the same Brightness.Monitor instance as the bar/OSD so both sliders
+    // share one live value instead of waiting for a separate DDC health poll.
+    readonly property var externalBrightnessMonitor: Brightness.getMonitor(
+        MonitorControl.connector !== "" ? MonitorControl.connector : "HDMI-A-1"
+    )
     readonly property var laptopBrightnessMonitor: Brightness.getMonitor("eDP-1")
     readonly property bool external: monitor && !monitor.name.startsWith("eDP-")
         && !monitor.name.startsWith("LVDS-") && !monitor.name.startsWith("DSI-")
@@ -374,11 +378,11 @@ Item {
                     }
 
                     ControlSlider {
-                        icon: "brightness_6"
-                        label: qsTr("Focused display brightness")
-                        value: root.brightnessMonitor?.brightness ?? 0
-                        enabled: root.brightnessMonitor !== null
-                        onMoved: value => root.brightnessMonitor?.setBrightness(value)
+                        icon: "desktop_windows"
+                        label: qsTr("Monitor brightness")
+                        value: root.externalBrightnessMonitor?.brightness ?? 0
+                        enabled: root.externalBrightnessMonitor?.isDdc ?? false
+                        onMoved: value => root.externalBrightnessMonitor?.setBrightness(value)
                     }
 
                     ControlSlider {
@@ -467,6 +471,9 @@ Item {
             Layout.fillWidth: true
             value: control.value
             enabled: control.enabled
+            // DDC/CI is a low-speed control bus. Commit once on release rather
+            // than flooding it for every pixel of a drag gesture.
+            interactionOnMove: false
             onInteraction: value => control.moved(value)
         }
     }

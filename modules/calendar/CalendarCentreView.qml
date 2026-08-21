@@ -390,12 +390,15 @@ StyledClippingRect {
                             StyledRect {
                                 id: dayCard
                                 required property string modelData
+                                readonly property var entries: Timetable.entriesForDay(modelData)
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 285
+                                Layout.fillHeight: true
+                                implicitHeight: dayContent.implicitHeight + Tokens.padding.medium * 2
                                 radius: Tokens.rounding.large
                                 color: modelData === Timetable.dayNames[new Date().getDay()] ? Colours.palette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHigh
 
                                 ColumnLayout {
+                                    id: dayContent
                                     anchors.fill: parent
                                     anchors.margins: Tokens.padding.medium
                                     spacing: Tokens.spacing.extraSmall
@@ -405,31 +408,34 @@ StyledClippingRect {
                                         font: Tokens.font.title.medium
                                     }
                                     Repeater {
-                                        model: Timetable.entriesForDay(dayCard.modelData)
+                                        model: dayCard.entries
                                         StyledRect {
                                             id: classRow
                                             required property var modelData
                                             Layout.fillWidth: true
-                                            implicitHeight: 42
+                                            implicitHeight: Math.max(42, classContent.implicitHeight + Tokens.padding.extraSmall * 2)
                                             radius: Tokens.rounding.medium
                                             color: Qt.alpha(Colours.palette.m3tertiaryContainer, 0.72)
                                             RowLayout {
+                                                id: classContent
                                                 anchors.fill: parent
                                                 anchors.leftMargin: Tokens.padding.medium
                                                 anchors.rightMargin: Tokens.padding.medium
+                                                anchors.topMargin: Tokens.padding.extraSmall
+                                                anchors.bottomMargin: Tokens.padding.extraSmall
                                                 spacing: Tokens.spacing.small
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
                                                     spacing: 0
-                                                    StyledText { text: classRow.modelData.course; color: Colours.palette.m3onTertiaryContainer; font: Tokens.font.body.medium }
-                                                    StyledText { text: classRow.modelData.room === "TBA" ? classRow.modelData.code : `${classRow.modelData.code} · ${classRow.modelData.room}`; color: Colours.palette.m3onTertiaryContainer; opacity: 0.72; font: Tokens.font.label.small }
+                                                    StyledText { Layout.fillWidth: true; text: classRow.modelData.course; elide: Text.ElideRight; color: Colours.palette.m3onTertiaryContainer; font: Tokens.font.body.medium }
+                                                    StyledText { Layout.fillWidth: true; text: classRow.modelData.room === "TBA" ? classRow.modelData.code : `${classRow.modelData.code} · ${classRow.modelData.room}`; elide: Text.ElideRight; color: Colours.palette.m3onTertiaryContainer; opacity: 0.72; font: Tokens.font.label.small }
                                                 }
                                                 StyledText { text: `${Timetable.formatTime(classRow.modelData.start)}\n${Timetable.formatTime(classRow.modelData.end)}`; horizontalAlignment: Text.AlignRight; color: Colours.palette.m3onTertiaryContainer; font: Tokens.font.label.small }
                                             }
                                         }
                                     }
                                     Item { Layout.fillHeight: true }
-                                    StyledText { visible: Timetable.entriesForDay(dayCard.modelData).length === 0; text: qsTr("No classes"); color: Colours.palette.m3outline; font: Tokens.font.body.small }
+                                    StyledText { visible: dayCard.entries.length === 0; text: qsTr("No classes"); color: Colours.palette.m3outline; font: Tokens.font.body.small }
                                 }
                             }
                         }

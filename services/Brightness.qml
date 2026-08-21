@@ -93,7 +93,10 @@ Singleton {
         // group. Let ddcutil test the device directly instead of rejecting a
         // valid per-user ACL such as /dev/i2c-3 on the connected Acer.
         running: true
-        command: ["ddcutil", "detect", "--brief"]
+        // The helper returns JSON and verifies that DDC is responding. Raw
+        // `ddcutil detect --brief` is text, and parsing it as JSON caused the
+        // external monitor to disappear from brightness controls.
+        command: ["caelestia-monitor-control", "brightness"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -236,6 +239,14 @@ Singleton {
                         const val = parseInt(text.trim());
                         if (Number.isFinite(val))
                             monitor.brightness = val / 101;
+                    } else if (monitor.isDdc) {
+                        try {
+                            const state = JSON.parse(text);
+                            const val = Number(state.brightness);
+                            if (Number.isFinite(val))
+                                monitor.brightness = val / 100;
+                        } catch (error) {
+                        }
                     } else {
                         const parts = text.trim().split(/\s+/);
                         const cur = parseInt(parts[3]);
@@ -286,7 +297,11 @@ Singleton {
             if (isAppleDisplay)
                 Quickshell.execDetached(["asdbctl", "set", rounded]);
             else if (isDdc)
-                Quickshell.execDetached(["ddcutil", "-b", busNum, "setvcp", "10", rounded]);
+                // The helper invalidates stale bus caches and redetects after
+                // HDR/input/power cycles before retrying the write.
+                Quickshell.execDetached([
+                    "caelestia-monitor-control", "set", "brightness", String(rounded)
+                ]);
             else if (isInternalPanel)
                 Quickshell.execDetached(["brightnessctl", "s", `${rounded}%`]);
 
@@ -300,7 +315,7 @@ Singleton {
             if (isAppleDisplay)
                 initProc.command = ["asdbctl", "get"];
             else if (isDdc)
-                initProc.command = ["ddcutil", "-b", busNum, "getvcp", "10", "--brief"];
+                initProc.command = ["caelestia-monitor-control", "brightness"];
             else if (isInternalPanel)
                 initProc.command = ["sh", "-c", "echo a b c $(brightnessctl g) $(brightnessctl m)"];
             else {
