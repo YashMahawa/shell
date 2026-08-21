@@ -124,7 +124,7 @@ class TestManageMonitors(unittest.TestCase):
         self.assertEqual(len(monitors_after_cut), 1)
         self.assertEqual(monitors_after_cut[0]["name"], "eDP-1")
 
-    def test_native_lua_config_and_no_legacy_hypr_user_conf(self):
+    def test_display_config_and_hyprland_integration(self):
         monitors = [
             {"name": "eDP-1", "res": "1920x1080@60", "pos": "0x0", "scale": "1"},
             {"name": "HDMI-A-1", "res": "2560x1440@144", "pos": "1920x0", "scale": "1.25"}
@@ -136,11 +136,19 @@ class TestManageMonitors(unittest.TestCase):
         user_conf = os.path.join(caelestia_dir, "hypr-user.conf")
         lua_conf = os.path.join(caelestia_dir, "display.lua")
 
-        # Native Lua fragment must exist
+        # Hyprland managed conf, user conf, and Lua config must exist
+        self.assertTrue(os.path.exists(managed_conf))
+        self.assertTrue(os.path.exists(user_conf))
         self.assertTrue(os.path.exists(lua_conf))
-        # Legacy hypr-user.conf and hypr-monitors.conf must NOT be written or modified!
-        self.assertFalse(os.path.exists(managed_conf))
-        self.assertFalse(os.path.exists(user_conf))
+
+        with open(managed_conf, "r") as f:
+            content = f.read()
+            self.assertIn("eDP-1,1920x1080@60,0x0,1", content)
+            self.assertIn("HDMI-A-1,2560x1440@144,1920x0,1.25", content)
+
+        with open(user_conf, "r") as f:
+            user_content = f.read()
+            self.assertIn(f"source = {managed_conf}", user_content)
 
         with open(lua_conf, "r") as f:
             lua_content = f.read()

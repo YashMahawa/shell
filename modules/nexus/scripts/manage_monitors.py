@@ -200,12 +200,48 @@ def apply_rules(rules, previous_layout=None, runner=None):
 
     return True
 
+def ensure_source(user_conf, managed_conf):
+    source_line = f"source = {managed_conf}"
+    os.makedirs(os.path.dirname(user_conf), exist_ok=True)
+    if not os.path.exists(user_conf):
+        atomic_write(user_conf, f"{source_line}\n", mode=0o644)
+        return
+
+    with open(user_conf, "r", encoding="utf-8") as f:
+        content = f.read()
+    if source_line in content:
+        return
+
+    backup = f"{user_conf}.bak.{int(time.time())}"
+    try:
+        shutil.copy2(user_conf, backup)
+    except Exception:
+        pass
+
+    new_content = content + ("\n" if content and not content.endswith("\n") else "") + f"{source_line}\n"
+    atomic_write(user_conf, new_content, mode=0o644)
+
 def save_to_monitors_conf(monitors, runner=None):
     if runner is None:
         runner = run_command
     config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
     caelestia_dir = os.path.join(config_home, "caelestia")
+    managed_conf = os.path.join(caelestia_dir, "hypr-monitors.conf")
+    user_conf = os.path.join(caelestia_dir, "hypr-user.conf")
     lua_conf = os.path.join(caelestia_dir, "display.lua")
+
+    conf_lines = ["# Managed by Caelestia Display Manager.\n"]
+    for m in monitors:
+        name = m.get("name")
+        res = m.get("res", "preferred")
+        pos = m.get("pos", "0x0")
+        scale = str(m.get("scale", "1"))
+        transform = str(m.get("transform", "0"))
+        disabled = m.get("disabled", False)
+        conf_lines.append(f"monitor = {monitor_rule(name, res, pos, scale, transform, disabled)}\n")
+
+    atomic_write(managed_conf, "".join(conf_lines), mode=0o644)
+    ensure_source(user_conf, managed_conf)
 
     lua_lines = ["-- Native Caelestia Display Configuration\nreturn {\n  monitors = {\n"]
     for m in monitors:
