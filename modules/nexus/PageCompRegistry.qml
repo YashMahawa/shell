@@ -161,6 +161,9 @@ QtObject {
                 Component {
                     NotificationsPage {}
                 }
+                Component {
+                    SystemdPage {}
+                }
             }
         },
         Component {

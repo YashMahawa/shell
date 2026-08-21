@@ -81,9 +81,30 @@ PageBase {
             }
         }
 
-        // Polling
+        // Management
         SectionHeader {
             first: true
+            text: qsTr("Management")
+        }
+
+        NavRow {
+            first: true
+            icon: "memory"
+            label: qsTr("Systemd Unit Manager")
+            status: qsTr("Control system and user services")
+            onClicked: root.nState.openSubPage(2)
+        }
+
+        NavRow {
+            last: true
+            icon: "notifications"
+            label: qsTr("Notifications")
+            status: qsTr("Configure notification timeouts and events")
+            onClicked: root.nState.openSubPage(1)
+        }
+
+        // Polling
+        SectionHeader {
             text: qsTr("Polling")
         }
 
