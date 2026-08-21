@@ -9,21 +9,25 @@ import qs.services
 Singleton {
     id: root
 
-    property bool enabled: true
+    property bool enabled: false
     property int temperature: 4500
     property string activeBackend: "none"
     property bool backendAvailable: activeBackend !== "none"
     property bool hdrActive: false
     property var priorState: ({})
     property int pendingTemperature: 4500
-    property bool pendingEnabled: true
+    property bool pendingEnabled: false
+    property bool loaded: false
     property bool hyprsunsetAvailable: false
     property bool gammastepAvailable: false
     property bool wlsunsetAvailable: false
     property bool gsettingsAvailable: false
 
+    property var pendingCommand: []
+    property var activeCommand: []
+    property int processGeneration: 0
+
     readonly property real warmth: Math.max(0, Math.min(1, (6500 - temperature) / 4500))
-    readonly property var supportedDdcPresets: ["5000", "6500", "7500", "9300", "user"]
 
     function detectBackend(): string {
         if (hyprsunsetAvailable)
@@ -34,26 +38,17 @@ Singleton {
             return "wlsunset";
         if (gsettingsAvailable)
             return "gsettings";
-        if (MonitorControl.available)
-            return "ddc";
         return "none";
-    }
-
-    function mapTemperatureToDdcPreset(temp: int): string {
-        if (temp >= 6500)
-            return "6500";
-        if (temp >= 5750)
-            return "6500";
-        if (temp >= 4000)
-            return "5000";
-        return "user";
     }
 
     function checkHdrState(): void {
         let hdr = false;
         if (Hypr.monitors && Hypr.monitors.values) {
             for (const mon of Hypr.monitors.values) {
-                if (mon.hdr || mon.hdrEnabled) {
+                if (mon.hdr || mon.hdrEnabled || mon.isHdr ||
+                    mon.lastIpcObject?.hdr || mon.lastIpcObject?.hdrEnabled ||
+                    mon.lastIpcObject?.hdr_enabled ||
+                    (typeof mon.lastIpcObject?.bitsPerColor === "number" && mon.lastIpcObject.bitsPerColor > 8)) {
                     hdr = true;
                     break;
                 }
@@ -71,7 +66,8 @@ Singleton {
     function setTemperature(temp: int): void {
         const clampedTemp = Math.max(2000, Math.min(6500, temp));
         root.pendingTemperature = clampedTemp;
-        root.pendingEnabled = root.enabled;
+        if (!debounceTimer.running)
+            root.pendingEnabled = root.enabled;
         debounceTimer.restart();
     }
 
@@ -82,6 +78,15 @@ Singleton {
         debounceTimer.restart();
     }
 
+    function saveState(): void {
+        if (!stateFile)
+            return;
+        stateFile.setText(JSON.stringify({
+            enabled: root.enabled,
+            temperature: root.temperature
+        }));
+    }
+
     function applyPendingChanges(): void {
         const newEnabled = root.pendingEnabled;
         const newTemp = root.pendingTemperature;
@@ -89,6 +94,7 @@ Singleton {
         root.temperature = newTemp;
         root.enabled = newEnabled;
 
+        saveState();
         checkHdrState();
         root.activeBackend = detectBackend();
 
@@ -118,9 +124,6 @@ Singleton {
             case "gsettings":
                 applyGsettings(newTemp, true);
                 break;
-            case "ddc":
-                applyDdc(newTemp);
-                break;
             case "none":
             default:
                 stopManagedProcess();
@@ -129,15 +132,25 @@ Singleton {
     }
 
     function runManagedProcess(cmd: list<string>): void {
-        if (proc.running)
+        if (proc.running) {
+            if (JSON.stringify(root.activeCommand) === JSON.stringify(cmd))
+                return;
+            root.pendingCommand = cmd;
             proc.running = false;
-        proc.command = cmd;
-        proc.running = true;
+        } else {
+            root.pendingCommand = [];
+            root.activeCommand = cmd;
+            proc.command = cmd;
+            proc.running = true;
+            root.processGeneration++;
+        }
     }
 
     function stopManagedProcess(): void {
-        if (proc.running)
+        root.pendingCommand = [];
+        if (proc.running) {
             proc.running = false;
+        }
     }
 
     function savePriorState(): void {
@@ -145,10 +158,6 @@ Singleton {
             return;
         if (root.activeBackend === "gsettings") {
             queryGsettingsPriorState();
-        } else if (root.activeBackend === "ddc" && MonitorControl.available) {
-            root.priorState = {
-                temperature: MonitorControl.temperature ?? "6500"
-            };
         }
     }
 
@@ -157,10 +166,6 @@ Singleton {
             const priorEn = root.priorState.gsettingsEnabled ?? false;
             const priorTemp = root.priorState.gsettingsTemp ?? 6500;
             applyGsettings(priorTemp, priorEn);
-        } else if (root.priorState && root.activeBackend === "ddc" && MonitorControl.available) {
-            const priorTemp = root.priorState.temperature ?? "6500";
-            if (root.supportedDdcPresets.includes(priorTemp))
-                MonitorControl.setControl("temperature", priorTemp);
         }
         root.priorState = ({});
     }
@@ -178,20 +183,15 @@ Singleton {
     }
 
     function queryGsettingsPriorState(): void {
-        gsettingsQueryProc.command = ["gsettings", "get", "org.gnome.settings-daemon.plugins.color", "night-light-temperature"];
+        gsettingsQueryProc.command = [
+            "sh", "-c",
+            "gsettings get org.gnome.settings-daemon.plugins.color night-light-enabled; echo '---'; gsettings get org.gnome.settings-daemon.plugins.color night-light-temperature"
+        ];
         gsettingsQueryProc.running = true;
     }
 
     function refreshCap(): void {
         checkProc.running = true;
-    }
-
-    function applyDdc(temp: int): void {
-        if (!MonitorControl.available)
-            return;
-        const ddcPreset = mapTemperatureToDdcPreset(temp);
-        if (root.supportedDdcPresets.includes(ddcPreset))
-            MonitorControl.setControl("temperature", ddcPreset);
     }
 
     Component.onCompleted: {
@@ -216,8 +216,54 @@ Singleton {
         onTriggered: root.applyPendingChanges()
     }
 
+    FileView {
+        id: stateFile
+
+        path: `${Paths.state}/night-light.json`
+        printErrors: false
+        onLoaded: {
+            try {
+                const state = JSON.parse(text());
+                if (state && typeof state === "object") {
+                    if (typeof state.enabled === "boolean") {
+                        root.enabled = state.enabled;
+                        root.pendingEnabled = state.enabled;
+                    }
+                    if (typeof state.temperature === "number") {
+                        root.temperature = state.temperature;
+                        root.pendingTemperature = state.temperature;
+                    }
+                }
+            } catch (e) {}
+            root.loaded = true;
+            if (root.enabled && root.activeBackend !== "none")
+                root.applyPendingChanges();
+        }
+        onLoadFailed: error => {
+            root.loaded = true;
+            root.enabled = false;
+            root.pendingEnabled = false;
+        }
+    }
+
     Process {
         id: proc
+
+        onRunningChanged: {
+            if (!running) {
+                root.activeCommand = [];
+                if (root.pendingCommand && root.pendingCommand.length > 0) {
+                    const cmd = root.pendingCommand;
+                    root.pendingCommand = [];
+                    if (root.enabled && !root.hdrActive && root.activeBackend !== "none") {
+                        root.activeCommand = cmd;
+                        proc.command = cmd;
+                        proc.running = true;
+                        root.processGeneration++;
+                    }
+                }
+            }
+        }
     }
 
     Process {
@@ -234,11 +280,14 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    const temp = parseInt(text.trim());
-                    if (!isNaN(temp)) {
+                    const parts = text.split("---");
+                    if (parts.length >= 2) {
+                        const enStr = parts[0].trim().toLowerCase();
+                        const tempVal = parseInt(parts[1].trim());
                         let st = root.priorState || ({});
-                        st.gsettingsTemp = temp;
-                        st.gsettingsEnabled = true;
+                        st.gsettingsEnabled = (enStr === "true");
+                        if (!isNaN(tempVal))
+                            st.gsettingsTemp = tempVal;
                         root.priorState = st;
                     }
                 } catch (e) {}
@@ -251,7 +300,7 @@ Singleton {
 
         command: [
             "sh", "-c",
-            "command -v hyprsunset || true; echo '---'; command -v gammastep || true; echo '---'; command -v wlsunset || true; echo '---'; command -v gsettings || true"
+            "command -v hyprsunset || true; echo '---'; command -v gammastep || true; echo '---'; command -v wlsunset || true; echo '---'; gsettings get org.gnome.settings-daemon.plugins.color night-light-temperature >/dev/null 2>&1 && command -v gsettings || true"
         ]
 
         stdout: StdioCollector {
@@ -270,3 +319,4 @@ Singleton {
         }
     }
 }
+
