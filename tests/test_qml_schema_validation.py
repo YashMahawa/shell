@@ -33,7 +33,7 @@ class TestQmlSchemaAndSettings(unittest.TestCase):
         content = updates_page.read_text()
         # Verify checkTimer is deleted or removed
         self.assertNotIn('id: checkTimer', content)
-        self.assertIn('id: updateCheckProcess', content)
+        self.assertIn('property Process updateCheckProcess: Process', content)
         self.assertIn('UNAVAILABLE', content)
         self.assertIn('hasError', content)
 
