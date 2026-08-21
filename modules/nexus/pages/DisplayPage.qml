@@ -16,6 +16,7 @@ PageBase {
 
     title: qsTr("Display")
 
+    property NexusState nState
     property var monitor: Hypr.focusedMonitor ?? (Hypr.monitors.values[0] ?? null)
     property string pointerMonitorName: monitor?.name ?? ""
     property string selectedResolution: monitor ? `${monitor.width}x${monitor.height}` : "preferred"
@@ -323,6 +324,60 @@ PageBase {
                     text: "sync"
                     fontStyle: Tokens.font.icon.medium
                     color: Colours.palette.m3primary
+                }
+            }
+        }
+
+        SectionHeader { text: qsTr("Spatial Arrangement") }
+
+        ConnectedRect {
+            Layout.fillWidth: true
+            first: true
+            last: true
+            implicitHeight: spatialLayout.implicitHeight + spatialLayout.anchors.margins * 2
+
+            RowLayout {
+                id: spatialLayout
+
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.largeIncreased
+                spacing: Tokens.spacing.large
+
+                StyledRect {
+                    implicitWidth: 64
+                    implicitHeight: 64
+                    radius: Tokens.rounding.large
+                    color: Colours.palette.m3primaryContainer
+
+                    MaterialIcon {
+                        anchors.centerIn: parent
+                        text: "space_dashboard"
+                        fontStyle: Tokens.font.icon.large
+                        color: Colours.palette.m3primary
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
+                    StyledText {
+                        text: qsTr("Interactive Visual Monitor Manager")
+                        font: Tokens.font.title.small
+                    }
+                    StyledText {
+                        text: qsTr("Drag displays on a visual canvas with magnetic snapping & saved profiles")
+                        font: Tokens.font.body.small
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+                }
+
+                TextButton {
+                    text: qsTr("Arrange Displays")
+                    onClicked: {
+                        if (root.nState)
+                            root.nState.openSubPage(1);
+                    }
                 }
             }
         }
