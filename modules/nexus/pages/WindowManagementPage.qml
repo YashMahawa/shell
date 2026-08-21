@@ -30,11 +30,12 @@ PageBase {
     }
 
     function keyword(name: string, value: string): void {
-        settingsProc.exec([Quickshell.shellPath("modules/nexus/scripts/manage_hypr_settings.py"), "--apply", "--keyword", name, "--value", value]);
+        settingsProc.exec(["python3", Quickshell.shellPath("modules/nexus/scripts/manage_hypr_settings.py"), "--apply", "--keyword", name, "--value", value]);
     }
 
     function saveSettings(): void {
         settingsProc.exec([
+            "python3",
             Quickshell.shellPath("modules/nexus/scripts/manage_hypr_settings.py"),
             "--save",
             "--settings-json",
