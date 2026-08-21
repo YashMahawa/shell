@@ -86,6 +86,14 @@ QtObject {
 
         // System
         Component {
+            // Power & Comfort
+            StackPage {
+                Component {
+                    PowerAndComfortPage {}
+                }
+            }
+        },
+        Component {
             PlaceholderComp {}
         },
         Component {
