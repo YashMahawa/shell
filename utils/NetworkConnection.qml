@@ -108,4 +108,17 @@ QtObject {
 
         Nmcli.connectToNetwork(network.ssid, password || "", network.bssid || "", onResult || null);
     }
+
+    /**
+     * Connect to a hidden or unbroadcasted wireless network.
+     *
+     * @param ssid Network name
+     * @param password Password for secured network
+     * @param security Security protocol ("wpa-psk", "none", etc.)
+     * @param hidden Whether the network is unbroadcasted/hidden
+     * @param onResult Optional callback function(result) called with connection result
+     */
+    function connectHiddenNetwork(ssid, password, security, hidden, onResult): void {
+        Nmcli.connectHiddenNetwork(ssid || "", password || "", security || "wpa-psk", hidden !== false, onResult || null);
+    }
 }

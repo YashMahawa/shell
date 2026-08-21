@@ -83,6 +83,22 @@ Singleton {
         });
     }
 
+    function connectHiddenNetwork(ssid: string, password: string, security: string, hidden: bool, callback: var): void {
+        if (callback) {
+            root.pendingConnection = {
+                ssid: ssid,
+                bssid: "",
+                callback: callback
+            };
+        }
+
+        Nmcli.connectHiddenNetwork(ssid, password, security, hidden, result => {
+            if (callback)
+                callback(result);
+            root.pendingConnection = null;
+        });
+    }
+
     function connectToNetworkWithPasswordCheck(ssid: string, isSecure: bool, callback: var, bssid: string): void {
         // Set up pending connection tracking
         const hasBssid = bssid !== undefined && bssid !== null && bssid.length > 0;

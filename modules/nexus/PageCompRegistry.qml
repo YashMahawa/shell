@@ -56,6 +56,9 @@ QtObject {
                 Component {
                     WifiNetworkInfo {}
                 }
+                Component {
+                    WifiAddNetwork {}
+                }
             }
         },
         Component {

@@ -338,7 +338,9 @@ PageBase {
             implicitHeight: addNetworkLayout.implicitHeight + addNetworkLayout.anchors.margins * 2
             last: true
 
-            StateLayer {}
+            StateLayer {
+                onClicked: root.nState.openSubPage(2)
+            }
 
             RowLayout {
                 id: addNetworkLayout
