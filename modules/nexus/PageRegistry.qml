@@ -43,6 +43,12 @@ QtObject {
 
         // System
         {
+            label: qsTr("Power & Comfort"),
+            icon: "bolt",
+            description: qsTr("Battery, power profiles, night light"),
+            category: "system"
+        },
+        {
             label: qsTr("Updates"),
             icon: "update",
             description: qsTr("System updates"),

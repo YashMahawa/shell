@@ -89,6 +89,14 @@ QtObject {
 
         // System
         Component {
+            // Power & Comfort
+            StackPage {
+                Component {
+                    PowerAndComfortPage {}
+                }
+            }
+        },
+        Component {
             StackPage {
                 Component {
                     UpdatesPage {}

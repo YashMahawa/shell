@@ -14,6 +14,7 @@ Scope {
         Notifs;
         Players;
         Brightness;
+        NightLight;
         Weather.reload();
         CalendarEvents.reload();
         Timetable;
