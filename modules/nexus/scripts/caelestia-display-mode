@@ -1,19 +1,21 @@
 #!/bin/sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 mode="$1"
 case "$mode" in
   extend|join)
-    exec python3 /app/shell/modules/nexus/scripts/manage_monitors.py apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "res": "preferred", "pos": "1920x0", "scale": "1"}]'
+    exec python3 "$SCRIPT_DIR/manage_monitors.py" apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "res": "preferred", "pos": "1920x0", "scale": "1"}]'
     ;;
   mirror)
-    exec python3 /app/shell/modules/nexus/scripts/manage_monitors.py apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "res": "preferred", "pos": "0x0", "scale": "1"}]'
+    exec python3 "$SCRIPT_DIR/manage_monitors.py" apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "res": "preferred", "pos": "0x0", "scale": "1"}]'
     ;;
   external)
-    exec python3 /app/shell/modules/nexus/scripts/manage_monitors.py apply --monitors-json '[{"name": "eDP-1", "disabled": true}, {"name": "HDMI-A-1", "res": "preferred", "pos": "0x0", "scale": "1"}]'
+    exec python3 "$SCRIPT_DIR/manage_monitors.py" apply --monitors-json '[{"name": "eDP-1", "disabled": true}, {"name": "HDMI-A-1", "res": "preferred", "pos": "0x0", "scale": "1"}]'
     ;;
   laptop)
-    exec python3 /app/shell/modules/nexus/scripts/manage_monitors.py apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "disabled": true}]'
+    exec python3 "$SCRIPT_DIR/manage_monitors.py" apply --monitors-json '[{"name": "eDP-1", "res": "preferred", "pos": "0x0", "scale": "1"}, {"name": "HDMI-A-1", "disabled": true}]'
     ;;
   *)
-    exec python3 /app/shell/modules/nexus/scripts/manage_monitors.py "$@"
+    exec python3 "$SCRIPT_DIR/manage_monitors.py" "$@"
     ;;
 esac
+

@@ -10,11 +10,21 @@ import time
 import uuid
 
 PROFILES_PATH = os.path.expanduser("~/.config/caelestia/display_profiles.json")
-ROLLBACK_PATH = "/tmp/caelestia_display_rollback.json"
 
-def get_config_dir():
-    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    return os.path.join(config_home, "hypr")
+def get_rollback_path():
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime_dir and os.path.exists(runtime_dir):
+        base_dir = os.path.join(runtime_dir, "caelestia")
+    else:
+        uid = os.getuid() if hasattr(os, "getuid") else 1000
+        base_dir = os.path.join("/tmp", f"caelestia-{uid}")
+    
+    os.makedirs(base_dir, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(base_dir, 0o700)
+    except Exception:
+        pass
+    return os.path.join(base_dir, "display_rollback.json")
 
 def validate_monitor_name(name):
     if not name or not re.match(r'^[a-zA-Z0-9_-]+$', name):
@@ -29,8 +39,12 @@ def validate_pos(pos):
         raise ValueError(f"Invalid position: {pos}")
 
 def validate_scale(scale):
-    if scale is None or not re.match(r'^[\d\.]+$', str(scale)):
-        raise ValueError(f"Invalid scale: {scale}")
+    try:
+        s = float(scale)
+        if s <= 0 or s > 10:
+            raise ValueError()
+    except Exception:
+        raise ValueError(f"Invalid scale factor: {scale}")
 
 def validate_transform(transform):
     if transform is None or not re.match(r'^[0-7]$', str(transform)):
@@ -88,14 +102,12 @@ def apply_rules(rules):
                 subprocess.run(["hyprctl", "dispatch", "dpms", "on", name], capture_output=True)
             applied_cmd_outputs.append((cmd, res_proc.stdout, res_proc.stderr))
         except FileNotFoundError:
-            # When hyprctl is not in system PATH (e.g. headless/mock env), simulate success
             pass
 
     # Output Safety Check: Verify at least one monitor is active in Hyprland if hyprctl is present
     try:
         live_monitors = get_current_hypr_monitors()
         if rules and not live_monitors and shutil.which("hyprctl"):
-            # Fallback: recover all connected displays to preferred
             for m in rules:
                 cmd = ["hyprctl", "keyword", "monitor", f"{m['name']},preferred,auto,1"]
                 subprocess.run(cmd, capture_output=True)
@@ -105,21 +117,41 @@ def apply_rules(rules):
 
     return True
 
+def ensure_source(user_conf, managed_conf):
+    source_line = f"source = {managed_conf}"
+    os.makedirs(os.path.dirname(user_conf), exist_ok=True)
+    if not os.path.exists(user_conf):
+        with open(user_conf, "w", encoding="utf-8") as f:
+            f.write(f"{source_line}\n")
+        return
+
+    with open(user_conf, "r", encoding="utf-8") as f:
+        content = f.read()
+    if source_line in content:
+        return
+
+    backup = f"{user_conf}.bak.{int(time.time())}"
+    try:
+        shutil.copy2(user_conf, backup)
+    except Exception:
+        pass
+
+    with open(user_conf, "a", encoding="utf-8") as f:
+        if content and not content.endswith("\n"):
+            f.write("\n")
+        f.write(f"{source_line}\n")
+
 def save_to_monitors_conf(monitors):
-    config_dir = get_config_dir()
-    os.makedirs(config_dir, exist_ok=True)
-    monitors_conf_path = os.path.join(config_dir, "monitors.conf")
-    hyprland_conf_path = os.path.join(config_dir, "hyprland.conf")
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    caelestia_dir = os.path.join(config_home, "caelestia")
+    os.makedirs(caelestia_dir, exist_ok=True)
 
-    if os.path.exists(hyprland_conf_path):
-        with open(hyprland_conf_path, "r") as f:
-            content = f.read()
-        source_line = f"source = {monitors_conf_path}"
-        if source_line not in content:
-            with open(hyprland_conf_path, "a") as f:
-                f.write(f"\n{source_line}\n")
+    managed_conf = os.path.join(caelestia_dir, "hypr-monitors.conf")
+    user_conf = os.path.join(caelestia_dir, "hypr-user.conf")
+    lua_conf = os.path.join(caelestia_dir, "display.lua")
 
-    with open(monitors_conf_path, "w") as f:
+    with open(managed_conf, "w", encoding="utf-8") as f:
+        f.write("# Managed by Caelestia Display Manager.\n")
         for m in monitors:
             name = m.get("name")
             res = m.get("res", "preferred")
@@ -128,6 +160,21 @@ def save_to_monitors_conf(monitors):
             transform = str(m.get("transform", "0"))
             disabled = m.get("disabled", False)
             f.write(f"monitor = {monitor_rule(name, res, pos, scale, transform, disabled)}\n")
+
+    ensure_source(user_conf, managed_conf)
+
+    with open(lua_conf, "w", encoding="utf-8") as f:
+        f.write("-- Native Caelestia Display Configuration\nreturn {\n  monitors = {\n")
+        for m in monitors:
+            name = m.get("name")
+            res = m.get("res", "preferred")
+            pos = m.get("pos", "0x0")
+            scale = float(m.get("scale", 1))
+            transform = int(m.get("transform", 0))
+            disabled = "true" if m.get("disabled", False) else "false"
+            f.write(f'    {{ name = "{name}", res = "{res}", pos = "{pos}", scale = {scale}, transform = {transform}, disabled = {disabled} }},\n')
+        f.write("  }\n}\n")
+
     reload_hyprland()
 
 def load_profiles():
@@ -144,9 +191,78 @@ def save_profiles(profiles):
     with open(PROFILES_PATH, "w") as f:
         json.dump(profiles, f, indent=2)
 
+def start_daemon_watcher(token, timeout=20):
+    script_path = os.path.abspath(__file__)
+    subprocess.Popen(
+        [sys.executable, script_path, "daemon-watch", token, str(timeout)],
+        start_new_session=True,
+        close_fds=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+def run_daemon_watch(token, timeout=20.0):
+    rollback_path = get_rollback_path()
+    start_time = time.time()
+    poll_interval = 0.5
+    while time.time() - start_time < timeout:
+        time.sleep(poll_interval)
+        if not os.path.exists(rollback_path):
+            return
+        try:
+            with open(rollback_path, "r") as f:
+                data = json.load(f)
+            if data.get("token") != token:
+                return
+        except Exception:
+            return
+
+    if os.path.exists(rollback_path):
+        try:
+            with open(rollback_path, "r") as f:
+                data = json.load(f)
+            if data.get("token") == token:
+                previous_layout = data.get("previous_layout", [])
+                if previous_layout:
+                    rules = []
+                    for m in previous_layout:
+                        res = f"{m.get('width', 1920)}x{m.get('height', 1080)}@{m.get('refreshRate', 60)}"
+                        pos = f"{m.get('x', 0)}x{m.get('y', 0)}"
+                        rules.append({
+                            "name": m.get("name"),
+                            "res": res,
+                            "pos": pos,
+                            "scale": str(m.get("scale", 1)),
+                            "transform": str(m.get("transform", 0)),
+                            "disabled": m.get("disabled", False)
+                        })
+                    apply_rules(rules)
+                os.remove(rollback_path)
+        except Exception as e:
+            print(f"Error during daemon automatic rollback: {e}", file=sys.stderr)
+
+def write_rollback_file(rollback_info):
+    rollback_path = get_rollback_path()
+    try:
+        fd = os.open(rollback_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(rollback_info, f)
+    except Exception:
+        with open(rollback_path, "w") as f:
+            json.dump(rollback_info, f)
+        try:
+            os.chmod(rollback_path, 0o600)
+        except Exception:
+            pass
+
 def main():
     parser = argparse.ArgumentParser(description="Interactive Visual Monitor Manager CLI")
     subparsers = parser.add_subparsers(dest="subcommand")
+
+    # daemon-watch
+    daemon_parser = subparsers.add_parser("daemon-watch")
+    daemon_parser.add_argument("token")
+    daemon_parser.add_argument("timeout", nargs="?", default="20")
 
     # apply / apply-json
     apply_parser = subparsers.add_parser("apply")
@@ -196,13 +312,23 @@ def main():
 
     args = parser.parse_args()
 
-    # Legacy argument handling
+    if getattr(args, "subcommand", None) == "daemon-watch":
+        token = args.token
+        try:
+            timeout = float(args.timeout)
+        except ValueError:
+            timeout = 20.0
+        run_daemon_watch(token, timeout)
+        return
+
     if args.apply:
         subcommand = "apply"
     elif args.save:
         subcommand = "save_legacy"
     else:
         subcommand = args.subcommand
+
+    rollback_path = get_rollback_path()
 
     if subcommand == "status":
         monitors = get_current_hypr_monitors()
@@ -216,14 +342,17 @@ def main():
 
     if subcommand == "confirm":
         token = args.token
-        if os.path.exists(ROLLBACK_PATH):
+        if os.path.exists(rollback_path):
             try:
-                with open(ROLLBACK_PATH, "r") as f:
+                with open(rollback_path, "r") as f:
                     data = json.load(f)
                 if not token or data.get("token") == token:
                     pending_layout = data.get("pending_layout", [])
                     save_to_monitors_conf(pending_layout)
-                    os.remove(ROLLBACK_PATH)
+                    try:
+                        os.remove(rollback_path)
+                    except OSError:
+                        pass
                     print(json.dumps({"saved": True, "message": "Layout saved permanently."}))
                     return
             except Exception as e:
@@ -233,28 +362,32 @@ def main():
         return
 
     if subcommand == "rollback":
-        if os.path.exists(ROLLBACK_PATH):
+        if os.path.exists(rollback_path):
             try:
-                with open(ROLLBACK_PATH, "r") as f:
+                with open(rollback_path, "r") as f:
                     data = json.load(f)
-                previous_layout = data.get("previous_layout", [])
-                if previous_layout:
-                    rules = []
-                    for m in previous_layout:
-                        res = f"{m.get('width', 1920)}x{m.get('height', 1080)}@{m.get('refreshRate', 60)}"
-                        pos = f"{m.get('x', 0)}x{m.get('y', 0)}"
-                        rules.append({
-                            "name": m.get("name"),
-                            "res": res,
-                            "pos": pos,
-                            "scale": str(m.get("scale", 1)),
-                            "transform": str(m.get("transform", 0)),
-                            "disabled": m.get("disabled", False)
-                        })
-                    apply_rules(rules)
-                os.remove(ROLLBACK_PATH)
-                print(json.dumps({"reverted": True, "message": "Previous layout restored."}))
-                return
+                if not token or data.get("token") == token:
+                    previous_layout = data.get("previous_layout", [])
+                    if previous_layout:
+                        rules = []
+                        for m in previous_layout:
+                            res = f"{m.get('width', 1920)}x{m.get('height', 1080)}@{m.get('refreshRate', 60)}"
+                            pos = f"{m.get('x', 0)}x{m.get('y', 0)}"
+                            rules.append({
+                                "name": m.get("name"),
+                                "res": res,
+                                "pos": pos,
+                                "scale": str(m.get("scale", 1)),
+                                "transform": str(m.get("transform", 0)),
+                                "disabled": m.get("disabled", False)
+                            })
+                        apply_rules(rules)
+                    try:
+                        os.remove(rollback_path)
+                    except OSError:
+                        pass
+                    print(json.dumps({"reverted": True, "message": "Previous layout restored."}))
+                    return
             except Exception as e:
                 print(json.dumps({"reverted": False, "error": str(e)}), file=sys.stderr)
                 sys.exit(1)
@@ -292,8 +425,8 @@ def main():
                 "created_at": time.time(),
                 "timeout": 20
             }
-            with open(ROLLBACK_PATH, "w") as f:
-                json.dump(rollback_info, f)
+            write_rollback_file(rollback_info)
+            start_daemon_watcher(token, 20)
             print(json.dumps({"token": token, "timeout": 20}))
         except Exception as e:
             print(f"Failed to apply monitor config: {e}", file=sys.stderr)
@@ -370,8 +503,8 @@ def main():
                     "created_at": time.time(),
                     "timeout": 20
                 }
-                with open(ROLLBACK_PATH, "w") as f:
-                    json.dump(rollback_info, f)
+                write_rollback_file(rollback_info)
+                start_daemon_watcher(token, 20)
                 print(json.dumps({"token": token, "timeout": 20, "profile": name}))
             except Exception as e:
                 print(f"Failed to apply profile '{name}': {e}", file=sys.stderr)
