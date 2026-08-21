@@ -17,6 +17,8 @@
   python3,
   yt-dlp,
   hyprland,
+  upower,
+  power-profiles-daemon,
   material-symbols,
   rubik,
   nerd-fonts,
@@ -53,6 +55,8 @@
       python3
       yt-dlp
       hyprland
+      upower
+      power-profiles-daemon
     ]
     ++ extraRuntimeDeps
     ++ lib.optional withCli caelestia-cli;

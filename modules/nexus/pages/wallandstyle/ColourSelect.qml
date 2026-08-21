@@ -1,7 +1,10 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import Caelestia.Config
 import qs.components
+import qs.components.controls
 import qs.services
 import qs.modules.nexus.common
 
@@ -11,37 +14,41 @@ PageBase {
     title: qsTr("Colours")
     isSubPage: true
 
-    Item {
+    ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
-        implicitHeight: {
-            const f = parent.parent as Flickable;
-            return f.height - f.topMargin - f.bottomMargin;
+        anchors.top: parent.top
+        width: root.cappedWidth
+        spacing: Tokens.spacing.extraSmall / 2
+
+        SectionHeader {
+            first: true
+            text: qsTr("Colour mode & scheme")
         }
 
-        ColumnLayout {
-            anchors.centerIn: parent
-            spacing: Tokens.padding.extraSmall
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("Dark mode")
+            subtext: qsTr("Use dark background and high-contrast elements")
+            checked: !Colours.light
+            onToggled: Colours.setMode(checked ? "dark" : "light")
+        }
 
-            MaterialIcon {
-                Layout.alignment: Qt.AlignHCenter
-                text: "handyman"
-                color: Colours.palette.m3outlineVariant
-                font: Tokens.font.icon.extraLarge
-            }
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Smart scheme")
+            subtext: qsTr("Extract colour palette dynamically from wallpaper")
+            checked: GlobalConfig.services.smartScheme
+            onToggled: GlobalConfig.services.smartScheme = checked
+        }
 
-            StyledText {
-                Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Page under construction")
-                color: Colours.palette.m3outlineVariant
-                font: Tokens.font.title.large
-            }
-
-            StyledText {
-                Layout.alignment: Qt.AlignHCenter
-                text: qsTr("This page will be available in a future update.")
-                color: Colours.palette.m3outlineVariant
-                font: Tokens.font.body.large
-            }
+        ToggleRow {
+            Layout.fillWidth: true
+            last: true
+            text: qsTr("Transparency")
+            subtext: qsTr("Enable alpha blending for shell panels")
+            checked: GlobalConfig.appearance.transparency.enabled
+            onToggled: GlobalConfig.appearance.transparency.enabled = checked
         }
     }
 }

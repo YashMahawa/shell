@@ -228,7 +228,8 @@ Singleton {
         readonly property bool isAppleDisplay: valid && root.appleDisplayPresent && model.startsWith("StudioDisplay")
         readonly property bool isInternalPanel: valid && (name.startsWith("eDP-")
             || name.startsWith("LVDS-") || name.startsWith("DSI-"))
-        property real brightness
+        property int maxBrightness: isAppleDisplay ? 101 : 100
+        property real brightness: 1.0
         property real queuedBrightness: NaN
         property bool initPending: false
 
@@ -238,25 +239,30 @@ Singleton {
                     if (monitor.isAppleDisplay) {
                         const val = parseInt(text.trim());
                         if (Number.isFinite(val))
-                            monitor.brightness = val / 101;
+                            monitor.brightness = val / monitor.maxBrightness;
                     } else if (monitor.isDdc) {
                         try {
                             const state = JSON.parse(text);
                             const val = Number(state.brightness);
                             if (Number.isFinite(val))
-                                monitor.brightness = val / 100;
+                                monitor.brightness = val / monitor.maxBrightness;
                         } catch (error) {
                         }
                     } else {
                         const parts = text.trim().split(/\s+/);
                         const cur = parseInt(parts[3]);
                         const max = parseInt(parts[4]);
-                        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0)
+                        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0) {
+                            monitor.maxBrightness = max;
                             monitor.brightness = cur / max;
+                        }
                     }
                 }
             }
             onExited: {
+                if (!Number.isFinite(monitor.brightness)) {
+                    monitor.brightness = 1.0;
+                }
                 if (monitor.initPending) {
                     monitor.initPending = false;
                     Qt.callLater(() => monitor.initBrightness());
@@ -279,7 +285,9 @@ Singleton {
                 return;
             value = Math.max(0, Math.min(1, value));
             const rounded = Math.round(value * 100);
-            if (Math.round(brightness * 100) === rounded)
+            const targetRaw = Math.round(value * maxBrightness);
+            const currentRaw = Math.round(brightness * (isInternalPanel ? 100 : maxBrightness));
+            if (isInternalPanel ? Math.round(brightness * 100) === rounded : currentRaw === targetRaw)
                 return;
 
             // Never fall back to brightnessctl for an external monitor while
@@ -295,12 +303,12 @@ Singleton {
             brightness = value;
 
             if (isAppleDisplay)
-                Quickshell.execDetached(["asdbctl", "set", rounded]);
+                Quickshell.execDetached(["asdbctl", "set", targetRaw]);
             else if (isDdc)
                 // The helper invalidates stale bus caches and redetects after
                 // HDR/input/power cycles before retrying the write.
                 Quickshell.execDetached([
-                    "caelestia-monitor-control", "set", "brightness", String(rounded)
+                    "caelestia-monitor-control", "set", "brightness", String(targetRaw)
                 ]);
             else if (isInternalPanel)
                 Quickshell.execDetached(["brightnessctl", "s", `${rounded}%`]);

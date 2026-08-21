@@ -12,31 +12,32 @@ Item {
     required property Pam pam
 
     readonly property string msg: {
-        if (pam.fprintState === "error")
-            return qsTr("FP ERROR: %1").arg(pam.fprint.message);
-        if (pam.state === "error")
-            return qsTr("PW ERROR: %1").arg(pam.passwd.message);
-
         if (pam.lockMessage)
             return pam.lockMessage;
+
+        if (pam.classifiedMessage && pam.classifiedMessage.text && (pam.state === "error" || pam.state === "fail" || pam.state === "max"))
+            return pam.classifiedMessage.text;
+
+        if (pam.fprintState === "error")
+            return qsTr("Fingerprint reader error. Please try again.");
 
         if (pam.state === "max" && pam.fprintState === "max")
             return qsTr("Maximum password and fingerprint attempts reached.");
         if (pam.state === "max") {
-            if (pam.fprint.available)
+            if (pam.fprint.available && pam.fprintState !== "max")
                 return qsTr("Maximum password attempts reached. Please use fingerprint.");
             return qsTr("Maximum password attempts reached.");
         }
         if (pam.fprintState === "max")
             return qsTr("Maximum fingerprint attempts reached. Please use password.");
 
-        if (pam.state === "fail") {
-            if (pam.fprint.available)
+        if (pam.state === "fail" || pam.state === "error") {
+            if (pam.fprint.available && pam.fprintState !== "max")
                 return qsTr("Incorrect password. Please try again or use fingerprint.");
             return qsTr("Incorrect password. Please try again.");
         }
         if (pam.fprintState === "fail")
-            return qsTr("Fingerprint not recognized (%1/%2). Please try again or use password.").arg(pam.fprint.tries).arg(Config.lock.maxFprintTries);
+            return qsTr("Fingerprint not recognized (%1/%2). Please try again or use password.").arg(pam.fprint.tries).arg(GlobalConfig.lock.maxFprintTries);
 
         return "";
     }
@@ -74,16 +75,20 @@ Item {
                 exitAnim.stop();
                 if (message.scale < 1)
                     appearAnim.restart();
-                else
+                else {
                     flashAnim.restart();
+                    shakeAnim.restart();
+                }
             } else {
                 message.text = msg;
                 exitAnim.stop();
                 appearAnim.restart();
+                shakeAnim.restart();
             }
         } else {
             appearAnim.stop();
             flashAnim.stop();
+            shakeAnim.stop();
             exitAnim.start();
         }
     }
@@ -149,6 +154,11 @@ Item {
         horizontalAlignment: Qt.AlignHCenter
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
 
+        transform: Translate {
+            id: textTranslate
+            x: 0
+        }
+
         Connections {
             function onFlashMsg(): void {
                 exitAnim.stop();
@@ -156,6 +166,7 @@ Item {
                     appearAnim.restart();
                 else
                     flashAnim.restart();
+                shakeAnim.restart();
             }
 
             target: root.pam
@@ -168,7 +179,21 @@ Item {
             target: message
             properties: "scale,opacity"
             to: 1
-            onFinished: flashAnim.restart()
+            onFinished: {
+                flashAnim.restart();
+                shakeAnim.restart();
+            }
+        }
+
+        SequentialAnimation {
+            id: shakeAnim
+
+            NumberAnimation { target: textTranslate; property: "x"; to: -10; duration: 40; easing.type: Easing.OutQuad }
+            NumberAnimation { target: textTranslate; property: "x"; to: 10; duration: 50; easing.type: Easing.InOutQuad }
+            NumberAnimation { target: textTranslate; property: "x"; to: -6; duration: 50; easing.type: Easing.InOutQuad }
+            NumberAnimation { target: textTranslate; property: "x"; to: 6; duration: 50; easing.type: Easing.InOutQuad }
+            NumberAnimation { target: textTranslate; property: "x"; to: -2; duration: 50; easing.type: Easing.InOutQuad }
+            NumberAnimation { target: textTranslate; property: "x"; to: 0; duration: 60; easing.type: Easing.OutQuad }
         }
 
         SequentialAnimation {
@@ -178,9 +203,11 @@ Item {
 
             FlashAnim {
                 to: 0.3
+                duration: 75
             }
             FlashAnim {
                 to: 1
+                duration: 75
             }
         }
 
@@ -205,7 +232,6 @@ Item {
     component FlashAnim: NumberAnimation {
         target: message
         property: "opacity"
-        duration: Tokens.anim.durations.small
         easing.type: Easing.Linear
     }
 }

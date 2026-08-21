@@ -20,14 +20,14 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Compact")
-            checked: Config.bar.activeWindow.compact
+            checked: GlobalConfig.bar.activeWindow.compact
             onToggled: GlobalConfig.bar.activeWindow.compact = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Inverted")
-            checked: Config.bar.activeWindow.inverted
+            checked: GlobalConfig.bar.activeWindow.inverted
             onToggled: GlobalConfig.bar.activeWindow.inverted = checked
         }
 
@@ -35,7 +35,7 @@ PageBase {
             Layout.fillWidth: true
             text: qsTr("Show on hover")
             subtext: qsTr("Only show the active window title while hovering")
-            checked: Config.bar.activeWindow.showOnHover
+            checked: GlobalConfig.bar.activeWindow.showOnHover
             onToggled: GlobalConfig.bar.activeWindow.showOnHover = checked
         }
 
@@ -44,7 +44,7 @@ PageBase {
             last: true
             text: qsTr("Popout on hover")
             subtext: qsTr("Show a window details popout when hovering")
-            checked: Config.bar.popouts.activeWindow
+            checked: GlobalConfig.bar.popouts.activeWindow
             onToggled: GlobalConfig.bar.popouts.activeWindow = checked
         }
     }

@@ -16,12 +16,10 @@ signals:
     void aboutToSleep();
     void resumed();
     void lockRequested();
-    void unlockRequested();
 
 private slots:
     void handlePrepareForSleep(bool sleep);
     void handleLockRequested();
-    void handleUnlockRequested();
 };
 
 } // namespace caelestia::internal

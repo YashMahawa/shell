@@ -34,6 +34,7 @@ public:
     [[nodiscard]] bool main() const;
 
     bool updateLastIpcObject(QJsonObject object);
+    bool updateActiveLayout(const QString& layoutName, int layoutIndex);
 
 signals:
     void lastIpcObjectChanged();
@@ -63,6 +64,7 @@ public:
     [[nodiscard]] QQmlListProperty<HyprKeyboard> keyboards();
 
     bool updateLastIpcObject(QJsonObject object);
+    bool updateActiveLayout(const QString& keyboardName, const QString& layoutName, int layoutIndex);
 
 signals:
     void keyboardsChanged();
