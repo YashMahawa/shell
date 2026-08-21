@@ -225,6 +225,7 @@ Singleton {
         readonly property bool isAppleDisplay: valid && root.appleDisplayPresent && model.startsWith("StudioDisplay")
         readonly property bool isInternalPanel: valid && (name.startsWith("eDP-")
             || name.startsWith("LVDS-") || name.startsWith("DSI-"))
+        property int maxBrightness: isAppleDisplay ? 101 : 100
         property real brightness: 1.0
         property real queuedBrightness: NaN
         property bool initPending: false
@@ -235,13 +236,15 @@ Singleton {
                     if (monitor.isAppleDisplay) {
                         const val = parseInt(text.trim());
                         if (Number.isFinite(val))
-                            monitor.brightness = val / 101;
+                            monitor.brightness = val / monitor.maxBrightness;
                     } else {
                         const parts = text.trim().split(/\s+/);
                         const cur = parseInt(parts[3]);
                         const max = parseInt(parts[4]);
-                        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0)
+                        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0) {
+                            monitor.maxBrightness = max;
                             monitor.brightness = cur / max;
+                        }
                     }
                 }
             }
@@ -271,7 +274,9 @@ Singleton {
                 return;
             value = Math.max(0, Math.min(1, value));
             const rounded = Math.round(value * 100);
-            if (Math.round(brightness * 100) === rounded)
+            const targetRaw = Math.round(value * maxBrightness);
+            const currentRaw = Math.round(brightness * (isInternalPanel ? 100 : maxBrightness));
+            if (isInternalPanel ? Math.round(brightness * 100) === rounded : currentRaw === targetRaw)
                 return;
 
             // Never fall back to brightnessctl for an external monitor while
@@ -287,9 +292,9 @@ Singleton {
             brightness = value;
 
             if (isAppleDisplay)
-                Quickshell.execDetached(["asdbctl", "set", rounded]);
+                Quickshell.execDetached(["asdbctl", "set", targetRaw]);
             else if (isDdc)
-                Quickshell.execDetached(["ddcutil", "-b", busNum, "setvcp", "10", rounded]);
+                Quickshell.execDetached(["ddcutil", "-b", busNum, "setvcp", "10", targetRaw]);
             else if (isInternalPanel)
                 Quickshell.execDetached(["brightnessctl", "s", `${rounded}%`]);
 
