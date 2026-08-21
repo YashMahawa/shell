@@ -13,11 +13,47 @@ Scope {
     readonly property alias passwd: passwd
     readonly property alias fprint: fprint
     property string lockMessage
+    property var classifiedMessage: null
     property string state
     property string fprintState
     property string buffer
 
     signal flashMsg
+
+    function parsePamMessage(msg) {
+        if (!msg) return null;
+
+        // Strip pam module prefixes if present
+        let clean = msg.replace(/^pam_\w+\([^)]+\):\s*/i, "").trim();
+
+        // Check for lockout
+        const lockoutMatch = clean.match(/(\d+)\s*(?:seconds|sec|s)?\s*left to unlock/i) || clean.match(/locked for (\d+)\s*(?:seconds|sec|s)?/i);
+        if (lockoutMatch || /account is locked/i.test(clean) || /account locked/i.test(clean)) {
+            const secs = lockoutMatch ? lockoutMatch[1] : null;
+            let text = secs ? qsTr("Account locked (%1s remaining)").arg(secs) : qsTr("Account locked due to failed attempts.");
+            return { type: "lockout", text: text, seconds: secs ? parseInt(secs, 10) : null };
+        }
+
+        // Check for remaining attempt counts
+        const attemptsMatch = clean.match(/(\d+)\s*(?:more\s+)?attempts?\s*(?:remaining|left)/i) || clean.match(/(\d+)\s*failed login attempts?/i);
+        if (attemptsMatch) {
+            const count = parseInt(attemptsMatch[1], 10);
+            let text = qsTr("Incorrect password (%1 attempt%2 remaining)").arg(count).arg(count === 1 ? "" : "s");
+            return { type: "attempts", text: text, count: count };
+        }
+
+        // Check for standard invalid password / auth failure
+        if (/authentication (?:failure|failed)/i.test(clean) || /invalid password/i.test(clean) || /incorrect password/i.test(clean) || /password incorrect/i.test(clean)) {
+            return { type: "invalid_creds", text: qsTr("Incorrect password. Please try again.") };
+        }
+
+        // Fallback sanitized info string to prevent display layout overflow
+        let sanitized = clean.replace(/[\r\n]+/g, " ");
+        if (sanitized.length > 80) {
+            sanitized = sanitized.substring(0, 77) + "...";
+        }
+        return { type: "info", text: sanitized };
+    }
 
     function finishUnlock(): void {
         unlockStateProc.running = true;
@@ -49,10 +85,15 @@ Scope {
         configDirectory: Quickshell.shellDir + "/assets/pam.d"
 
         onMessageChanged: {
-            if (message.startsWith("The account is locked"))
-                root.lockMessage = message;
-            else if (root.lockMessage && message.endsWith(" left to unlock)"))
-                root.lockMessage += "\n" + message;
+            if (message) {
+                const parsed = root.parsePamMessage(message);
+                if (parsed) {
+                    root.classifiedMessage = parsed;
+                    if (parsed.type === "lockout") {
+                        root.lockMessage = parsed.text;
+                    }
+                }
+            }
         }
 
         onResponseRequiredChanged: {
@@ -66,6 +107,11 @@ Scope {
         onCompleted: res => {
             if (res === PamResult.Success)
                 return root.finishUnlock();
+
+            const parsed = root.parsePamMessage(passwd.message);
+            if (parsed) {
+                root.classifiedMessage = parsed;
+            }
 
             if (res === PamResult.Error)
                 root.state = "error";
@@ -108,18 +154,19 @@ Scope {
                 return root.finishUnlock();
 
             if (res === PamResult.Error) {
-                root.fprintState = "error";
                 errorTries++;
-                if (errorTries < 5) {
+                if (errorTries < 2) {
+                    root.fprintState = "error";
                     abort();
                     errorRetry.restart();
+                } else {
+                    root.fprintState = "error_max";
+                    abort();
+                    errorRetry.stop();
                 }
-            } else if (res === PamResult.MaxTries) {
-                // Isn't actually the real max tries as pam only reports completed
-                // when max tries is reached.
+            } else if (res === PamResult.MaxTries || res === PamResult.Failed) {
                 tries++;
                 if (tries < GlobalConfig.lock.maxFprintTries) {
-                    // Restart if not actually real max tries
                     root.fprintState = "fail";
                     start();
                 } else {
@@ -171,8 +218,9 @@ Scope {
 
         interval: 4000
         onTriggered: {
-            root.fprintState = "";
-            fprint.errorTries = 0;
+            if (fprint.errorTries < 2 && fprint.tries < GlobalConfig.lock.maxFprintTries) {
+                root.fprintState = "";
+            }
         }
     }
 
@@ -184,6 +232,9 @@ Scope {
                 root.state = "";
                 root.fprintState = "";
                 root.lockMessage = "";
+                root.classifiedMessage = null;
+                fprint.tries = 0;
+                fprint.errorTries = 0;
             }
         }
 

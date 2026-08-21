@@ -30,6 +30,48 @@ StyledRect {
             forceActiveFocus();
     }
 
+    transform: Translate {
+        id: boxTranslate
+        x: 0
+    }
+
+    Connections {
+        function onFlashMsg(): void {
+            boxShakeAnim.restart();
+            alertFlashAnim.restart();
+        }
+
+        target: root.lock.pam
+    }
+
+    SequentialAnimation {
+        id: boxShakeAnim
+
+        NumberAnimation { target: boxTranslate; property: "x"; to: -12; duration: 40; easing.type: Easing.OutQuad }
+        NumberAnimation { target: boxTranslate; property: "x"; to: 12; duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: boxTranslate; property: "x"; to: -8; duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: boxTranslate; property: "x"; to: 8; duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: boxTranslate; property: "x"; to: -4; duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: boxTranslate; property: "x"; to: 0; duration: 60; easing.type: Easing.OutQuad }
+    }
+
+    SequentialAnimation {
+        id: alertFlashAnim
+
+        ColorAnimation {
+            target: root
+            property: "color"
+            to: Colours.palette.m3errorContainer
+            duration: 100
+        }
+        ColorAnimation {
+            target: root
+            property: "color"
+            to: Colours.tPalette.m3surfaceContainer
+            duration: 200
+        }
+    }
+
     Keys.onPressed: event => {
         if (root.lock.unlocking)
             return;
@@ -75,13 +117,13 @@ StyledRect {
                 MaterialIcon {
                     animate: true
                     text: {
-                        if (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries)
+                        if (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= 2 || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max")
                             return "fingerprint_off";
                         if (root.lock.pam.fprint.active)
                             return "fingerprint";
                         return "lock";
                     }
-                    color: root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                    color: (root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries || root.lock.pam.fprint.errorTries >= 2 || root.lock.pam.fprintState === "max" || root.lock.pam.fprintState === "error_max") ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale).build()
                 }
             }

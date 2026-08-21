@@ -44,9 +44,11 @@ Item {
 
         text: {
             if (root.pam.passwd.active)
-                return qsTr("Loading...");
+                return qsTr("Authenticating...");
             if (root.pam.state === "max")
                 return qsTr("Max tries reached");
+            if (root.pam.fprint.available && root.pam.fprint.active && root.pam.fprint.tries < GlobalConfig.lock.maxFprintTries && root.pam.fprint.errorTries < 2)
+                return qsTr("Enter password or scan fingerprint");
             return qsTr("Enter your password");
         }
         font: placeholder.font
