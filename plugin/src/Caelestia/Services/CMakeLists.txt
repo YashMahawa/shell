@@ -8,7 +8,7 @@ qml_module(caelestia-services
         audioprovider.cpp
         cavaprovider.cpp
         tickingservice.cpp
-    uischeduler.cpp
+        uischeduler.cpp
         sensorslib.cpp
         usagefmt.cpp
         cpu.cpp
@@ -19,8 +19,10 @@ qml_module(caelestia-services
         lyriccandidate.cpp
         lyrics.cpp
         backgrounddaemon.cpp
+        bluetoothagent.hpp bluetoothagent.cpp
     LIBRARIES
         Qt::Concurrent
+        Qt::DBus
         PkgConfig::Pipewire
         PkgConfig::Aubio
         PkgConfig::Cava
