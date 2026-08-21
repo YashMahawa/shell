@@ -30,25 +30,30 @@ PageBase {
     }
 
     function keyword(name: string, value: string): void {
-        settingsProc.exec(["python3", Quickshell.shellPath("modules/nexus/scripts/manage_hypr_settings.py"), "--apply", "--keyword", name, "--value", value]);
+        Hypr.extras.batchMessage([`keyword ${name} ${value}`]);
     }
 
     function saveSettings(): void {
-        settingsProc.exec([
-            "python3",
-            Quickshell.shellPath("modules/nexus/scripts/manage_hypr_settings.py"),
-            "--save",
-            "--settings-json",
-            JSON.stringify({
-                "input:follow_mouse": focusFollowsMouse ? "1" : "0",
-                "binds:workspace_back_and_forth": naturalWorkspaceScroll ? "1" : "0",
-                "general:gaps_in": String(gapsIn),
-                "general:gaps_out": String(gapsOut),
-                "decoration:rounding": String(rounding),
-                "decoration:active_opacity": String(windowOpacity),
-                "decoration:inactive_opacity": String(windowOpacity)
-            })
-        ]);
+        const begin = "# BEGIN CAELESTIA WINDOW SETTINGS";
+        const end = "# END CAELESTIA WINDOW SETTINGS";
+        const block = `${begin}\ninput {\n    follow_mouse = ${focusFollowsMouse ? 1 : 0}\n}\nbinds {\n    workspace_back_and_forth = ${naturalWorkspaceScroll ? 1 : 0}\n}\ngeneral {\n    gaps_in = ${gapsIn}\n    gaps_out = ${gapsOut}\n}\ndecoration {\n    rounding = ${rounding}\n    active_opacity = ${windowOpacity}\n    inactive_opacity = ${windowOpacity}\n}\n${end}`;
+        const current = hyprUserFile.text();
+        const start = current.indexOf(begin);
+        const finish = current.indexOf(end);
+        let preserved = current;
+        if (start >= 0 && finish >= start)
+            preserved = current.slice(0, start) + current.slice(finish + end.length);
+        hyprUserFile.setText(`${preserved.trimEnd()}\n\n${block}\n`);
+
+        keyword("input:follow_mouse", focusFollowsMouse ? "1" : "0");
+        keyword("binds:workspace_back_and_forth", naturalWorkspaceScroll ? "1" : "0");
+        keyword("general:gaps_in", String(gapsIn));
+        keyword("general:gaps_out", String(gapsOut));
+        keyword("decoration:rounding", String(rounding));
+        keyword("decoration:active_opacity", String(windowOpacity));
+        keyword("decoration:inactive_opacity", String(windowOpacity));
+        root.statusMessage = qsTr("Window settings saved and applied");
+        root.statusIsError = false;
     }
 
     ColumnLayout {
@@ -57,38 +62,11 @@ PageBase {
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
 
-        Process {
-            id: settingsProc
+        FileView {
+            id: hyprUserFile
 
-            stdout: StdioCollector {
-                onStreamFinished: {
-                    const message = text.trim();
-                    if (message) {
-                        root.statusMessage = message;
-                        root.statusIsError = false;
-                    }
-                }
-            }
-
-            stderr: StdioCollector {
-                onStreamFinished: {
-                    const message = text.trim();
-                    if (message) {
-                        root.statusMessage = message;
-                        root.statusIsError = true;
-                    }
-                }
-            }
-
-            onExited: exitCode => { // qmllint disable signal-handler-parameters
-                if (exitCode !== 0) {
-                    root.statusIsError = true;
-                    if (!root.statusMessage)
-                        root.statusMessage = qsTr("Window setting failed");
-                } else if (!root.statusMessage) {
-                    root.statusMessage = qsTr("Window setting applied");
-                }
-            }
+            path: `${Paths.config}/hypr-user.conf`
+            printErrors: true
         }
 
         SectionHeader {

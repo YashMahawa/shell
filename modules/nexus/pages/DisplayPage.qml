@@ -426,7 +426,10 @@ PageBase {
             id: refreshSelect
             Layout.fillWidth: true
             label: qsTr("Refresh rate")
-            subtext: qsTr("Rates supported by the current connection")
+            disabled: root.refreshRates().length <= 1
+            subtext: disabled
+                ? qsTr("Only one rate is available at this resolution")
+                : qsTr("Rates supported by the current connection")
             menuItems: refreshVariants.instances
             active: menuItems[Math.max(0, root.refreshRates().findIndex(value => Math.abs(value - root.selectedRefresh) < 0.02))] ?? null
             fallbackText: `${root.selectedRefresh} Hz`
