@@ -507,6 +507,12 @@ Singleton {
             return;
         }
 
+        if (security !== "wpa-psk" && security !== "none") {
+            if (callback)
+                callback({ success: false, error: "Unsupported security type. Only Personal (WPA) and Open networks are supported." });
+            return;
+        }
+
         const isSecure = security !== "none";
         const requestKey = `${ssid}|hidden`;
 
@@ -525,60 +531,94 @@ Singleton {
             immediateCheckTimer.start();
         }
 
-        checkAndDeleteConnection(ssid, () => {
-            const cmd = [
-                root.nmcliCommandConnection, "add",
-                root.connectionParamType, root.deviceTypeWifi,
-                root.connectionParamConName, ssid,
-                root.connectionParamIfname, "*",
-                root.connectionParamSsid, ssid
-            ];
+        // Create a uniquely named temporary profile so an existing working
+        // profile for `ssid` is not destroyed before replacement activation succeeds.
+        const tempConName = "temp_hidden_" + ssid.replace(/[^a-zA-Z0-9_-]/g, "_") + "_" + Date.now();
 
-            if (hidden) {
-                cmd.push("802-11-wireless.hidden", "yes");
-            }
+        const cmd = [
+            root.nmcliCommandConnection, "add",
+            root.connectionParamType, root.deviceTypeWifi,
+            root.connectionParamConName, tempConName,
+            root.connectionParamIfname, "*",
+            root.connectionParamSsid, ssid
+        ];
 
-            if (isSecure && password && password.length > 0) {
-                cmd.push(root.securityKeyMgmt, root.keyMgmtWpaPsk, root.securityPsk, password);
-            }
+        if (hidden) {
+            cmd.push("802-11-wireless.hidden", "yes");
+        }
 
-            executeCommand(cmd, addResult => {
+        if (isSecure && password && password.length > 0) {
+            cmd.push(root.securityKeyMgmt, root.keyMgmtWpaPsk, root.securityPsk, password);
+        }
+
+        executeCommand(cmd, addResult => {
+            if (root.wifiConnectionChangeKey !== requestKey) {
+                // Superseded or cancelled. Clean up temporary profile if created.
                 if (addResult.success) {
-                    loadSavedConnections(() => {});
-                    activateConnection(ssid, upResult => {
-                        root.wifiConnectionChangeKey = "";
-                        if (!upResult.success) {
-                            checkAndDeleteConnection(ssid, () => {
-                                loadSavedConnections(() => {});
-                            });
-                        } else {
-                            refreshLiveWifiState();
-                        }
-                        if (callback)
-                            callback(upResult);
-                    });
-                } else {
-                    let fallbackCmd = [root.nmcliCommandDevice, root.nmcliCommandWifi, "connect", ssid];
-                    if (isSecure && password && password.length > 0) {
-                        fallbackCmd.push(root.connectionParamPassword, password);
-                    }
-                    if (hidden) {
-                        fallbackCmd.push("hidden", "yes");
-                    }
-                    executeCommand(fallbackCmd, fallbackResult => {
-                        root.wifiConnectionChangeKey = "";
-                        if (fallbackResult.success) {
-                            refreshLiveWifiState();
-                        } else {
-                            checkAndDeleteConnection(ssid, () => {
-                                loadSavedConnections(() => {});
-                            });
-                        }
-                        if (callback)
-                            callback(fallbackResult);
-                    });
+                    executeCommand([root.nmcliCommandConnection, "delete", tempConName], null);
                 }
-            });
+                return;
+            }
+
+            if (addResult.success) {
+                activateConnection(tempConName, upResult => {
+                    if (root.wifiConnectionChangeKey !== requestKey) {
+                        // Superseded or cancelled.
+                        executeCommand([root.nmcliCommandConnection, "delete", tempConName], null);
+                        return;
+                    }
+
+                    if (upResult.success) {
+                        // Activation succeeded. Replace/rename old profile if one exists.
+                        executeCommand([root.nmcliCommandConnection, "show", ssid], showResult => {
+                            const finalizeRename = () => {
+                                executeCommand([root.nmcliCommandConnection, "modify", tempConName, "connection.id", ssid], modifyResult => {
+                                    root.wifiConnectionChangeKey = "";
+                                    loadSavedConnections(() => {});
+                                    refreshLiveWifiState();
+                                    if (callback)
+                                        callback({ success: true, output: upResult.output, error: "", exitCode: 0 });
+                                });
+                            };
+
+                            if (showResult.success) {
+                                executeCommand([root.nmcliCommandConnection, "delete", ssid], deleteResult => {
+                                    finalizeRename();
+                                });
+                            } else {
+                                finalizeRename();
+                            }
+                        });
+                    } else {
+                        // Activation failed. Clean up ONLY the temporary profile.
+                        executeCommand([root.nmcliCommandConnection, "delete", tempConName], deleteResult => {
+                            root.wifiConnectionChangeKey = "";
+                            loadSavedConnections(() => {});
+                            if (callback)
+                                callback(upResult);
+                        });
+                    }
+                });
+            } else {
+                // Creation of temporary profile failed. Try fallback direct device connect.
+                let fallbackCmd = [root.nmcliCommandDevice, root.nmcliCommandWifi, "connect", ssid];
+                if (isSecure && password && password.length > 0) {
+                    fallbackCmd.push(root.connectionParamPassword, password);
+                }
+                if (hidden) {
+                    fallbackCmd.push("hidden", "yes");
+                }
+                executeCommand(fallbackCmd, fallbackResult => {
+                    if (root.wifiConnectionChangeKey !== requestKey)
+                        return;
+                    root.wifiConnectionChangeKey = "";
+                    if (fallbackResult.success) {
+                        refreshLiveWifiState();
+                    }
+                    if (callback)
+                        callback(fallbackResult);
+                });
+            }
         });
     }
 
@@ -612,7 +652,8 @@ Singleton {
         if (password && password.length > 0 && hasBssid) {
             const bssidUpper = bssid.toUpperCase();
             createConnectionWithPassword(ssid, bssidUpper, password, result => {
-                root.wifiConnectionChangeKey = "";
+                if (root.wifiConnectionChangeKey === requestKey)
+                    root.wifiConnectionChangeKey = "";
                 if (callback)
                     callback(result);
             });
@@ -633,6 +674,10 @@ Singleton {
             cmd.push(root.wifiConnectParamBssid, bssid.toUpperCase());
         }
         executeCommand(cmd, result => {
+            if (root.wifiConnectionChangeKey !== requestKey) {
+                return;
+            }
+
             if (result.needsPassword && callback) {
                 root.wifiConnectionChangeKey = "";
                 if (callback)
@@ -661,13 +706,24 @@ Singleton {
     }
 
     function createConnectionWithPassword(ssid: string, bssidUpper: string, password: string, callback: var): void {
+        const requestKey = root.wifiConnectionChangeKey;
         checkAndDeleteConnection(ssid, () => {
+            if (requestKey && root.wifiConnectionChangeKey !== requestKey) {
+                return;
+            }
             const cmd = [root.nmcliCommandConnection, "add", root.connectionParamType, root.deviceTypeWifi, root.connectionParamConName, ssid, root.connectionParamIfname, "*", root.connectionParamSsid, ssid, root.connectionParamBssid, bssidUpper, root.securityKeyMgmt, root.keyMgmtWpaPsk, root.securityPsk, password];
 
             executeCommand(cmd, result => {
+                if (requestKey && root.wifiConnectionChangeKey !== requestKey) {
+                    return;
+                }
                 if (result.success) {
                     loadSavedConnections(() => {});
-                    activateConnection(ssid, callback);
+                    activateConnection(ssid, res => {
+                        if (requestKey && root.wifiConnectionChangeKey !== requestKey) return;
+                        root.wifiConnectionChangeKey = "";
+                        if (callback) callback(res);
+                    });
                 } else {
                     const hasDuplicateWarning = result.error && (result.error.includes("another connection with the name") || result.error.includes("Reference the connection by its uuid"));
 

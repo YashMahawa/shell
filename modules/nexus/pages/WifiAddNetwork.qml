@@ -32,7 +32,7 @@ PageBase {
             text: qsTr("WPA/WPA2/WPA3 Personal")
         },
         MenuItem {
-            text: qsTr("None")
+            text: qsTr("Open (No security)")
         }
     ]
 
@@ -99,6 +99,7 @@ PageBase {
             first: false
             last: false
             label: qsTr("Security")
+            subtext: qsTr("Personal (WPA/WPA2/WPA3) and Open networks supported")
             menuItems: root.securityItems
             active: root.securityItems[root.securityIndex] ?? root.securityItems[0]
             onSelected: item => {
@@ -217,6 +218,7 @@ PageBase {
                         text: qsTr("Cancel")
                         enabled: !root.busy
                         onClicked: {
+                            Nmcli.cancelPendingWifiOperation();
                             root.nState.closeSubPage();
                         }
                     }
