@@ -40,30 +40,36 @@ detect_active_dm() {
   fi
 }
 
-if [ "$ACTION" = "rollback" ] || [ "$ACTION" = "uninstall" ]; then
+perform_rollback() {
   echo "Rolling back greeter configuration..."
+  rm -f /etc/greetd/config.toml.tmp
+
   if [ -f /etc/greetd/config.toml.bak ]; then
     mv /etc/greetd/config.toml.bak /etc/greetd/config.toml
     echo "Restored original /etc/greetd/config.toml"
   else
-    echo "No backup found, removing generated config..."
-    rm -f /etc/greetd/config.toml
+    if [ -f /etc/greetd/config.toml ]; then
+      rm -f /etc/greetd/config.toml
+      echo "Removed generated /etc/greetd/config.toml"
+    fi
   fi
   
-  systemctl disable greetd.service
+  systemctl disable greetd.service >/dev/null 2>&1 || true
+
+  local rollback_failed=0
 
   if [ -f /etc/greetd/prev_dm.bak ]; then
     PREV_DM=$(cat /etc/greetd/prev_dm.bak)
     if [ -n "$PREV_DM" ]; then
       if ! systemctl list-unit-files "$PREV_DM" >/dev/null 2>&1; then
         echo "FATAL: Previous display manager $PREV_DM does not exist!"
-        exit 1
-      fi
-      if ! systemctl enable "$PREV_DM"; then
+        rollback_failed=1
+      elif ! systemctl enable "$PREV_DM"; then
         echo "FATAL: Failed to enable $PREV_DM!"
-        exit 1
+        rollback_failed=1
+      else
+        echo "Restored previous display manager: $PREV_DM"
       fi
-      echo "Restored previous display manager: $PREV_DM"
     fi
     rm -f /etc/greetd/prev_dm.bak
   fi
@@ -73,14 +79,22 @@ if [ "$ACTION" = "rollback" ] || [ "$ACTION" = "uninstall" ]; then
     if [ -n "$PREV_TARGET" ]; then
       if ! systemctl set-default "$PREV_TARGET"; then
         echo "FATAL: Failed to set default target $PREV_TARGET!"
-        exit 1
+        rollback_failed=1
+      else
+        echo "Restored previous default target: $PREV_TARGET"
       fi
-      echo "Restored previous default target: $PREV_TARGET"
     fi
     rm -f /etc/greetd/prev_default_target.bak
   fi
 
   echo "Rollback complete."
+  return $rollback_failed
+}
+
+if [ "$ACTION" = "rollback" ] || [ "$ACTION" = "uninstall" ]; then
+  if ! perform_rollback; then
+    exit 1
+  fi
   exit 0
 fi
 
@@ -101,6 +115,7 @@ if [ "$ACTION" != "--apply" ]; then
 fi
 
 export PATH=$PATH:/usr/sbin:/sbin:/usr/bin:/bin
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Perform all preflight checks and explicit opt-in decisions before any mutation.
 CURRENT_DM=$(detect_active_dm)
@@ -134,6 +149,28 @@ if [ "$OPT_IN" -ne 1 ]; then
   fi
 fi
 
+echo "Performing preflight validation..."
+
+# 1. Validate greetd service or binary presence
+if ! systemctl list-unit-files greetd.service >/dev/null 2>&1 && ! command -v greetd >/dev/null 2>&1; then
+  echo "FATAL: greetd service or binary is not available on this system!"
+  exit 1
+fi
+
+# 2. Validate session executable command
+CMD_EXEC="caelestia-shell"
+if ! command -v "$CMD_EXEC" >/dev/null 2>&1; then
+  echo "FATAL: Greeter command executable '$CMD_EXEC' not found in PATH!"
+  exit 1
+fi
+
+# 3. Validate session QML file
+QML_FILE="/usr/share/quickshell/caelestia/greeter.qml"
+if [ ! -f "$QML_FILE" ] && [ ! -f "$SCRIPT_DIR/../greeter.qml" ] && [ ! -f "./greeter.qml" ]; then
+  echo "FATAL: Greeter QML file '$QML_FILE' not found!"
+  exit 1
+fi
+
 echo "Installing greeter configuration..."
 
 # Stage and validate greetd files before modifying system services
@@ -156,17 +193,47 @@ if [ ! -s "$STAGING_CONFIG" ]; then
 fi
 
 if command -v greetd >/dev/null 2>&1; then
-  if greetd --check --config "$STAGING_CONFIG" >/dev/null 2>&1; then
-    echo "Validated staged greetd configuration."
+  if ! greetd --check --config "$STAGING_CONFIG" >/dev/null 2>&1; then
+    echo "FATAL: Staged greetd configuration validation failed (greetd --check)!"
+    rm -f "$STAGING_CONFIG"
+    exit 1
   fi
+  echo "Validated staged greetd configuration."
 fi
+
+# Set up transactional rollback trap for system mutation steps
+INSTALL_SUCCESS=0
+
+rollback_trap() {
+  local exit_code=$?
+  trap - EXIT INT TERM
+  if [ "$INSTALL_SUCCESS" -ne 1 ]; then
+    echo "FATAL: Installation or enablement failed (exit code $exit_code). Initiating automatic rollback..."
+    perform_rollback
+    exit "$exit_code"
+  fi
+}
+
+trap rollback_trap EXIT INT TERM
 
 if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
   cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
   echo "Backed up existing config to /etc/greetd/config.toml.bak"
 fi
 
-mv "$STAGING_CONFIG" /etc/greetd/config.toml
+# Preserve previous target & display manager state before disabling current DM
+systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
+
+if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
+  echo "$CURRENT_DM" > /etc/greetd/prev_dm.bak
+else
+  > /etc/greetd/prev_dm.bak
+fi
+
+if ! mv "$STAGING_CONFIG" /etc/greetd/config.toml; then
+  echo "FATAL: Failed to install staged config to /etc/greetd/config.toml!"
+  exit 1
+fi
 echo "Staged greetd configuration written to /etc/greetd/config.toml"
 
 # Create/validate greeter user without adding supplementary hardware groups.
@@ -184,15 +251,12 @@ fi
 GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
 echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
 
-# Preserve previous target & display manager state before disabling current DM
-systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
-
 if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
-  echo "$CURRENT_DM" > /etc/greetd/prev_dm.bak
   echo "Disabling current display manager: $CURRENT_DM..."
-  systemctl disable "$CURRENT_DM" || true
-else
-  > /etc/greetd/prev_dm.bak
+  if ! systemctl disable "$CURRENT_DM"; then
+    echo "FATAL: Failed to disable current display manager $CURRENT_DM!"
+    exit 1
+  fi
 fi
 
 if ! systemctl enable greetd.service; then
@@ -203,4 +267,7 @@ if ! systemctl set-default graphical.target; then
   echo "FATAL: Failed to set default graphical.target!"
   exit 1
 fi
+
+INSTALL_SUCCESS=1
+trap - EXIT INT TERM
 echo "Greeter configured successfully. Use '$0 rollback' to revert."
