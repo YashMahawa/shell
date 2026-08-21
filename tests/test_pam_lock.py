@@ -60,10 +60,9 @@ def parse_pam_message(msg):
 
 
 class MockLockConfig:
-    def __init__(self, enable_fprint=True, max_fprint_tries=3, max_fprint_errors=2):
+    def __init__(self, enable_fprint=True, max_fprint_tries=3):
         self.enableFprint = enable_fprint
         self.maxFprintTries = max_fprint_tries
-        self.maxFprintErrors = max_fprint_errors
 
 
 class MockTimer:
@@ -86,7 +85,6 @@ class MockPamContext:
         self.message = ""
         self.available = True
         self.tries = 0
-        self.errorTries = 0
 
     def abort(self):
         self.active = False
@@ -112,16 +110,17 @@ class MockPamState:
         self.stateReset = MockTimer()
         self.fprintStateReset = MockTimer()
 
+    def start_passwd_attempt(self):
+        self.lockMessage = ""
+        self.classifiedMessage = None
+        self.state = ""
+        self.passwd.start()
+
     def handle_passwd_message(self, message):
         if message:
             parsed = parse_pam_message(message)
-            self.classifiedMessage = parsed
-
-            text_to_use = parsed["text"] if (parsed and parsed["type"] in ("lockout", "attempts")) else message
-            if not self.lockMessage:
-                self.lockMessage = text_to_use
-            elif text_to_use not in self.lockMessage and message not in self.lockMessage:
-                self.lockMessage += "\n" + text_to_use
+            if parsed and parsed.get("type") == "lockout":
+                self.lockMessage = parsed["text"]
 
     def handle_passwd_completed(self, pam_result, msg=""):
         self.passwd.message = msg
@@ -131,6 +130,8 @@ class MockPamState:
         parsed = parse_pam_message(msg)
         if parsed:
             self.classifiedMessage = parsed
+            if parsed.get("type") == "lockout":
+                self.lockMessage = parsed["text"]
 
         if pam_result == "Error":
             self.state = "error"
@@ -142,22 +143,16 @@ class MockPamState:
         self.stateReset.restart()
 
     def handle_fprint_completed(self, pam_result):
-        if not self.fprint.available:
+        if not self.fprint.available or not self.config.enableFprint:
             return
 
         if pam_result == "Success":
             return self.finishUnlock()
 
         if pam_result == "Error":
-            self.fprint.errorTries += 1
-            if self.fprint.errorTries < self.config.maxFprintErrors:
-                self.fprintState = "error"
-                self.fprint.abort()
-                self.errorRetry.restart()
-            else:
-                self.fprintState = "error_max"
-                self.fprint.abort()
-                self.errorRetry.stop()
+            self.fprintState = "error"
+            self.fprint.abort()
+            self.errorRetry.restart()
         elif pam_result in ("MaxTries", "Failed"):
             self.fprint.tries += 1
             if self.fprint.tries < self.config.maxFprintTries:
@@ -175,6 +170,8 @@ class MockPamState:
         self.errorRetry.stop()
         self.stateReset.stop()
         self.fprintStateReset.stop()
+        self.lockMessage = ""
+        self.classifiedMessage = None
         self.unlocked = True
 
     def check_fprint_avail(self):
@@ -182,7 +179,6 @@ class MockPamState:
             self.fprint.abort()
             return
         self.fprint.tries = 0
-        self.fprint.errorTries = 0
         self.fprint.start()
 
     def secure_changed(self, secure):
@@ -193,7 +189,6 @@ class MockPamState:
             self.lockMessage = ""
             self.classifiedMessage = None
             self.fprint.tries = 0
-            self.fprint.errorTries = 0
             self.check_fprint_avail()
         else:
             self.fprint.abort()
@@ -206,20 +201,18 @@ class MockPamState:
             return self.lockMessage
         if self.classifiedMessage and self.classifiedMessage.get("text") and self.state in ("error", "fail", "max"):
             return self.classifiedMessage["text"]
-        if self.fprintState == "error_max" or (self.fprintState == "error" and self.fprint.errorTries >= self.config.maxFprintErrors):
-            return f"Fingerprint reader error ({self.fprint.errorTries}/{self.config.maxFprintErrors}). Please use password."
         if self.fprintState == "error":
-            return f"Fingerprint reader error ({self.fprint.errorTries}/{self.config.maxFprintErrors}). Please try again."
-        if self.state == "max" and self.fprintState in ("max", "error_max"):
+            return "Fingerprint reader error. Please try again."
+        if self.state == "max" and self.fprintState == "max":
             return "Maximum password and fingerprint attempts reached."
         if self.state == "max":
-            if self.fprint.available and self.fprintState not in ("error_max", "max"):
+            if self.fprint.available and self.config.enableFprint and self.fprintState != "max":
                 return "Maximum password attempts reached. Please use fingerprint."
             return "Maximum password attempts reached."
         if self.fprintState == "max":
             return "Maximum fingerprint attempts reached. Please use password."
         if self.state in ("fail", "error"):
-            if self.fprint.available and self.fprintState not in ("error_max", "max"):
+            if self.fprint.available and self.config.enableFprint and self.fprintState != "max":
                 return "Incorrect password. Please try again or use fingerprint."
             return "Incorrect password. Please try again."
         if self.fprintState == "fail":
@@ -229,44 +222,58 @@ class MockPamState:
 
 class TestPamLockScreen(unittest.TestCase):
 
-    def test_non_english_and_custom_pam_text(self):
-        """Test non-English and custom PAM messages are preserved and result codes drive auth state."""
+    def test_prompt_failure_retry_success(self):
+        """Test prompt -> failure -> retry -> success flow."""
         pam = MockPamState()
 
-        # German invalid password
+        # Intermediate prompt during PAM conversation should not populate lockMessage
+        pam.handle_passwd_message("Password: ")
+        self.assertEqual(pam.lockMessage, "")
+
+        # Password attempt fails
+        pam.handle_passwd_completed("Failed", "authentication failure")
+        self.assertEqual(pam.state, "fail")
+        self.assertIn("Incorrect password", pam.get_display_message())
+
+        # Start retry attempt clears previous attempt state
+        pam.start_passwd_attempt()
+        self.assertEqual(pam.lockMessage, "")
+        self.assertEqual(pam.state, "")
+
+        # Password attempt succeeds
+        pam.handle_passwd_completed("Success")
+        self.assertTrue(pam.unlocked)
+
+    def test_localized_and_unknown_messages(self):
+        """Test localized and custom/unknown PAM messages fall back cleanly without corrupting state."""
+        pam = MockPamState()
+
+        # German invalid password (recognized pattern)
         pam.handle_passwd_message("pam_unix(passwd:auth): Falsches Passwort")
+        self.assertEqual(pam.lockMessage, "")  # No lockout
         pam.handle_passwd_completed("Failed", "Falsches Passwort")
         self.assertEqual(pam.state, "fail")
-        self.assertIn("Falsches Passwort", pam.classifiedMessage["raw"])
+        self.assertEqual(pam.get_display_message(), "Incorrect password. Please try again.")
 
-        # Custom module text
+        # Custom/unknown module error message
         pam_custom = MockPamState()
-        pam_custom.handle_passwd_message("pam_custom_sec: Security module denied token 0x99")
         pam_custom.handle_passwd_completed("Error", "Security module denied token 0x99")
         self.assertEqual(pam_custom.state, "error")
+        self.assertEqual(pam_custom.get_display_message(), "Security module denied token 0x99")
 
-        # Display falls back cleanly
-        msg = pam_custom.get_display_message()
-        self.assertTrue(len(msg) > 0)
-
-    def test_split_multipart_messages(self):
-        """Test multipart lockout messages accumulate line by line rather than overwriting."""
+    def test_confirmed_lockout_message(self):
+        """Test confirmed lockout message populates lockMessage and clears per attempt."""
         pam = MockPamState()
 
-        # Split lockout in English
-        pam.handle_passwd_message("The account is locked due to 3 failed attempts.")
-        pam.handle_passwd_message("(60 seconds left to unlock)")
-        self.assertIn("\n", pam.lockMessage)
-        self.assertIn("60s remaining", pam.lockMessage)
+        pam.handle_passwd_message("Account locked (60s remaining)")
+        self.assertEqual(pam.lockMessage, "Account locked (60s remaining)")
+        self.assertEqual(pam.get_display_message(), "Account locked (60s remaining)")
 
-        # Split message in German
-        pam_de = MockPamState()
-        pam_de.handle_passwd_message("Der Account ist gesperrt.")
-        pam_de.handle_passwd_message("(60 Sekunden verbleiben)")
-        self.assertIn("\n", pam_de.lockMessage)
-        self.assertTrue(len(pam_de.lockMessage.splitlines()) == 2)
+        # Starting new attempt clears lockMessage
+        pam.start_passwd_attempt()
+        self.assertEqual(pam.lockMessage, "")
 
-    def test_unavailable_reader(self):
+    def test_fingerprint_unavailable(self):
         """Test fingerprint reader unavailability falls back to password-only mode."""
         pam = MockPamState()
         pam.fprint.available = False
@@ -277,6 +284,25 @@ class TestPamLockScreen(unittest.TestCase):
         # Password error should not mention fingerprint when unavailable
         pam.handle_passwd_completed("Failed", "Invalid password")
         self.assertEqual(pam.get_display_message(), "Incorrect password. Please try again.")
+
+        # Inactive/unavailable fingerprint completions do not change state
+        pam.handle_fprint_completed("Failed")
+        self.assertEqual(pam.fprint.tries, 0)
+
+    def test_transient_device_error_no_lockout(self):
+        """Test transient fingerprint device errors retry without imposing a separate lockout policy."""
+        pam = MockPamState()
+        pam.check_fprint_avail()
+
+        for _ in range(5):
+            pam.handle_fprint_completed("Error")
+            self.assertEqual(pam.fprintState, "error")
+            self.assertTrue(pam.errorRetry.running)
+            self.assertEqual(pam.fprint.tries, 0)
+
+        # Verification succeeds after transient errors
+        pam.handle_fprint_completed("Success")
+        self.assertTrue(pam.unlocked)
 
     def test_cancellation(self):
         """Test cancellation stops active operations and clears state."""
@@ -310,12 +336,13 @@ class TestPamLockScreen(unittest.TestCase):
         pam = MockPamState()
         pam.buffer = "1234"
         pam.fprint.tries = 2
-        pam.fprint.errorTries = 1
-        pam.lockMessage = "Previous lockout message"
+        pam.handle_passwd_message("Account locked (60s remaining)")
+        self.assertEqual(pam.lockMessage, "Account locked (60s remaining)")
 
         # Unlock
         pam.finishUnlock()
         self.assertTrue(pam.unlocked)
+        self.assertEqual(pam.lockMessage, "")
 
         # Lock again
         pam.unlocked = False
@@ -323,34 +350,9 @@ class TestPamLockScreen(unittest.TestCase):
 
         self.assertEqual(pam.buffer, "")
         self.assertEqual(pam.fprint.tries, 0)
-        self.assertEqual(pam.fprint.errorTries, 0)
         self.assertEqual(pam.lockMessage, "")
         self.assertEqual(pam.state, "")
-
-    def test_configurable_biometric_retry_policy(self):
-        """Test biometric retry policy uses maxFprintErrors configuration."""
-        config = MockLockConfig(max_fprint_errors=4, max_fprint_tries=5)
-        pam = MockPamState(config=config)
-        pam.check_fprint_avail()
-
-        # Error 1
-        pam.handle_fprint_completed("Error")
-        self.assertEqual(pam.fprintState, "error")
-        self.assertTrue(pam.errorRetry.running)
-
-        # Error 2
-        pam.handle_fprint_completed("Error")
-        self.assertEqual(pam.fprintState, "error")
-        self.assertTrue(pam.errorRetry.running)
-
-        # Error 3
-        pam.handle_fprint_completed("Error")
-        self.assertEqual(pam.fprintState, "error")
-
-        # Error 4 (max reached)
-        pam.handle_fprint_completed("Error")
-        self.assertEqual(pam.fprintState, "error_max")
-        self.assertFalse(pam.errorRetry.running)
+        self.assertEqual(pam.fprintState, "")
 
 
 if __name__ == "__main__":

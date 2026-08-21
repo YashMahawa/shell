@@ -69,6 +69,8 @@ Scope {
         errorRetry.stop();
         stateReset.stop();
         fprintStateReset.stop();
+        root.lockMessage = "";
+        root.classifiedMessage = null;
         unlockStateProc.running = true;
         root.lock.unlock();
     }
@@ -78,6 +80,9 @@ Scope {
             return;
 
         if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
+            root.lockMessage = "";
+            root.classifiedMessage = null;
+            root.state = "";
             passwd.start();
         } else if (event.key === Qt.Key_Backspace) {
             if (event.modifiers & Qt.ControlModifier) {
@@ -100,13 +105,8 @@ Scope {
         onMessageChanged: {
             if (message) {
                 const parsed = root.parsePamMessage(message);
-                root.classifiedMessage = parsed;
-
-                const textToUse = (parsed && (parsed.type === "lockout" || parsed.type === "attempts")) ? parsed.text : message;
-                if (!root.lockMessage) {
-                    root.lockMessage = textToUse;
-                } else if (!root.lockMessage.includes(textToUse) && !root.lockMessage.includes(message)) {
-                    root.lockMessage += "\n" + textToUse;
+                if (parsed && parsed.type === "lockout") {
+                    root.lockMessage = parsed.text;
                 }
             }
         }
@@ -115,6 +115,8 @@ Scope {
             if (!responseRequired)
                 return;
 
+            root.lockMessage = "";
+            root.classifiedMessage = null;
             respond(root.buffer);
             root.buffer = "";
         }
@@ -126,6 +128,9 @@ Scope {
             const parsed = root.parsePamMessage(passwd.message);
             if (parsed) {
                 root.classifiedMessage = parsed;
+                if (parsed.type === "lockout") {
+                    root.lockMessage = parsed.text;
+                }
             }
 
             if (res === PamResult.Error)
@@ -145,7 +150,6 @@ Scope {
 
         property bool available
         property int tries
-        property int errorTries
 
         function checkAvail(): void {
             if (!available || !GlobalConfig.lock.enableFprint || !root.lock.secure) {
@@ -154,7 +158,6 @@ Scope {
             }
 
             tries = 0;
-            errorTries = 0;
             start();
         }
 
@@ -169,16 +172,9 @@ Scope {
                 return root.finishUnlock();
 
             if (res === PamResult.Error) {
-                errorTries++;
-                if (errorTries < GlobalConfig.lock.maxFprintErrors) {
-                    root.fprintState = "error";
-                    abort();
-                    errorRetry.restart();
-                } else {
-                    root.fprintState = "error_max";
-                    abort();
-                    errorRetry.stop();
-                }
+                root.fprintState = "error";
+                abort();
+                errorRetry.restart();
             } else if (res === PamResult.MaxTries || res === PamResult.Failed) {
                 tries++;
                 if (tries < GlobalConfig.lock.maxFprintTries) {
@@ -233,7 +229,7 @@ Scope {
 
         interval: 4000
         onTriggered: {
-            if (fprint.errorTries < GlobalConfig.lock.maxFprintErrors && fprint.tries < GlobalConfig.lock.maxFprintTries) {
+            if (fprint.tries < GlobalConfig.lock.maxFprintTries) {
                 root.fprintState = "";
             }
         }
@@ -249,7 +245,6 @@ Scope {
                 root.lockMessage = "";
                 root.classifiedMessage = null;
                 fprint.tries = 0;
-                fprint.errorTries = 0;
             } else {
                 fprint.abort();
                 errorRetry.stop();
