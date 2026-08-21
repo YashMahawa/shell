@@ -2,7 +2,12 @@
 
 #include "config.hpp"
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 #include <qquickattachedpropertypropagator.h>
+#else
+#include <QObject>
+using QQuickAttachedPropertyPropagator = QObject;
+#endif
 
 namespace caelestia::config {
 
@@ -81,8 +86,10 @@ signals:
     void sourceChanged();
 
 protected:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     void attachedParentChange(
         QQuickAttachedPropertyPropagator* newParent, QQuickAttachedPropertyPropagator* oldParent) override;
+#endif
 
 private:
     void classBegin() override;

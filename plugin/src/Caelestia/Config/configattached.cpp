@@ -8,7 +8,9 @@ namespace caelestia::config {
 
 Config::Config(QObject* parent)
     : QQuickAttachedPropertyPropagator(parent) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     initialize();
+#endif
 }
 
 void Config::classBegin() {}
@@ -37,14 +39,17 @@ void Config::inheritScreen(const QString& screen) {
 }
 
 void Config::propagateScreen() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const auto children = attachedChildren();
     for (auto* const child : children) {
         auto* const config = qobject_cast<Config*>(child);
         if (config)
             config->inheritScreen(m_screen);
     }
+#endif
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 void Config::attachedParentChange(
     QQuickAttachedPropertyPropagator* newParent, QQuickAttachedPropertyPropagator* oldParent) {
     Q_UNUSED(oldParent);
@@ -52,6 +57,7 @@ void Config::attachedParentChange(
     if (config)
         inheritScreen(config->screen());
 }
+#endif
 
 #define CONFIG_ATTACHED_GETTER(Type, name)                                                                             \
     const Type* Config::name() const {                                                                                 \

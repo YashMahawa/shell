@@ -92,7 +92,7 @@ void CavaProcessor::initCava() {
         return;
     }
 
-    m_plan = cava_init(m_bars, ac::SAMPLE_RATE, 1, 1, 0.85, 50, 10000);
+    m_plan = cava_init(m_bars, ac::SAMPLE_RATE, 1, 1, 0.85, 50, 10000, 1);
     m_out = new double[static_cast<size_t>(m_bars)];
 }
 
@@ -125,8 +125,9 @@ void CavaProvider::setBars(int bars) {
     emit barsChanged();
     emit valuesChanged();
 
-    QMetaObject::invokeMethod(
-        static_cast<CavaProcessor*>(m_processor), &CavaProcessor::setBars, Qt::QueuedConnection, bars);
+    QMetaObject::invokeMethod(m_processor, [proc = static_cast<CavaProcessor*>(m_processor), bars]() {
+        proc->setBars(bars);
+    }, Qt::QueuedConnection);
 }
 
 QVector<double> CavaProvider::values() const {

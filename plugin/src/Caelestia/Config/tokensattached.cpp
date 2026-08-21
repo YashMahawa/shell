@@ -28,7 +28,9 @@ Tokens::Tokens(QObject* parent)
     , m_anim(new AnimTokens(this)) {
     bindAnim();
     bindFont();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     initialize();
+#endif
 }
 
 void Tokens::classBegin() {}
@@ -61,14 +63,17 @@ void Tokens::inheritScreen(const QString& screen) {
 }
 
 void Tokens::propagateScreen() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const auto children = attachedChildren();
     for (auto* const child : children) {
         auto* const tokens = qobject_cast<Tokens*>(child);
         if (tokens)
             tokens->inheritScreen(m_screen);
     }
+#endif
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 void Tokens::attachedParentChange(
     QQuickAttachedPropertyPropagator* newParent, QQuickAttachedPropertyPropagator* oldParent) {
     Q_UNUSED(oldParent);
@@ -76,6 +81,7 @@ void Tokens::attachedParentChange(
     if (tokens)
         inheritScreen(tokens->screen());
 }
+#endif
 
 void Tokens::bindAnim() {
     m_anim->bindDurations(GlobalConfig::instance()->appearance()->anim()->durations());

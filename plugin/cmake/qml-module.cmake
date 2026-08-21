@@ -7,6 +7,7 @@ function(qml_module arg_TARGET)
 
     qt_add_qml_module(${arg_TARGET}
         URI ${arg_URI}
+        VERSION 1.0
         SOURCES ${arg_SOURCES}
         QML_FILES ${arg_QML_FILES} ${arg_QML_SINGLETONS}
         DEPENDENCIES ${arg_DEPENDENCIES}
