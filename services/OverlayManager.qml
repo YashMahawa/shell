@@ -30,22 +30,43 @@ Singleton {
         return addr.startsWith("0x") ? addr : ("0x" + addr);
     }
 
-    function computeStableId(toplevel) {
+    function computeAppIdentity(toplevel) {
         if (!toplevel)
             return "";
         const ipc = toplevel.lastIpcObject || {};
-        const cls = ipc.class || ipc.initialClass || "";
+        const cls = ipc.initialClass || ipc.class || "";
         const title = ipc.initialTitle || ipc.title || toplevel.title || "";
-        const pid = ipc.pid ? String(ipc.pid) : "";
-
-        if (cls && title) {
-            return `${cls}:${title}`;
-        } else if (cls) {
-            return pid ? `${cls}:${pid}` : cls;
-        } else if (title) {
+        if (cls)
+            return cls;
+        if (title)
             return title;
-        }
         return formatAddress(toplevel.address || ipc.address);
+    }
+
+    function computeInstanceDiscriminator(toplevel) {
+        if (!toplevel)
+            return "";
+        const ipc = toplevel.lastIpcObject || {};
+        const pid = ipc.pid ? String(ipc.pid) : "";
+        const title = ipc.initialTitle || ipc.title || toplevel.title || "";
+        const addr = formatAddress(toplevel.address || ipc.address);
+
+        const parts = [];
+        if (pid)
+            parts.push(`pid:${pid}`);
+        if (title)
+            parts.push(`title:${title}`);
+        if (addr)
+            parts.push(`addr:${addr}`);
+        return parts.join(";");
+    }
+
+    function computeStableId(toplevel) {
+        if (!toplevel)
+            return "";
+        const appId = computeAppIdentity(toplevel);
+        const inst = computeInstanceDiscriminator(toplevel);
+        return `${appId}#${inst}`;
     }
 
     function findToplevel(windowId) {
@@ -70,7 +91,19 @@ Singleton {
             }
         }
 
-        // 2. Class or initialClass match
+        // 2. Exact stableId match
+        for (let i = 0; i < toplevels.length; i++) {
+            const t = toplevels[i];
+            if (!t)
+                continue;
+
+            const stableId = computeStableId(t).toLowerCase();
+            if (stableId === norm || stableId.replace(/^0x/, "") === norm) {
+                return t;
+            }
+        }
+
+        // 3. Class or initialClass match
         for (let i = 0; i < toplevels.length; i++) {
             const t = toplevels[i];
             if (!t)
@@ -84,7 +117,7 @@ Singleton {
             }
         }
 
-        // 3. Title or initialTitle match
+        // 4. Title or initialTitle match
         for (let i = 0; i < toplevels.length; i++) {
             const t = toplevels[i];
             if (!t)
@@ -94,18 +127,6 @@ Singleton {
             const title = String(ipc.title || t.title || "").toLowerCase();
             const initialTitle = String(ipc.initialTitle || "").toLowerCase();
             if (title === norm || initialTitle === norm) {
-                return t;
-            }
-        }
-
-        // 4. Composite stableId match
-        for (let i = 0; i < toplevels.length; i++) {
-            const t = toplevels[i];
-            if (!t)
-                continue;
-
-            const stableId = computeStableId(t).toLowerCase();
-            if (stableId === norm || stableId.replace(/^0x/, "") === norm) {
                 return t;
             }
         }
@@ -133,10 +154,16 @@ Singleton {
     }
 
     function dispatchCmd(standardCmd, luaCmd) {
-        if (Hypr.usingLua && luaCmd) {
-            Hypr.dispatch(luaCmd);
-        } else {
-            Hypr.dispatch(standardCmd);
+        try {
+            if (Hypr.usingLua && luaCmd) {
+                Hypr.dispatch(luaCmd);
+            } else {
+                Hypr.dispatch(standardCmd);
+            }
+            return true;
+        } catch (e) {
+            console.warn("OverlayManager: dispatchCmd failed:", e);
+            return false;
         }
     }
 
@@ -160,14 +187,28 @@ Singleton {
         const normAddr = fullAddr.toLowerCase();
 
         const ipc = toplevel.lastIpcObject || {};
+        const appId = computeAppIdentity(toplevel);
+        const instDisc = computeInstanceDiscriminator(toplevel);
         const stableId = computeStableId(toplevel);
 
         let info = root.registeredOverlays[normAddr];
+        let oldKey = null;
 
         if (!info) {
             for (const key in root.registeredOverlays) {
-                if (root.registeredOverlays[key].stableId === stableId) {
-                    info = root.registeredOverlays[key];
+                const item = root.registeredOverlays[key];
+                if (!item)
+                    continue;
+
+                const matchStable = (item.stableId === stableId);
+                const matchIdentity = (item.appIdentity && item.instanceDiscriminator) ?
+                    (item.appIdentity === appId && item.instanceDiscriminator === instDisc) :
+                    false;
+                const matchOldClassTitle = (item.class === (ipc.class || ipc.initialClass) && item.title === (ipc.title || ipc.initialTitle));
+
+                if (matchStable || matchIdentity || matchOldClassTitle) {
+                    info = item;
+                    oldKey = key;
                     break;
                 }
             }
@@ -176,9 +217,11 @@ Singleton {
         if (!info) {
             info = {
                 stableId: stableId,
+                appIdentity: appId,
+                instanceDiscriminator: instDisc,
                 address: fullAddr,
-                class: ipc.class || "",
-                title: ipc.title || "",
+                class: ipc.class || ipc.initialClass || "",
+                title: ipc.title || ipc.initialTitle || "",
                 initialClass: ipc.initialClass || "",
                 initialTitle: ipc.initialTitle || "",
                 pid: ipc.pid || 0,
@@ -192,35 +235,62 @@ Singleton {
                 pinned: ipc.pinned ?? false,
                 clickthrough: false
             };
+        } else {
+            info.stableId = stableId;
+            info.appIdentity = appId;
+            info.instanceDiscriminator = instDisc;
+            info.address = fullAddr;
         }
 
-        info.address = fullAddr;
+        let dispatchSuccess = true;
 
         if (!(ipc.floating ?? false)) {
-            dispatchCmd(`setfloating address:${fullAddr}`, `hl.dsp.window.float({ action = "enable", window = "address:${fullAddr}" })`);
+            const ok = dispatchCmd(`setfloating address:${fullAddr}`, `hl.dsp.window.float({ action = "enable", window = "address:${fullAddr}" })`);
+            if (!ok)
+                dispatchSuccess = false;
         }
 
         let currentOverlay = Object.assign({}, info);
 
         if (anchorPos && anchorPos !== "" && anchorPos !== "none") {
-            applyAnchor(toplevel, anchorPos);
-            currentOverlay.anchored = anchorPos;
+            const ok = applyAnchor(toplevel, anchorPos);
+            if (ok) {
+                currentOverlay.anchored = anchorPos;
+            } else {
+                dispatchSuccess = false;
+            }
         }
 
         if (pinState === "true" || pinState === "1" || pinState === "enable") {
             if (!ipc.pinned) {
-                dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
+                const ok = dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
+                if (!ok)
+                    dispatchSuccess = false;
             }
-            currentOverlay.pinned = true;
+            if (dispatchSuccess)
+                currentOverlay.pinned = true;
         }
 
         if (clickthroughState === "true" || clickthroughState === "1" || clickthroughState === "enable") {
-            dispatchCmd(`setprop address:${fullAddr} noinput 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "1" })`);
-            dispatchCmd(`setprop address:${fullAddr} passthrough 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "1" })`);
-            currentOverlay.clickthrough = true;
+            const ok1 = dispatchCmd(`setprop address:${fullAddr} noinput 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "1" })`);
+            const ok2 = dispatchCmd(`setprop address:${fullAddr} passthrough 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "1" })`);
+            if (!ok1 || !ok2)
+                dispatchSuccess = false;
+            if (dispatchSuccess)
+                currentOverlay.clickthrough = true;
+        }
+
+        if (!dispatchSuccess) {
+            return JSON.stringify({
+                success: false,
+                error: "Compositor dispatch failed during overlay registration for window " + windowId
+            });
         }
 
         const newMap = Object.assign({}, root.registeredOverlays);
+        if (oldKey && oldKey !== normAddr) {
+            delete newMap[oldKey];
+        }
         newMap[normAddr] = currentOverlay;
         root.registeredOverlays = newMap;
         root.saveState();
@@ -254,56 +324,62 @@ Singleton {
         const info = root.registeredOverlays[normAddr];
         const ipc = toplevel.lastIpcObject || {};
 
-        if (info) {
-            if (info.clickthrough) {
-                dispatchCmd(`setprop address:${fullAddr} noinput 0`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "0" })`);
-                dispatchCmd(`setprop address:${fullAddr} passthrough 0`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "0" })`);
-            }
-
-            if (!info.originalPinned && ipc.pinned) {
-                dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
-            }
-
-            const currentWs = ipc.workspace?.name || String(ipc.workspace?.id ?? "");
-            if (info.originalWorkspace && currentWs && info.originalWorkspace !== currentWs) {
-                dispatchCmd(`movetoworkspacesilent ${info.originalWorkspace},address:${fullAddr}`,
-                            `hl.dsp.window.move({ workspace = "${info.originalWorkspace}", silent = true, window = "address:${fullAddr}" })`);
-            }
-
-            if (!info.originalFloating) {
-                dispatchCmd(`settiled address:${fullAddr}`, `hl.dsp.window.float({ action = "disable", window = "address:${fullAddr}" })`);
-            } else {
-                if (info.originalAt && info.originalAt.length === 2) {
-                    dispatchCmd(`movewindowpixel exact ${info.originalAt[0]} ${info.originalAt[1]},address:${fullAddr}`,
-                                `hl.dsp.window.move({ x = ${info.originalAt[0]}, y = ${info.originalAt[1]}, window = "address:${fullAddr}" })`);
-                }
-                if (info.originalSize && info.originalSize.length === 2) {
-                    dispatchCmd(`resizewindowpixel exact ${info.originalSize[0]} ${info.originalSize[1]},address:${fullAddr}`,
-                                `hl.dsp.window.resize({ x = ${info.originalSize[0]}, y = ${info.originalSize[1]}, exact = true, window = "address:${fullAddr}" })`);
-                }
-            }
-
-            const newMap = Object.assign({}, root.registeredOverlays);
-            delete newMap[normAddr];
-            root.registeredOverlays = newMap;
-            root.saveState();
-
+        if (!info) {
             return JSON.stringify({
-                success: true,
-                action: "unregistered",
+                success: false,
+                error: "Window is not registered as an overlay: " + windowId,
                 address: fullAddr
             });
-        } else {
-            if (ipc.floating) {
-                dispatchCmd(`settiled address:${fullAddr}`, `hl.dsp.window.float({ action = "disable", window = "address:${fullAddr}" })`);
-            }
-            return JSON.stringify({
-                success: true,
-                action: "unregistered",
-                address: fullAddr,
-                note: "was not in registry"
-            });
         }
+
+        let dispatchSuccess = true;
+
+        if (info.clickthrough) {
+            const ok1 = dispatchCmd(`setprop address:${fullAddr} noinput 0`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "0" })`);
+            const ok2 = dispatchCmd(`setprop address:${fullAddr} passthrough 0`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "0" })`);
+            if (!ok1 || !ok2)
+                dispatchSuccess = false;
+        }
+
+        if (!info.originalPinned && ipc.pinned) {
+            const ok = dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
+            if (!ok)
+                dispatchSuccess = false;
+        }
+
+        const currentWs = ipc.workspace?.name || String(ipc.workspace?.id ?? "");
+        if (info.originalWorkspace && currentWs && info.originalWorkspace !== currentWs) {
+            const ok = dispatchCmd(`movetoworkspacesilent ${info.originalWorkspace},address:${fullAddr}`,
+                        `hl.dsp.window.move({ workspace = "${info.originalWorkspace}", silent = true, window = "address:${fullAddr}" })`);
+            if (!ok)
+                dispatchSuccess = false;
+        }
+
+        if (!info.originalFloating) {
+            const ok = dispatchCmd(`settiled address:${fullAddr}`, `hl.dsp.window.float({ action = "disable", window = "address:${fullAddr}" })`);
+            if (!ok)
+                dispatchSuccess = false;
+        } else {
+            if (info.originalAt && info.originalAt.length === 2) {
+                dispatchCmd(`movewindowpixel exact ${info.originalAt[0]} ${info.originalAt[1]},address:${fullAddr}`,
+                            `hl.dsp.window.move({ x = ${info.originalAt[0]}, y = ${info.originalAt[1]}, window = "address:${fullAddr}" })`);
+            }
+            if (info.originalSize && info.originalSize.length === 2) {
+                dispatchCmd(`resizewindowpixel exact ${info.originalSize[0]} ${info.originalSize[1]},address:${fullAddr}`,
+                            `hl.dsp.window.resize({ x = ${info.originalSize[0]}, y = ${info.originalSize[1]}, exact = true, window = "address:${fullAddr}" })`);
+            }
+        }
+
+        const newMap = Object.assign({}, root.registeredOverlays);
+        delete newMap[normAddr];
+        root.registeredOverlays = newMap;
+        root.saveState();
+
+        return JSON.stringify({
+            success: true,
+            action: "unregistered",
+            address: fullAddr
+        });
     }
 
     function applyAnchor(toplevel, position, marginStr) {
@@ -377,8 +453,10 @@ Singleton {
                 break;
         }
 
-        dispatchCmd(`movewindowpixel exact ${targetX} ${targetY},address:${fullAddr}`,
-                    `hl.dsp.window.move({ x = ${targetX}, y = ${targetY}, window = "address:${fullAddr}" })`);
+        const ok = dispatchCmd(`movewindowpixel exact ${targetX} ${targetY},address:${fullAddr}`,
+                               `hl.dsp.window.move({ x = ${targetX}, y = ${targetY}, window = "address:${fullAddr}" })`);
+        if (!ok)
+            return false;
 
         const normAddr = fullAddr.toLowerCase();
         if (root.registeredOverlays[normAddr]) {
@@ -415,11 +493,12 @@ Singleton {
             shouldEnable = false;
         }
 
+        let ok = true;
         if (shouldEnable !== ipc.pinned) {
-            dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
+            ok = dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
         }
 
-        if (root.registeredOverlays[normAddr]) {
+        if (ok && root.registeredOverlays[normAddr]) {
             const newMap = Object.assign({}, root.registeredOverlays);
             newMap[normAddr].pinned = shouldEnable;
             root.registeredOverlays = newMap;
@@ -427,7 +506,7 @@ Singleton {
         }
 
         return JSON.stringify({
-            success: true,
+            success: ok,
             pinned: shouldEnable,
             address: fullAddr
         });
@@ -458,10 +537,11 @@ Singleton {
         }
 
         const val = shouldEnable ? 1 : 0;
-        dispatchCmd(`setprop address:${fullAddr} noinput ${val}`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "${val}" })`);
-        dispatchCmd(`setprop address:${fullAddr} passthrough ${val}`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "${val}" })`);
+        const ok1 = dispatchCmd(`setprop address:${fullAddr} noinput ${val}`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "${val}" })`);
+        const ok2 = dispatchCmd(`setprop address:${fullAddr} passthrough ${val}`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "${val}" })`);
 
-        if (root.registeredOverlays[normAddr]) {
+        const ok = ok1 && ok2;
+        if (ok && root.registeredOverlays[normAddr]) {
             const newMap = Object.assign({}, root.registeredOverlays);
             newMap[normAddr].clickthrough = shouldEnable;
             root.registeredOverlays = newMap;
@@ -469,7 +549,7 @@ Singleton {
         }
 
         return JSON.stringify({
-            success: true,
+            success: ok,
             clickthrough: shouldEnable,
             address: fullAddr
         });
@@ -511,7 +591,7 @@ Singleton {
 
             let matchedToplevel = null;
 
-            // 1. Try matching active window by address
+            // 1. Match active window by exact address
             if (entry.address) {
                 const normEntryAddr = formatAddress(entry.address).toLowerCase();
                 for (let i = 0; i < activeToplevels.length; i++) {
@@ -526,21 +606,75 @@ Singleton {
                 }
             }
 
-            // 2. Try matching active window by stable identity (class, title, initialTitle, pid)
-            if (!matchedToplevel && entry.class) {
+            // 2. Match active window by exact stable identity (appIdentity + instanceDiscriminator)
+            if (!matchedToplevel) {
+                const entryAppId = entry.appIdentity || entry.class || entry.initialClass || "";
+                const entryInst = entry.instanceDiscriminator || (entry.pid ? ("pid:" + entry.pid) : "");
+
+                if (entryAppId) {
+                    for (let i = 0; i < activeToplevels.length; i++) {
+                        const t = activeToplevels[i];
+                        if (!t)
+                            continue;
+
+                        const candAppId = computeAppIdentity(t);
+                        const candInst = computeInstanceDiscriminator(t);
+
+                        if (candAppId === entryAppId && candInst === entryInst) {
+                            matchedToplevel = t;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. Match by appIdentity + PID
+            if (!matchedToplevel && entry.pid) {
+                const entryAppId = entry.appIdentity || entry.class || entry.initialClass || "";
                 for (let i = 0; i < activeToplevels.length; i++) {
                     const t = activeToplevels[i];
                     if (!t)
                         continue;
 
                     const ipc = t.lastIpcObject || {};
-                    const cls = ipc.class || ipc.initialClass || "";
-                    const title = ipc.initialTitle || ipc.title || t.title || "";
-                    const pid = ipc.pid || 0;
+                    const candAppId = computeAppIdentity(t);
+                    const candPid = ipc.pid || 0;
 
-                    if (cls === entry.class && (title === entry.title || title === entry.initialTitle || (entry.pid && pid === entry.pid))) {
+                    if (candAppId === entryAppId && candPid === entry.pid) {
                         matchedToplevel = t;
                         break;
+                    }
+                }
+            }
+
+            // 4. Fallback match by appIdentity + title ONLY IF UNAMBIGUOUS and PID does not contradict
+            if (!matchedToplevel) {
+                const entryAppId = entry.appIdentity || entry.class || entry.initialClass || "";
+                const entryTitle = entry.title || entry.initialTitle || "";
+
+                if (entryAppId) {
+                    const candidates = [];
+                    for (let i = 0; i < activeToplevels.length; i++) {
+                        const t = activeToplevels[i];
+                        if (!t)
+                            continue;
+
+                        const ipc = t.lastIpcObject || {};
+                        const candAppId = computeAppIdentity(t);
+                        const candTitle = ipc.title || ipc.initialTitle || t.title || "";
+                        const candPid = ipc.pid || 0;
+
+                        if (entry.pid && candPid && entry.pid !== candPid) {
+                            continue;
+                        }
+
+                        if (candAppId === entryAppId && (!entryTitle || candTitle === entryTitle)) {
+                            candidates.push(t);
+                        }
+                    }
+
+                    if (candidates.length === 1) {
+                        matchedToplevel = candidates[0];
                     }
                 }
             }
@@ -553,6 +687,8 @@ Singleton {
 
                 const updatedEntry = Object.assign({}, entry, {
                     address: fullAddr,
+                    appIdentity: computeAppIdentity(matchedToplevel),
+                    instanceDiscriminator: computeInstanceDiscriminator(matchedToplevel),
                     stableId: computeStableId(matchedToplevel)
                 });
 
@@ -578,6 +714,10 @@ Singleton {
         }
 
         root.registeredOverlays = newRegistered;
+        root.saveState();
+    }
+
+    Component.onDestruction: {
         root.saveState();
     }
 
@@ -609,14 +749,14 @@ Singleton {
     }
 
     Connections {
-        target: Hyprland
-
         function onRawEvent(event: HyprlandEvent): void {
             const n = event.name;
             if (n === "closewindow" || n === "openwindow" || n === "movewindow" || n === "configreloaded") {
                 reconcileTimer.restart();
             }
         }
+
+        target: Hyprland
     }
 
     Timer {
@@ -627,13 +767,7 @@ Singleton {
         onTriggered: root.reconcileOverlays()
     }
 
-    Component.onDestruction: {
-        root.saveState();
-    }
-
     IpcHandler {
-        target: "overlay"
-
         function register(windowId: string, anchorPos: string, pinState: string, clickthroughState: string): string {
             return root.registerOverlay(windowId, anchorPos, pinState, clickthroughState);
         }
@@ -705,5 +839,7 @@ Singleton {
                 restored: restoredCount
             });
         }
+
+        target: "overlay"
     }
 }

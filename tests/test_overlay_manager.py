@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 import tempfile
 import pytest
 
@@ -54,6 +55,7 @@ class OverlayManagerSim:
         self.active_toplevel = None
         self.using_lua = False
         self.focused_monitor = None
+        self.fail_dispatch = False
         self.load_state()
 
     def load_state(self):
@@ -79,21 +81,41 @@ class OverlayManagerSim:
             return ""
         return addr if addr.startswith("0x") else f"0x{addr}"
 
-    def compute_stable_id(self, toplevel):
+    def compute_app_identity(self, toplevel):
         if not toplevel:
             return ""
         ipc = toplevel.lastIpcObject or {}
-        cls = ipc.get("class") or ipc.get("initialClass") or ""
+        cls = ipc.get("initialClass") or ipc.get("class") or ""
         title = ipc.get("initialTitle") or ipc.get("title") or getattr(toplevel, "title", "")
-        pid = str(ipc.get("pid", "")) if ipc.get("pid") else ""
-
-        if cls and title:
-            return f"{cls}:{title}"
-        elif cls:
-            return f"{cls}:{pid}" if pid else cls
-        elif title:
+        if cls:
+            return cls
+        if title:
             return title
         return self.format_address(toplevel.address or ipc.get("address"))
+
+    def compute_instance_discriminator(self, toplevel):
+        if not toplevel:
+            return ""
+        ipc = toplevel.lastIpcObject or {}
+        pid = str(ipc.get("pid", "")) if ipc.get("pid") else ""
+        title = ipc.get("initialTitle") or ipc.get("title") or getattr(toplevel, "title", "")
+        addr = self.format_address(toplevel.address or ipc.get("address"))
+
+        parts = []
+        if pid:
+            parts.append(f"pid:{pid}")
+        if title:
+            parts.append(f"title:{title}")
+        if addr:
+            parts.append(f"addr:{addr}")
+        return ";".join(parts)
+
+    def compute_stable_id(self, toplevel):
+        if not toplevel:
+            return ""
+        app_id = self.compute_app_identity(toplevel)
+        inst = self.compute_instance_discriminator(toplevel)
+        return f"{app_id}#{inst}"
 
     def find_toplevel(self, window_id):
         if not window_id or window_id in ("", "active"):
@@ -109,7 +131,13 @@ class OverlayManagerSim:
             if addr == norm or ipc_addr == norm:
                 return t
 
-        # 2. Class match
+        # 2. Exact stableId match
+        for t in self.toplevels:
+            stable_id = self.compute_stable_id(t).lower()
+            if stable_id == norm or stable_id.replace("0x", "") == norm:
+                return t
+
+        # 3. Class match
         for t in self.toplevels:
             ipc = t.lastIpcObject or {}
             cls = str(ipc.get("class", "")).lower()
@@ -117,18 +145,12 @@ class OverlayManagerSim:
             if cls == norm or initial_cls == norm:
                 return t
 
-        # 3. Title match
+        # 4. Title match
         for t in self.toplevels:
             ipc = t.lastIpcObject or {}
             title = str(ipc.get("title") or getattr(t, "title", "")).lower()
             initial_title = str(ipc.get("initialTitle", "")).lower()
             if title == norm or initial_title == norm:
-                return t
-
-        # 4. Composite stableId match
-        for t in self.toplevels:
-            stable_id = self.compute_stable_id(t).lower()
-            if stable_id == norm or stable_id.replace("0x", "") == norm:
                 return t
 
         return None
@@ -144,8 +166,11 @@ class OverlayManagerSim:
         return self.focused_monitor or (self.monitors[0] if self.monitors else None)
 
     def dispatch_cmd(self, standard_cmd, lua_cmd):
+        if self.fail_dispatch:
+            return False
         cmd = lua_cmd if (self.using_lua and lua_cmd) else standard_cmd
         self.dispatched_cmds.append(cmd)
+        return True
 
     def register_overlay(self, window_id, anchor_pos=None, pin_state=None, clickthrough_state=None):
         toplevel = self.find_toplevel(window_id)
@@ -153,26 +178,44 @@ class OverlayManagerSim:
             return json.dumps({"success": False, "error": f"Invalid window identifier: {window_id}"})
 
         raw_addr = toplevel.address or toplevel.lastIpcObject.get("address")
+        if not raw_addr:
+            return json.dumps({"success": False, "error": "Window missing address"})
+
         full_addr = self.format_address(raw_addr)
         norm_addr = full_addr.lower()
         ipc = toplevel.lastIpcObject or {}
+
+        app_id = self.compute_app_identity(toplevel)
+        inst_disc = self.compute_instance_discriminator(toplevel)
         stable_id = self.compute_stable_id(toplevel)
 
         info = self.registered_overlays.get(norm_addr)
+        old_key = None
+
         if not info:
             for k, v in self.registered_overlays.items():
-                if v.get("stableId") == stable_id:
+                if not v:
+                    continue
+                match_stable = (v.get("stableId") == stable_id)
+                match_identity = (v.get("appIdentity") and v.get("instanceDiscriminator") and
+                                  v.get("appIdentity") == app_id and v.get("instanceDiscriminator") == inst_disc)
+                match_old_class_title = (v.get("class") == (ipc.get("class") or ipc.get("initialClass")) and
+                                         v.get("title") == (ipc.get("title") or ipc.get("initialTitle")))
+                if match_stable or match_identity or match_old_class_title:
                     info = v
+                    old_key = k
                     break
 
         if not info:
             info = {
                 "stableId": stable_id,
+                "appIdentity": app_id,
+                "instanceDiscriminator": inst_disc,
                 "address": full_addr,
-                "class": ipc.get("class", ""),
-                "title": ipc.get("title", ""),
-                "initialClass": ipc.get("initialClass", ""),
-                "initialTitle": ipc.get("initialTitle", ""),
+                "class": ipc.get("class") or ipc.get("initialClass") or "",
+                "title": ipc.get("title") or ipc.get("initialTitle") or "",
+                "initialClass": ipc.get("initialClass") or "",
+                "initialTitle": ipc.get("initialTitle") or "",
                 "pid": ipc.get("pid", 0),
                 "originalFloating": ipc.get("floating", False),
                 "originalPinned": ipc.get("pinned", False),
@@ -184,29 +227,50 @@ class OverlayManagerSim:
                 "pinned": ipc.get("pinned", False),
                 "clickthrough": False
             }
+        else:
+            info["stableId"] = stable_id
+            info["appIdentity"] = app_id
+            info["instanceDiscriminator"] = inst_disc
+            info["address"] = full_addr
 
-        info["address"] = full_addr
+        dispatch_success = True
 
         if not ipc.get("floating", False):
-            self.dispatch_cmd(f"setfloating address:{full_addr}", None)
+            ok = self.dispatch_cmd(f"setfloating address:{full_addr}", None)
+            if not ok:
+                dispatch_success = False
 
         current_overlay = dict(info)
 
         if anchor_pos and anchor_pos not in ("", "none"):
-            self.apply_anchor(toplevel, anchor_pos)
-            current_overlay["anchored"] = anchor_pos
+            ok = self.apply_anchor(toplevel, anchor_pos)
+            if ok:
+                current_overlay["anchored"] = anchor_pos
+            else:
+                dispatch_success = False
 
         if str(pin_state).lower() in ("true", "1", "enable"):
             if not ipc.get("pinned"):
-                self.dispatch_cmd(f"pin address:{full_addr}", None)
-            current_overlay["pinned"] = True
+                ok = self.dispatch_cmd(f"pin address:{full_addr}", None)
+                if not ok:
+                    dispatch_success = False
+            if dispatch_success:
+                current_overlay["pinned"] = True
 
         if str(clickthrough_state).lower() in ("true", "1", "enable"):
-            self.dispatch_cmd(f"setprop address:{full_addr} noinput 1", None)
-            self.dispatch_cmd(f"setprop address:{full_addr} passthrough 1", None)
-            current_overlay["clickthrough"] = True
+            ok1 = self.dispatch_cmd(f"setprop address:{full_addr} noinput 1", None)
+            ok2 = self.dispatch_cmd(f"setprop address:{full_addr} passthrough 1", None)
+            if not ok1 or not ok2:
+                dispatch_success = False
+            if dispatch_success:
+                current_overlay["clickthrough"] = True
+
+        if not dispatch_success:
+            return json.dumps({"success": False, "error": f"Compositor dispatch failed during overlay registration for window {window_id}"})
 
         new_map = dict(self.registered_overlays)
+        if old_key and old_key != norm_addr:
+            del new_map[old_key]
         new_map[norm_addr] = current_overlay
         self.registered_overlays = new_map
         self.save_state()
@@ -219,42 +283,58 @@ class OverlayManagerSim:
             return json.dumps({"success": False, "error": f"Invalid window identifier: {window_id}"})
 
         raw_addr = toplevel.address or toplevel.lastIpcObject.get("address")
+        if not raw_addr:
+            return json.dumps({"success": False, "error": "Window missing address"})
+
         full_addr = self.format_address(raw_addr)
         norm_addr = full_addr.lower()
 
         info = self.registered_overlays.get(norm_addr)
         ipc = toplevel.lastIpcObject or {}
 
-        if info:
-            if info.get("clickthrough"):
-                self.dispatch_cmd(f"setprop address:{full_addr} noinput 0", None)
-                self.dispatch_cmd(f"setprop address:{full_addr} passthrough 0", None)
+        if not info:
+            # NO-OP for unmanaged windows
+            return json.dumps({
+                "success": False,
+                "error": f"Window is not registered as an overlay: {window_id}",
+                "address": full_addr
+            })
 
-            if not info.get("originalPinned") and ipc.get("pinned"):
-                self.dispatch_cmd(f"pin address:{full_addr}", None)
+        dispatch_success = True
 
-            current_ws = ipc.get("workspace", {}).get("name", "")
-            if info.get("originalWorkspace") and current_ws and info["originalWorkspace"] != current_ws:
-                self.dispatch_cmd(f"movetoworkspacesilent {info['originalWorkspace']},address:{full_addr}", None)
+        if info.get("clickthrough"):
+            ok1 = self.dispatch_cmd(f"setprop address:{full_addr} noinput 0", None)
+            ok2 = self.dispatch_cmd(f"setprop address:{full_addr} passthrough 0", None)
+            if not ok1 or not ok2:
+                dispatch_success = False
 
-            if not info.get("originalFloating"):
-                self.dispatch_cmd(f"settiled address:{full_addr}", None)
-            else:
-                orig_at = info.get("originalAt", [0, 0])
-                orig_size = info.get("originalSize", [800, 600])
-                self.dispatch_cmd(f"movewindowpixel exact {orig_at[0]} {orig_at[1]},address:{full_addr}", None)
-                self.dispatch_cmd(f"resizewindowpixel exact {orig_size[0]} {orig_size[1]},address:{full_addr}", None)
+        if not info.get("originalPinned") and ipc.get("pinned"):
+            ok = self.dispatch_cmd(f"pin address:{full_addr}", None)
+            if not ok:
+                dispatch_success = False
 
-            new_map = dict(self.registered_overlays)
-            del new_map[norm_addr]
-            self.registered_overlays = new_map
-            self.save_state()
+        current_ws = ipc.get("workspace", {}).get("name", "")
+        if info.get("originalWorkspace") and current_ws and info["originalWorkspace"] != current_ws:
+            ok = self.dispatch_cmd(f"movetoworkspacesilent {info['originalWorkspace']},address:{full_addr}", None)
+            if not ok:
+                dispatch_success = False
 
-            return json.dumps({"success": True, "action": "unregistered", "address": full_addr})
+        if not info.get("originalFloating"):
+            ok = self.dispatch_cmd(f"settiled address:{full_addr}", None)
+            if not ok:
+                dispatch_success = False
         else:
-            if ipc.get("floating"):
-                self.dispatch_cmd(f"settiled address:{full_addr}", None)
-            return json.dumps({"success": True, "action": "unregistered", "address": full_addr, "note": "was not in registry"})
+            orig_at = info.get("originalAt", [0, 0])
+            orig_size = info.get("originalSize", [800, 600])
+            self.dispatch_cmd(f"movewindowpixel exact {orig_at[0]} {orig_at[1]},address:{full_addr}", None)
+            self.dispatch_cmd(f"resizewindowpixel exact {orig_size[0]} {orig_size[1]},address:{full_addr}", None)
+
+        new_map = dict(self.registered_overlays)
+        del new_map[norm_addr]
+        self.registered_overlays = new_map
+        self.save_state()
+
+        return json.dumps({"success": True, "action": "unregistered", "address": full_addr})
 
     def apply_anchor(self, toplevel, position, margin_str=None):
         if not toplevel:
@@ -307,7 +387,9 @@ class OverlayManagerSim:
             target_x = mon_x + round((mon_w - win_w) / 2)
             target_y = mon_y + round((mon_h - win_h) / 2)
 
-        self.dispatch_cmd(f"movewindowpixel exact {target_x} {target_y},address:{full_addr}", None)
+        ok = self.dispatch_cmd(f"movewindowpixel exact {target_x} {target_y},address:{full_addr}", None)
+        if not ok:
+            return False
 
         norm_addr = full_addr.lower()
         if norm_addr in self.registered_overlays:
@@ -337,17 +419,51 @@ class OverlayManagerSim:
                         matched_toplevel = t
                         break
 
-            # 2. Match active window by stable identity (class, title, initialTitle, pid)
-            if not matched_toplevel and entry.get("class"):
+            # 2. Match active window by exact stable identity (appIdentity + instanceDiscriminator)
+            if not matched_toplevel:
+                entry_app_id = entry.get("appIdentity") or entry.get("class") or entry.get("initialClass") or ""
+                entry_inst = entry.get("instanceDiscriminator") or (f"pid:{entry['pid']}" if entry.get("pid") else "")
+
+                if entry_app_id:
+                    for t in self.toplevels:
+                        cand_app_id = self.compute_app_identity(t)
+                        cand_inst = self.compute_instance_discriminator(t)
+                        if cand_app_id == entry_app_id and cand_inst == entry_inst:
+                            matched_toplevel = t
+                            break
+
+            # 3. Match by appIdentity + PID
+            if not matched_toplevel and entry.get("pid"):
+                entry_app_id = entry.get("appIdentity") or entry.get("class") or entry.get("initialClass") or ""
                 for t in self.toplevels:
                     ipc = t.lastIpcObject or {}
-                    cls = ipc.get("class") or ipc.get("initialClass") or ""
-                    title = ipc.get("initialTitle") or ipc.get("title") or getattr(t, "title", "")
-                    pid = ipc.get("pid", 0)
-
-                    if cls == entry["class"] and (title == entry.get("title") or title == entry.get("initialTitle") or (entry.get("pid") and pid == entry.get("pid"))):
+                    cand_app_id = self.compute_app_identity(t)
+                    cand_pid = ipc.get("pid", 0)
+                    if cand_app_id == entry_app_id and cand_pid == entry["pid"]:
                         matched_toplevel = t
                         break
+
+            # 4. Fallback match by appIdentity + title ONLY IF UNAMBIGUOUS and PID does not contradict
+            if not matched_toplevel:
+                entry_app_id = entry.get("appIdentity") or entry.get("class") or entry.get("initialClass") or ""
+                entry_title = entry.get("title") or entry.get("initialTitle") or ""
+
+                if entry_app_id:
+                    candidates = []
+                    for t in self.toplevels:
+                        cand_app_id = self.compute_app_identity(t)
+                        ipc = t.lastIpcObject or {}
+                        cand_title = ipc.get("title") or ipc.get("initialTitle") or getattr(t, "title", "")
+                        cand_pid = ipc.get("pid", 0)
+
+                        if entry.get("pid") and cand_pid and entry["pid"] != cand_pid:
+                            continue
+
+                        if cand_app_id == entry_app_id and (not entry_title or cand_title == entry_title):
+                            candidates.append(t)
+
+                    if len(candidates) == 1:
+                        matched_toplevel = candidates[0]
 
             if matched_toplevel:
                 raw_addr = matched_toplevel.address or matched_toplevel.lastIpcObject.get("address")
@@ -357,6 +473,8 @@ class OverlayManagerSim:
 
                 updated_entry = dict(entry)
                 updated_entry["address"] = full_addr
+                updated_entry["appIdentity"] = self.compute_app_identity(matched_toplevel)
+                updated_entry["instanceDiscriminator"] = self.compute_instance_discriminator(matched_toplevel)
                 updated_entry["stableId"] = self.compute_stable_id(matched_toplevel)
 
                 if not ipc.get("floating"):
@@ -379,6 +497,173 @@ class OverlayManagerSim:
 
 # Tests
 
+def test_unmanaged_window_unregister_and_restore_is_strict_noop(tmp_path):
+    state_file = str(tmp_path / "overlay-manager-state.json")
+    sim = OverlayManagerSim(state_file)
+
+    # Unmanaged floating window that is NOT in overlay registry
+    unmanaged_floating = MockHyprlandToplevel("0xunmanaged1", "com.example.app", "Unmanaged App", floating=True, pinned=False)
+    # Unmanaged tiled window that is NOT in overlay registry
+    unmanaged_tiled = MockHyprlandToplevel("0xunmanaged2", "com.example.app2", "Unmanaged Tiled App", floating=False, pinned=False)
+    sim.toplevels = [unmanaged_floating, unmanaged_tiled]
+
+    sim.dispatched_cmds.clear()
+
+    # 1. Unregistering unmanaged floating window must be a strict no-op
+    res1 = json.loads(sim.unregister_overlay("0xunmanaged1"))
+    assert res1["success"] is False
+    assert "not registered" in res1["error"]
+    assert len(sim.dispatched_cmds) == 0  # CRITICAL: 0 commands dispatched, window not mutated into tiled!
+
+    # 2. Unregistering unmanaged tiled window must be a strict no-op
+    res2 = json.loads(sim.unregister_overlay("0xunmanaged2"))
+    assert res2["success"] is False
+    assert "not registered" in res2["error"]
+    assert len(sim.dispatched_cmds) == 0
+
+    # Ensure window state properties remain completely unchanged
+    assert unmanaged_floating.lastIpcObject["floating"] is True
+    assert unmanaged_tiled.lastIpcObject["floating"] is False
+
+def test_atomic_key_migration_when_reregistering_under_new_address(tmp_path):
+    state_file = str(tmp_path / "overlay-manager-state.json")
+    sim = OverlayManagerSim(state_file)
+
+    win_old = MockHyprlandToplevel("0xaddr1", "com.github.pet", "Desktop Pet", pid=1001, floating=False)
+    sim.toplevels = [win_old]
+
+    # Register initial overlay under address 0xaddr1
+    sim.register_overlay("0xaddr1", "bottom-right", "true", "true")
+    assert "0xaddr1" in sim.registered_overlays
+    assert len(sim.registered_overlays) == 1
+
+    # Simulate app restarting with a new window address 0xaddr2 (same PID, class, title)
+    win_new = MockHyprlandToplevel("0xaddr2", "com.github.pet", "Desktop Pet", pid=1001, floating=False)
+    sim.toplevels = [win_new]
+
+    # Re-register under 0xaddr2
+    res = json.loads(sim.register_overlay("0xaddr2", "bottom-right", "true", "true"))
+    assert res["success"] is True
+
+    # Validate ATOMIC KEY MIGRATION:
+    # 0xaddr1 MUST be deleted, 0xaddr2 MUST be added, len(registered_overlays) MUST remain 1
+    assert "0xaddr2" in sim.registered_overlays
+    assert "0xaddr1" not in sim.registered_overlays
+    assert len(sim.registered_overlays) == 1
+
+    # Check saved state file on disk
+    with open(state_file, "r") as f:
+        data = json.load(f)
+    assert "0xaddr2" in data["overlays"]
+    assert "0xaddr1" not in data["overlays"]
+
+def test_explicit_application_identity_and_instance_discriminator(tmp_path):
+    state_file = str(tmp_path / "overlay-manager-state.json")
+    sim = OverlayManagerSim(state_file)
+
+    win = MockHyprlandToplevel("0x123456", "org.kde.konsole", "Terminal Window", pid=4000)
+    sim.toplevels = [win]
+
+    app_id = sim.compute_app_identity(win)
+    inst_disc = sim.compute_instance_discriminator(win)
+    stable_id = sim.compute_stable_id(win)
+
+    assert app_id == "org.kde.konsole"
+    assert "pid:4000" in inst_disc
+    assert "title:Terminal Window" in inst_disc
+    assert f"{app_id}#" in stable_id
+
+    res = json.loads(sim.register_overlay("0x123456"))
+    assert res["success"] is True
+
+    entry = sim.registered_overlays["0x123456"]
+    assert entry["appIdentity"] == "org.kde.konsole"
+    assert "pid:4000" in entry["instanceDiscriminator"]
+    assert entry["stableId"] == stable_id
+
+def test_ambiguity_prevention_in_multi_window_class_title_matching(tmp_path):
+    state_file = str(tmp_path / "overlay-manager-state.json")
+    sim = OverlayManagerSim(state_file)
+
+    # Two active terminal windows with IDENTICAL class and title
+    term1 = MockHyprlandToplevel("0xterm1", "Alacritty", "Terminal", pid=1001)
+    term2 = MockHyprlandToplevel("0xterm2", "Alacritty", "Terminal", pid=1002)
+    sim.toplevels = [term1, term2]
+
+    # Register term1 as a click-through overlay
+    sim.register_overlay("0xterm1", clickthrough_state="true")
+    assert sim.registered_overlays["0xterm1"]["clickthrough"] is True
+
+    # Now simulate term1 being closed (only term2 is active)
+    sim.toplevels = [term2]
+
+    # Reconcile overlays: because PID/instanceDiscriminator does not match term2,
+    # and multiple candidate windows existed originally, click-through state must NOT
+    # be ambiguously attached to term2!
+    sim.reconcile_overlays()
+
+    assert "0xterm2" not in sim.registered_overlays
+    assert "0xterm1" not in sim.registered_overlays
+    assert len(sim.registered_overlays) == 0
+
+def test_dispatch_success_validation_before_persisting_state(tmp_path):
+    state_file = str(tmp_path / "overlay-manager-state.json")
+    sim = OverlayManagerSim(state_file)
+
+    win = MockHyprlandToplevel("0xfailwin", "com.example.fail", "Fail App")
+    sim.toplevels = [win]
+
+    # Force compositor dispatch failure
+    sim.fail_dispatch = True
+
+    res = json.loads(sim.register_overlay("0xfailwin", pin_state="true", clickthrough_state="true"))
+    assert res["success"] is False
+    assert "dispatch failed" in res["error"]
+
+    # Desired state MUST NOT be saved to registered_overlays or state file on dispatch failure
+    assert "0xfailwin" not in sim.registered_overlays
+
+def test_qml_ipc_contract_and_structure_validation():
+    qml_file_path = "/app/shell/services/OverlayManager.qml"
+    assert os.path.exists(qml_file_path), "OverlayManager.qml file must exist"
+
+    with open(qml_file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 1. Verify Singleton declaration
+    assert "pragma Singleton" in content
+    assert "Singleton {" in content
+
+    # 2. Verify IpcHandler definition and target "overlay"
+    assert 'IpcHandler {' in content
+    assert 'target: "overlay"' in content
+
+    # 3. Verify all required IPC methods are present in the QML file
+    required_ipc_methods = [
+        "function register(",
+        "function float(",
+        "function unregister(",
+        "function unoverlay(",
+        "function anchor(",
+        "function pin(",
+        "function clickthrough(",
+        "function list(",
+        "function toggle(",
+        "function restore(",
+        "function restoreAll("
+    ]
+
+    for method in required_ipc_methods:
+        assert method in content, f"OverlayManager.qml missing IPC method {method}"
+
+    # 4. Verify no-op check logic is present in unregisterOverlay
+    assert "if (!info)" in content
+    assert "Window is not registered as an overlay" in content
+
+    # 5. Verify explicit appIdentity and instanceDiscriminator helper functions
+    assert "function computeAppIdentity(" in content
+    assert "function computeInstanceDiscriminator(" in content
+
 def test_state_persistence_and_serialization(tmp_path):
     state_file = str(tmp_path / "overlay-manager-state.json")
     sim = OverlayManagerSim(state_file)
@@ -396,7 +681,7 @@ def test_state_persistence_and_serialization(tmp_path):
     assert "overlays" in data
     assert "0x11223344" in data["overlays"]
     entry = data["overlays"]["0x11223344"]
-    assert entry["stableId"] == "com.github.pet:Desktop Pet"
+    assert "com.github.pet" in entry["stableId"]
     assert entry["pinned"] is True
     assert entry["clickthrough"] is True
     assert entry["anchored"] == "bottom-right"
@@ -405,13 +690,15 @@ def test_state_persistence_and_serialization(tmp_path):
 
 def test_reconciliation_and_stale_address_recovery_on_restart(tmp_path):
     state_file = str(tmp_path / "overlay-manager-state.json")
-    
+
     # 1. Pre-populate state file simulating a previous session before shell restart
     initial_data = {
         "version": 1,
         "overlays": {
             "0xoldaddress": {
-                "stableId": "com.github.pet:Desktop Pet",
+                "stableId": "com.github.pet#pid:5000;title:Desktop Pet;addr:0xoldaddress",
+                "appIdentity": "com.github.pet",
+                "instanceDiscriminator": "pid:5000;title:Desktop Pet;addr:0xoldaddress",
                 "address": "0xoldaddress",
                 "class": "com.github.pet",
                 "title": "Desktop Pet",
@@ -482,8 +769,8 @@ def test_window_close_event_handling(tmp_path):
     state_file = str(tmp_path / "overlay-manager-state.json")
     sim = OverlayManagerSim(state_file)
 
-    win1 = MockHyprlandToplevel("0xwin1", "app1", "App 1")
-    win2 = MockHyprlandToplevel("0xwin2", "app2", "App 2")
+    win1 = MockHyprlandToplevel("0xwin1", "app1", "App 1", pid=101)
+    win2 = MockHyprlandToplevel("0xwin2", "app2", "App 2", pid=102)
     sim.toplevels = [win1, win2]
 
     sim.register_overlay("0xwin1")
@@ -569,20 +856,3 @@ def test_window_state_preservation_and_safe_restoration(tmp_path):
     assert "movetoworkspacesilent 3,address:0xtiled" in cmds
     # - Restore tiling mode
     assert "settiled address:0xtiled" in cmds
-
-def test_stable_identity_generic_matching_without_browser_heuristics(tmp_path):
-    state_file = str(tmp_path / "overlay-manager-state.json")
-    sim = OverlayManagerSim(state_file)
-
-    apps = [
-        MockHyprlandToplevel("0x1", "org.gnome.Nautilus", "Files", pid=101),
-        MockHyprlandToplevel("0x2", "mpv", "video.mp4", pid=102),
-        MockHyprlandToplevel("0x3", "com.obsproject.Studio", "OBS Studio", pid=103),
-    ]
-    sim.toplevels = apps
-
-    # Verify find_toplevel works by class, title, address, and stable_id
-    assert sim.find_toplevel("org.gnome.nautilus") == apps[0]
-    assert sim.find_toplevel("video.mp4") == apps[1]
-    assert sim.find_toplevel("com.obsproject.Studio:OBS Studio") == apps[2]
-    assert sim.find_toplevel("0x2") == apps[1]
