@@ -2,10 +2,9 @@
 
 #include <algorithm>
 #include <random>
-#include <pipewire/pipewire.h>
-#include <spa/param/audio/format-utils.h>
 
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -18,7 +17,6 @@
 #include <QLoggingCategory>
 #include <QProcess>
 #include <QStandardPaths>
-#include <QThread>
 
 Q_LOGGING_CATEGORY(lcVoice, "caelestia.services.voice", QtInfoMsg)
 
@@ -41,7 +39,7 @@ VoiceService::VoiceService(QObject* parent)
     m_idleResetTimer = new QTimer(this);
     m_idleResetTimer->setSingleShot(true);
     connect(m_idleResetTimer, &QTimer::timeout, this, [this]() {
-        setState("idle", "");
+        setState("idle", "", "");
     });
 
     loadConfig();
@@ -49,12 +47,18 @@ VoiceService::VoiceService(QObject* parent)
 }
 
 VoiceService::~VoiceService() {
-    if (m_isRecording) {
+    if (m_isRecording || (m_captureProcess && m_captureProcess->state() != QProcess::NotRunning)) {
         m_isRecording = false;
-        if (m_recordThread.joinable()) {
-            m_recordThread.request_stop();
-            m_recordThread.join();
+        if (m_captureProcess) {
+            m_captureProcess->disconnect();
+            m_captureProcess->terminate();
+            if (!m_captureProcess->waitForFinished(300)) {
+                m_captureProcess->kill();
+            }
         }
+    }
+    if (!m_tempWavPath.isEmpty() && QFile::exists(m_tempWavPath)) {
+        QFile::remove(m_tempWavPath);
     }
 }
 
@@ -353,11 +357,24 @@ QStringList VoiceService::getAllAvailableKeys() {
     return keys;
 }
 
-void VoiceService::appendAudioChunk(const char* data, qsizetype size) {
-    QMutexLocker locker(&m_pcmMutex);
-    if (m_isRecording) {
-        m_pcmData.append(data, size);
+QString VoiceService::findCaptureExecutable() const {
+    const QString homeWorker = QDir::homePath() + "/.local/bin/caelestia-voice";
+    if (QFile::exists(homeWorker)) {
+        return homeWorker;
     }
+    const QString sysWorker = QStandardPaths::findExecutable("caelestia-voice");
+    if (!sysWorker.isEmpty()) {
+        return sysWorker;
+    }
+    const QString pwRecord = QStandardPaths::findExecutable("pw-record");
+    if (!pwRecord.isEmpty()) {
+        return pwRecord;
+    }
+    const QString pwCat = QStandardPaths::findExecutable("pw-cat");
+    if (!pwCat.isEmpty()) {
+        return pwCat;
+    }
+    return "pw-record";
 }
 
 void VoiceService::toggle() {
@@ -374,139 +391,100 @@ void VoiceService::startCapture() {
 
     m_idleResetTimer->stop();
 
-    {
-        QMutexLocker locker(&m_pcmMutex);
-        m_pcmData.clear();
+    m_tempWavPath = QDir::tempPath() + QString("/caelestia-voice-%1.wav").arg(QCoreApplication::applicationPid());
+    if (QFile::exists(m_tempWavPath)) {
+        QFile::remove(m_tempWavPath);
+    }
+
+    if (m_captureProcess) {
+        m_captureProcess->disconnect();
+        if (m_captureProcess->state() != QProcess::NotRunning) {
+            m_captureProcess->terminate();
+            if (!m_captureProcess->waitForFinished(200)) {
+                m_captureProcess->kill();
+            }
+        }
+        m_captureProcess->deleteLater();
+        m_captureProcess = nullptr;
+    }
+
+    m_captureProcess = new QProcess(this);
+    const QString execPath = findCaptureExecutable();
+
+    QStringList args;
+    if (execPath.contains("caelestia-voice")) {
+        args << "record" << m_tempWavPath;
+    } else if (execPath.contains("pw-cat")) {
+        args << "-r" << "--format=s16" << "--rate=16000" << "--channels=1" << m_tempWavPath;
+    } else {
+        args << "--format=s16" << "--rate=16000" << "--channels=1" << m_tempWavPath;
+    }
+
+    connect(m_captureProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        if (m_isRecording) {
+            m_isRecording = false;
+            m_safetyTimer->stop();
+            setState("error", "Capture failed", "Could not start audio capture process");
+            scheduleResetToIdle(3000);
+        }
+    });
+
+    connect(m_captureProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        if (m_isRecording) {
+            m_isRecording = false;
+            m_safetyTimer->stop();
+            if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
+                setState("error", "Capture failed", "Audio capture process exited unexpectedly");
+                scheduleResetToIdle(3000);
+            }
+        }
+    });
+
+    m_captureProcess->start(execPath, args);
+    if (!m_captureProcess->waitForStarted(1000)) {
+        m_captureProcess->deleteLater();
+        m_captureProcess = nullptr;
+        m_isRecording = false;
+        setState("error", "Capture failed", "Failed to launch recording worker");
+        scheduleResetToIdle(3000);
+        return;
     }
 
     m_isRecording = true;
     setState("listening", "Listening…", "Press F9 again to transcribe");
     m_safetyTimer->start(60000);
-
-    if (m_recordThread.joinable()) {
-        m_recordThread.request_stop();
-        m_recordThread.join();
-    }
-
-    m_recordThread = std::jthread([this](std::stop_token token) {
-        pw_init(nullptr, nullptr);
-        pw_main_loop* loop = pw_main_loop_new(nullptr);
-        if (!loop) {
-            pw_deinit();
-            return;
-        }
-
-        pw_properties* props = pw_properties_new(
-            PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_MEDIA_ROLE, "Music", nullptr);
-        pw_properties_set(props, PW_KEY_STREAM_CAPTURE_SINK, "false");
-        pw_properties_set(props, PW_KEY_NODE_PASSIVE, "true");
-
-        std::vector<uint8_t> buffer(1024);
-        spa_pod_builder b;
-        spa_pod_builder_init(&b, buffer.data(), static_cast<uint32_t>(buffer.size()));
-
-        spa_audio_info_raw info{};
-        info.format = SPA_AUDIO_FORMAT_S16;
-        info.rate = 16000;
-        info.channels = 1;
-
-        const spa_pod* params[1];
-        params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
-
-        struct PWContext {
-            pw_stream* stream = nullptr;
-            VoiceService* service = nullptr;
-        } ctx;
-        ctx.service = this;
-
-        pw_stream_events events{};
-        events.version = PW_VERSION_STREAM_EVENTS;
-        events.process = [](void* data) {
-            auto* c = static_cast<PWContext*>(data);
-            pw_buffer* buf = pw_stream_dequeue_buffer(c->stream);
-            if (!buf)
-                return;
-
-            const spa_buffer* sbuf = buf->buffer;
-            if (sbuf && sbuf->datas[0].data) {
-                const char* samples = static_cast<const char*>(sbuf->datas[0].data);
-                uint32_t size = sbuf->datas[0].chunk->size;
-                if (samples && size > 0) {
-                    c->service->appendAudioChunk(samples, static_cast<qsizetype>(size));
-                }
-            }
-            pw_stream_queue_buffer(c->stream, buf);
-        };
-
-        ctx.stream = pw_stream_new_simple(pw_main_loop_get_loop(loop), "caelestia-voice", props, &events, &ctx);
-        if (ctx.stream) {
-            pw_stream_connect(
-                ctx.stream,
-                PW_DIRECTION_INPUT,
-                PW_ID_ANY,
-                static_cast<pw_stream_flags>(
-                    PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS),
-                params,
-                1);
-
-            while (!token.stop_requested()) {
-                pw_loop_iterate(pw_main_loop_get_loop(loop), 10);
-            }
-
-            pw_stream_destroy(ctx.stream);
-        }
-
-        pw_main_loop_destroy(loop);
-        pw_deinit();
-    });
 }
 
 void VoiceService::stopCapture() {
-    if (!m_isRecording)
+    if (!m_isRecording && (!m_captureProcess || m_captureProcess->state() == QProcess::NotRunning)) {
         return;
+    }
 
     m_isRecording = false;
     m_safetyTimer->stop();
 
-    if (m_recordThread.joinable()) {
-        m_recordThread.request_stop();
-        m_recordThread.join();
-    }
-
-    QByteArray rawPcm;
-    {
-        QMutexLocker locker(&m_pcmMutex);
-        rawPcm = m_pcmData;
-        m_pcmData.clear();
+    if (m_captureProcess) {
+        m_captureProcess->disconnect();
+        if (m_captureProcess->state() != QProcess::NotRunning) {
+            m_captureProcess->terminate();
+            if (!m_captureProcess->waitForFinished(500)) {
+                m_captureProcess->kill();
+                m_captureProcess->waitForFinished(200);
+            }
+        }
+        m_captureProcess->deleteLater();
+        m_captureProcess = nullptr;
     }
 
     QByteArray wavData;
-    uint32_t pcmSize = static_cast<uint32_t>(rawPcm.size());
-    uint32_t chunkSize = 36 + pcmSize;
-    uint32_t sampleRate = 16000;
-    uint16_t channels = 1;
-    uint16_t bitsPerSample = 16;
-    uint32_t byteRate = sampleRate * channels * (bitsPerSample / 8);
-    uint16_t blockAlign = channels * (bitsPerSample / 8);
-    uint32_t subchunk1Size = 16;
-    uint16_t audioFormat = 1;
+    QFile wavFile(m_tempWavPath);
+    if (wavFile.open(QIODevice::ReadOnly)) {
+        wavData = wavFile.readAll();
+        wavFile.close();
+        QFile::remove(m_tempWavPath);
+    }
 
-    wavData.append("RIFF", 4);
-    wavData.append(reinterpret_cast<const char*>(&chunkSize), 4);
-    wavData.append("WAVE", 4);
-    wavData.append("fmt ", 4);
-    wavData.append(reinterpret_cast<const char*>(&subchunk1Size), 4);
-    wavData.append(reinterpret_cast<const char*>(&audioFormat), 2);
-    wavData.append(reinterpret_cast<const char*>(&channels), 2);
-    wavData.append(reinterpret_cast<const char*>(&sampleRate), 4);
-    wavData.append(reinterpret_cast<const char*>(&byteRate), 4);
-    wavData.append(reinterpret_cast<const char*>(&blockAlign), 2);
-    wavData.append(reinterpret_cast<const char*>(&bitsPerSample), 2);
-    wavData.append("data", 4);
-    wavData.append(reinterpret_cast<const char*>(&pcmSize), 4);
-    wavData.append(rawPcm);
-
-    if (pcmSize < 4800) {
+    if (wavData.size() < 4800) {
         setState("empty", "No clear speech detected");
         scheduleResetToIdle(3000);
         return;
@@ -514,6 +492,37 @@ void VoiceService::stopCapture() {
 
     setState("processing", "Transcribing…", "Gemini is cleaning up your words");
     processTranscription(wavData);
+}
+
+void VoiceService::cancel() {
+    m_idleResetTimer->stop();
+    m_safetyTimer->stop();
+
+    m_isRecording = false;
+
+    if (m_captureProcess) {
+        m_captureProcess->disconnect();
+        if (m_captureProcess->state() != QProcess::NotRunning) {
+            m_captureProcess->terminate();
+            if (!m_captureProcess->waitForFinished(300)) {
+                m_captureProcess->kill();
+            }
+        }
+        m_captureProcess->deleteLater();
+        m_captureProcess = nullptr;
+    }
+
+    if (!m_tempWavPath.isEmpty() && QFile::exists(m_tempWavPath)) {
+        QFile::remove(m_tempWavPath);
+    }
+
+    if (m_activeReply) {
+        m_activeReply->abort();
+        m_activeReply->deleteLater();
+        m_activeReply = nullptr;
+    }
+
+    setState("idle", "", "");
 }
 
 void VoiceService::processTranscription(const QByteArray& wavData) {
@@ -525,32 +534,6 @@ void VoiceService::processTranscription(const QByteArray& wavData) {
     }
 
     sendGeminiRequest(keys, wavData);
-}
-
-void VoiceService::cancel() {
-    m_idleResetTimer->stop();
-    m_safetyTimer->stop();
-
-    if (m_isRecording) {
-        m_isRecording = false;
-        if (m_recordThread.joinable()) {
-            m_recordThread.request_stop();
-            m_recordThread.join();
-        }
-    }
-
-    if (m_activeReply) {
-        m_activeReply->abort();
-        m_activeReply->deleteLater();
-        m_activeReply = nullptr;
-    }
-
-    {
-        QMutexLocker locker(&m_pcmMutex);
-        m_pcmData.clear();
-    }
-
-    setState("idle", "", "");
 }
 
 void VoiceService::sendGeminiRequest(QStringList remainingKeys, const QByteArray& wavData) {
@@ -646,14 +629,35 @@ void VoiceService::pasteText(const QString& text) {
     if (QGuiApplication::clipboard()) {
         QGuiApplication::clipboard()->setText(text);
     }
-    QProcess::execute("wl-copy", {"--", text});
 
-    QThread::msleep(60);
+    QProcess* wlCopyProc = new QProcess(this);
+    connect(wlCopyProc, &QProcess::finished, wlCopyProc, &QObject::deleteLater);
+    connect(wlCopyProc, &QProcess::errorOccurred, wlCopyProc, &QObject::deleteLater);
+    wlCopyProc->start("wl-copy", QStringList());
+    wlCopyProc->write(text.toUtf8());
+    wlCopyProc->closeWriteChannel();
 
-    const int ret = QProcess::execute("wtype", {"-M", "ctrl", "-k", "v", "-m", "ctrl"});
-    if (ret != 0) {
-        QProcess::execute("ydotool", {"key", "29:1", "47:1", "47:0", "29:0"});
-    }
+    QTimer::singleShot(60, this, []() {
+        QProcess* wtypeProc = new QProcess();
+        auto onWtypeFinished = [wtypeProc](int exitCode) {
+            wtypeProc->deleteLater();
+            if (exitCode != 0) {
+                QProcess* ydotoolProc = new QProcess();
+                QObject::connect(ydotoolProc, &QProcess::finished, ydotoolProc, &QObject::deleteLater);
+                QObject::connect(ydotoolProc, &QProcess::errorOccurred, ydotoolProc, &QObject::deleteLater);
+                ydotoolProc->start("ydotool", {"key", "29:1", "47:1", "47:0", "29:0"});
+            }
+        };
+        QObject::connect(wtypeProc, &QProcess::finished, onWtypeFinished);
+        QObject::connect(wtypeProc, &QProcess::errorOccurred, [wtypeProc]() {
+            wtypeProc->deleteLater();
+            QProcess* ydotoolProc = new QProcess();
+            QObject::connect(ydotoolProc, &QProcess::finished, ydotoolProc, &QObject::deleteLater);
+            QObject::connect(ydotoolProc, &QProcess::errorOccurred, ydotoolProc, &QObject::deleteLater);
+            ydotoolProc->start("ydotool", {"key", "29:1", "47:1", "47:0", "29:0"});
+        });
+        wtypeProc->start("wtype", {"-M", "ctrl", "-k", "v", "-m", "ctrl"});
+    });
 }
 
 } // namespace caelestia::services

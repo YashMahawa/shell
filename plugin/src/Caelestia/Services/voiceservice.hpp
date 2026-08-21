@@ -6,19 +6,16 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QMutex>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QProcess>
 #include <qqmlintegration.h>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
 #include <QVariant>
-
-#include <stop_token>
-#include <thread>
 
 namespace caelestia::services {
 
@@ -57,8 +54,6 @@ public:
     Q_INVOKABLE void refreshKeys();
     Q_INVOKABLE QVariantMap statusInfo() const;
 
-    void appendAudioChunk(const char* data, qsizetype size);
-
 signals:
     void statusChanged();
     void messageChanged();
@@ -76,11 +71,11 @@ private:
     void setState(const QString& status, const QString& message, const QString& detail = "");
     void loadConfig();
     void saveConfig();
-    void fetchKeysFromKeyring();
     QString lookupSecretDBus(int slot);
     bool storeSecretDBus(int slot, const QString& secret);
     bool clearSecretDBus(int slot);
     QStringList getAllAvailableKeys();
+    QString findCaptureExecutable() const;
     void processTranscription(const QByteArray& wavData);
     void sendGeminiRequest(QStringList remainingKeys, const QByteArray& wavData);
     void pasteText(const QString& text);
@@ -101,9 +96,8 @@ private:
     QNetworkReply* m_activeReply = nullptr;
 
     bool m_isRecording = false;
-    QByteArray m_pcmData;
-    QMutex m_pcmMutex;
-    std::jthread m_recordThread;
+    QProcess* m_captureProcess = nullptr;
+    QString m_tempWavPath;
 };
 
 } // namespace caelestia::services

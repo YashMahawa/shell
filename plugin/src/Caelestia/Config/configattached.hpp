@@ -2,20 +2,7 @@
 
 #include "config.hpp"
 
-#if __has_include(<qquickattachedpropertypropagator.h>)
 #include <qquickattachedpropertypropagator.h>
-#else
-#ifndef QQUICKATTACHEDPROPERTYPROPAGATOR_FALLBACK_DEFINED
-#define QQUICKATTACHEDPROPERTYPROPAGATOR_FALLBACK_DEFINED
-class QQuickAttachedPropertyPropagator : public QObject {
-public:
-    using QObject::QObject;
-    void initialize() {}
-    QList<QQuickAttachedPropertyPropagator*> attachedChildren() const { return {}; }
-    virtual void attachedParentChange(QQuickAttachedPropertyPropagator*, QQuickAttachedPropertyPropagator*) {}
-};
-#endif
-#endif
 
 namespace caelestia::config {
 
