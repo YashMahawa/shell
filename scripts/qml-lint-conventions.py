@@ -15,6 +15,8 @@ Required ordering within each QML object (with blank line between sections):
   7. component definitions
 """
 
+from __future__ import annotations
+
 import re
 import sys
 from enum import IntEnum

@@ -20,14 +20,14 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Background")
-            checked: Config.bar.clock.background
+            checked: GlobalConfig.bar.clock.background
             onToggled: GlobalConfig.bar.clock.background = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Show date")
-            checked: Config.bar.clock.showDate
+            checked: GlobalConfig.bar.clock.showDate
             onToggled: GlobalConfig.bar.clock.showDate = checked
         }
 
@@ -35,7 +35,7 @@ PageBase {
             Layout.fillWidth: true
             last: true
             text: qsTr("Show icon")
-            checked: Config.bar.clock.showIcon
+            checked: GlobalConfig.bar.clock.showIcon
             onToggled: GlobalConfig.bar.clock.showIcon = checked
         }
     }

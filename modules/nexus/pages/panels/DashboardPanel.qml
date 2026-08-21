@@ -30,7 +30,7 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Enabled")
-            checked: Config.dashboard.enabled
+            checked: GlobalConfig.dashboard.enabled
             onToggled: GlobalConfig.dashboard.enabled = checked
         }
 
@@ -39,7 +39,7 @@ PageBase {
             last: true
             text: qsTr("Show on hover")
             subtext: qsTr("Reveal when the cursor reaches the screen edge")
-            checked: Config.dashboard.showOnHover
+            checked: GlobalConfig.dashboard.showOnHover
             onToggled: GlobalConfig.dashboard.showOnHover = checked
         }
 
@@ -52,21 +52,21 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Dashboard")
-            checked: Config.dashboard.showDashboard
+            checked: GlobalConfig.dashboard.showDashboard
             onToggled: GlobalConfig.dashboard.showDashboard = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Media")
-            checked: Config.dashboard.showMedia
+            checked: GlobalConfig.dashboard.showMedia
             onToggled: GlobalConfig.dashboard.showMedia = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Performance")
-            checked: Config.dashboard.showPerformance
+            checked: GlobalConfig.dashboard.showPerformance
             onToggled: GlobalConfig.dashboard.showPerformance = checked
         }
 
@@ -74,7 +74,7 @@ PageBase {
             Layout.fillWidth: true
             last: true
             text: qsTr("Weather")
-            checked: Config.dashboard.showWeather
+            checked: GlobalConfig.dashboard.showWeather
             onToggled: GlobalConfig.dashboard.showWeather = checked
         }
 
@@ -88,7 +88,7 @@ PageBase {
             first: true
             text: qsTr("National holidays")
             subtext: qsTr("Show country-wide public holidays in the dashboard")
-            checked: Config.dashboard.showNationalHolidays
+            checked: GlobalConfig.dashboard.showNationalHolidays
             onToggled: GlobalConfig.dashboard.showNationalHolidays = checked
         }
 
@@ -125,7 +125,7 @@ PageBase {
                 StyledTextField {
                     Layout.preferredWidth: 52
                     horizontalAlignment: Text.AlignHCenter
-                    text: Config.dashboard.calendarCountryCode
+                    text: GlobalConfig.dashboard.calendarCountryCode
                     placeholderText: CalendarEvents.countryCode || "IN"
                     maximumLength: 2
                     validator: RegularExpressionValidator {
@@ -145,35 +145,35 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Battery")
-            checked: Config.dashboard.performance.showBattery
+            checked: GlobalConfig.dashboard.performance.showBattery
             onToggled: GlobalConfig.dashboard.performance.showBattery = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("GPU")
-            checked: Config.dashboard.performance.showGpu
+            checked: GlobalConfig.dashboard.performance.showGpu
             onToggled: GlobalConfig.dashboard.performance.showGpu = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("CPU")
-            checked: Config.dashboard.performance.showCpu
+            checked: GlobalConfig.dashboard.performance.showCpu
             onToggled: GlobalConfig.dashboard.performance.showCpu = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Memory")
-            checked: Config.dashboard.performance.showMemory
+            checked: GlobalConfig.dashboard.performance.showMemory
             onToggled: GlobalConfig.dashboard.performance.showMemory = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Storage")
-            checked: Config.dashboard.performance.showStorage
+            checked: GlobalConfig.dashboard.performance.showStorage
             onToggled: GlobalConfig.dashboard.performance.showStorage = checked
         }
 
@@ -181,7 +181,7 @@ PageBase {
             Layout.fillWidth: true
             last: true
             text: qsTr("Network")
-            checked: Config.dashboard.performance.showNetwork
+            checked: GlobalConfig.dashboard.performance.showNetwork
             onToggled: GlobalConfig.dashboard.performance.showNetwork = checked
         }
 
@@ -196,7 +196,7 @@ PageBase {
             last: true
             label: qsTr("Drag threshold")
             subtext: qsTr("Pixels dragged before the dashboard opens")
-            value: Config.dashboard.dragThreshold
+            value: GlobalConfig.dashboard.dragThreshold
             from: 0
             to: 200
             stepSize: 5
