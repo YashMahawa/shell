@@ -30,10 +30,7 @@ class HyprEventRouter:
     """
 
     def __init__(self):
-        self.has_v2_layout = False
-        self.has_v2_config = False
-        self.has_v2_workspace = False
-        self.has_v2_window = False
+        self.v2_events = set()
 
         self.devices_refresh_count = 0
         self.options_refresh_count = 0
@@ -45,10 +42,23 @@ class HyprEventRouter:
         self.devices_refresh_pending = False
 
     def reset_capabilities(self):
-        self.has_v2_layout = False
-        self.has_v2_config = False
-        self.has_v2_workspace = False
-        self.has_v2_window = False
+        self.v2_events.clear()
+
+    @property
+    def has_v2_layout(self):
+        return "activelayout" in self.v2_events
+
+    @property
+    def has_v2_config(self):
+        return "configreloaded" in self.v2_events
+
+    @property
+    def has_v2_workspace(self):
+        return "workspace" in self.v2_events
+
+    @property
+    def has_v2_window(self):
+        return "activewindow" in self.v2_events
 
     def trigger_devices_refresh(self):
         if self.is_refreshing_devices:
@@ -71,68 +81,42 @@ class HyprEventRouter:
         return self.handle_event(name.strip(), data.strip())
 
     def handle_event(self, name: str, data: str):
-        if name == "activelayoutv2":
-            self.has_v2_layout = True
+        is_v2 = name.endswith("v2")
+        base_name = name[:-2] if is_v2 else name
+
+        if is_v2:
+            self.v2_events.add(base_name)
+        elif base_name in self.v2_events:
+            return "legacy_ignored"
+
+        if base_name == "activelayout":
             parts = [p.strip() for p in data.split(",")]
-            # V2 Schema: keyboard_name, layout_name, layout_index
             kb_name = parts[0] if len(parts) >= 1 else ""
             layout_name = parts[1] if len(parts) >= 2 else ""
-            layout_idx = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else -1
+            layout_idx = int(parts[2]) if is_v2 and len(parts) >= 3 and parts[2].isdigit() else -1
 
             for dev in self.devices:
                 if not kb_name or dev.name == kb_name:
                     dev.update_active_layout(layout_name, layout_idx)
 
             self.trigger_devices_refresh()
-            return "activelayoutv2_processed"
+            return f"{name}_processed"
 
-        elif name == "activelayout":
-            if self.has_v2_layout:
-                return "legacy_ignored"
-            parts = [p.strip() for p in data.split(",")]
-            # Legacy Schema: keyboard_name, layout_name
-            kb_name = parts[0] if len(parts) >= 1 else ""
-            layout_name = parts[1] if len(parts) >= 2 else ""
-
-            for dev in self.devices:
-                if not kb_name or dev.name == kb_name:
-                    dev.update_active_layout(layout_name, -1)
-
-            self.trigger_devices_refresh()
-            return "activelayout_processed"
-
-        elif name == "configreloadedv2":
-            self.has_v2_config = True
+        elif base_name == "configreloaded":
             self.options_refresh_count += 1
-            return "configreloadedv2_processed"
+            return f"{name}_processed"
 
-        elif name == "configreloaded":
-            if self.has_v2_config:
-                return "legacy_ignored"
-            self.options_refresh_count += 1
-            return "configreloaded_processed"
-
-        elif name == "workspacev2":
-            self.has_v2_workspace = True
+        elif base_name == "workspace":
             self.workspace_refresh_count += 1
-            return "workspacev2_processed"
+            return f"{name}_processed"
 
-        elif name == "workspace":
-            if self.has_v2_workspace:
-                return "legacy_ignored"
-            self.workspace_refresh_count += 1
-            return "workspace_processed"
-
-        elif name == "activewindowv2":
-            self.has_v2_window = True
+        elif base_name == "activewindow":
             self.window_refresh_count += 1
-            return "activewindowv2_processed"
+            return f"{name}_processed"
 
-        elif name == "activewindow":
-            if self.has_v2_window:
-                return "legacy_ignored"
+        elif base_name in ("changefloatingmode", "minimize", "pin", "fullscreen"):
             self.window_refresh_count += 1
-            return "activewindow_processed"
+            return f"{name}_processed"
 
         return "unknown"
 
@@ -214,6 +198,35 @@ def test_both_emitted_v2_then_legacy():
     assert res2 == "legacy_ignored"
 
     assert router.devices_refresh_count == 1
+
+
+def test_mixed_stream_some_v2_some_legacy():
+    router = HyprEventRouter()
+
+    # Process activewindowv2
+    res1 = router.parse_event("activewindowv2>>0x1234")
+    assert res1 == "activewindowv2_processed"
+    assert "activewindow" in router.v2_events
+    assert router.window_refresh_count == 1
+
+    # Legacy duplicate activewindow is ignored
+    res2 = router.parse_event("activewindow>>class,title")
+    assert res2 == "legacy_ignored"
+    assert router.window_refresh_count == 1
+
+    # Legacy-only window state events (changefloatingmode, minimize, pin) are NOT suppressed!
+    res3 = router.parse_event("changefloatingmode>>0x1234,1")
+    assert res3 == "changefloatingmode_processed"
+    assert router.window_refresh_count == 2
+
+    res4 = router.parse_event("minimize>>0x1234,1")
+    assert res4 == "minimize_processed"
+    assert router.window_refresh_count == 3
+
+    # Legacy workspace event is NOT suppressed by activewindowv2
+    res5 = router.parse_event("workspace>>3")
+    assert res5 == "workspace_processed"
+    assert router.workspace_refresh_count == 1
 
 
 def test_rapid_activelayout_changes():

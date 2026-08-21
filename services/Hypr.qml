@@ -33,10 +33,7 @@ Singleton {
     readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? (keyboard?.layout.split(",")[keyboard?.lastIpcObject?.active_layout_index ?? 0]?.trim() ?? defaultKbLayout)
     readonly property var kbMap: new Map()
     property var layoutCache: ({})
-    property bool _hasV2Workspace: false
-    property bool _hasV2Window: false
-    property bool _hasV2Layout: false
-    property bool _hasV2Config: false
+    property var _v2Events: ({})
 
     readonly property alias extras: extras
     readonly property alias options: extras.options
@@ -142,61 +139,30 @@ Singleton {
     Connections {
         function onRawEvent(event: HyprlandEvent): void {
             const name = event.name;
+            const isV2 = name.endsWith("v2");
+            const baseName = isV2 ? name.slice(0, -2) : name;
 
-            if (name === "activelayoutv2") {
-                root._hasV2Layout = true;
+            if (isV2) {
+                root._v2Events[baseName] = true;
+            } else if (root._v2Events[baseName]) {
+                return;
+            }
+
+            if (baseName === "activelayout") {
                 extras.refreshDevices();
-            } else if (name === "activelayout") {
-                if (root._hasV2Layout)
-                    return;
-                extras.refreshDevices();
-            } else if (name === "configreloadedv2") {
-                root._hasV2Config = true;
+            } else if (baseName === "configreloaded") {
                 root.configReloaded();
                 root.reloadDynamicConfs();
-            } else if (name === "configreloaded") {
-                if (root._hasV2Config)
-                    return;
-                root.configReloaded();
-                root.reloadDynamicConfs();
-            } else if (name === "workspacev2") {
-                root._hasV2Workspace = true;
+            } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(baseName)) {
                 root.scheduleRefresh(true, true, false);
-            } else if (name === "workspace") {
-                if (root._hasV2Workspace)
-                    return;
-                root.scheduleRefresh(true, true, false);
-            } else if (["moveworkspace", "activespecial", "focusedmon"].includes(name)) {
-                root.scheduleRefresh(true, true, false);
-            } else if (name === "activewindowv2") {
-                root._hasV2Window = true;
+            } else if (["activewindow", "openwindow", "closewindow", "movewindow"].includes(baseName)) {
                 root.scheduleRefresh(true, false, true);
-            } else if (name === "activewindow") {
-                if (root._hasV2Window)
-                    return;
-                root.scheduleRefresh(true, false, true);
-            } else if (["openwindow", "closewindow", "movewindow"].includes(name)) {
-                root.scheduleRefresh(true, false, true);
-            } else if (name.includes("mon")) {
+            } else if (baseName.includes("mon")) {
                 root.scheduleRefresh(false, true, false);
-            } else if (name.includes("workspace")) {
-                if (name.endsWith("v2")) {
-                    root._hasV2Workspace = true;
-                    root.scheduleRefresh(true, false, false);
-                } else {
-                    if (root._hasV2Workspace)
-                        return;
-                    root.scheduleRefresh(true, false, false);
-                }
-            } else if (name.includes("window") || name.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(name)) {
-                if (name.endsWith("v2")) {
-                    root._hasV2Window = true;
-                    root.scheduleRefresh(false, false, true);
-                } else {
-                    if (root._hasV2Window)
-                        return;
-                    root.scheduleRefresh(false, false, true);
-                }
+            } else if (baseName.includes("workspace")) {
+                root.scheduleRefresh(true, false, false);
+            } else if (baseName.includes("window") || baseName.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(baseName)) {
+                root.scheduleRefresh(false, false, true);
             }
         }
 

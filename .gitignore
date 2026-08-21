@@ -11,3 +11,4 @@ logs
 *.disabled-test
 *broken-post-fork*
 *pre-package-sync*
+__pycache__/
