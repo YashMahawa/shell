@@ -68,8 +68,9 @@ class TestManageMonitors(unittest.TestCase):
         with self.assertRaises(ValueError):
             manage_monitors.apply_rules(all_disabled)
 
-    @patch("subprocess.run")
-    def test_external_only_monitors(self, mock_run):
+    @patch("shutil.which", return_value="/usr/bin/hyprctl")
+    @patch("manage_monitors.run_command")
+    def test_external_only_monitors(self, mock_run, mock_which):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         external_only_rules = [
             {"name": "eDP-1", "disabled": True},
@@ -78,8 +79,9 @@ class TestManageMonitors(unittest.TestCase):
         res = manage_monitors.apply_rules(external_only_rules)
         self.assertTrue(res)
 
-    @patch("subprocess.run")
-    def test_mixed_scale_factors(self, mock_run):
+    @patch("shutil.which", return_value="/usr/bin/hyprctl")
+    @patch("manage_monitors.run_command")
+    def test_mixed_scale_factors(self, mock_run, mock_which):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         mixed_scale_rules = [
             {"name": "eDP-1", "res": "2560x1600@165", "pos": "0x0", "scale": "2"},
@@ -87,6 +89,28 @@ class TestManageMonitors(unittest.TestCase):
         ]
         res = manage_monitors.apply_rules(mixed_scale_rules)
         self.assertTrue(res)
+
+    @patch("shutil.which", return_value="/usr/bin/hyprctl")
+    @patch("manage_monitors.run_command")
+    def test_mock_safe_and_deliberate_empty_response(self, mock_run, mock_which):
+        # 1. Unpopulated or empty stdout mock returns None and does not trigger rollback
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        self.assertIsNone(manage_monitors.get_current_hypr_monitors())
+
+        rules = [{"name": "HDMI-A-1", "res": "1920x1080@60", "pos": "0x0", "scale": "1"}]
+        self.assertTrue(manage_monitors.apply_rules(rules))
+
+        # 2. Deliberately mocked empty monitor list "[]" returns [] and triggers rollback safely
+        mock_run.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
+        self.assertEqual(manage_monitors.get_current_hypr_monitors(), [])
+
+        with self.assertRaises(RuntimeError) as ctx:
+            manage_monitors.apply_rules(rules)
+        self.assertIn("Output configuration error detected", str(ctx.exception))
+
+        # Ensure rollback executed commands using runner (mock_run) and didn't touch live host
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        self.assertIn(["hyprctl", "keyword", "monitor", "HDMI-A-1,preferred,auto,1"], calls)
 
     @patch("manage_monitors.get_current_hypr_monitors")
     @patch("subprocess.run")

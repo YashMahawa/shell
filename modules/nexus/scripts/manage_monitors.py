@@ -57,20 +57,35 @@ def monitor_rule(name, res, pos, scale, transform="0", disabled=False):
         return f"{name},{res},{pos},{scale}"
     return f"{name},{res},{pos},{scale},transform,{transform}"
 
-def get_current_hypr_monitors():
-    try:
-        res = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, check=True)
-        return json.loads(res.stdout)
-    except Exception:
-        return []
+def run_command(cmd, **kwargs):
+    return subprocess.run(cmd, **kwargs)
 
-def reload_hyprland():
+def get_current_hypr_monitors(runner=None):
+    if runner is None:
+        runner = run_command
     try:
-        subprocess.run(["hyprctl", "reload"], capture_output=True, text=True)
+        res = runner(["hyprctl", "monitors", "-j"], capture_output=True, text=True, check=True)
+        stdout = getattr(res, "stdout", "")
+        if stdout is None or not isinstance(stdout, str) or not stdout.strip():
+            return None
+        parsed = json.loads(stdout)
+        if isinstance(parsed, list):
+            return parsed
+        return None
+    except Exception:
+        return None
+
+def reload_hyprland(runner=None):
+    if runner is None:
+        runner = run_command
+    try:
+        runner(["hyprctl", "reload"], capture_output=True, text=True)
     except FileNotFoundError:
         pass
 
-def apply_rules(rules):
+def apply_rules(rules, runner=None):
+    if runner is None:
+        runner = run_command
     # Safety check: do not allow disabling ALL monitors
     active_count = sum(1 for r in rules if not r.get("disabled") and r.get("res") != "disable")
     if len(rules) > 0 and active_count == 0:
@@ -95,22 +110,24 @@ def apply_rules(rules):
         rule_str = monitor_rule(name, res, pos, scale, transform, disabled)
         cmd = ["hyprctl", "keyword", "monitor", rule_str]
         try:
-            res_proc = subprocess.run(cmd, capture_output=True, text=True)
+            res_proc = runner(cmd, capture_output=True, text=True)
             if disabled:
-                subprocess.run(["hyprctl", "dispatch", "dpms", "off", name], capture_output=True)
+                runner(["hyprctl", "dispatch", "dpms", "off", name], capture_output=True)
             else:
-                subprocess.run(["hyprctl", "dispatch", "dpms", "on", name], capture_output=True)
-            applied_cmd_outputs.append((cmd, res_proc.stdout, res_proc.stderr))
+                runner(["hyprctl", "dispatch", "dpms", "on", name], capture_output=True)
+            stdout = getattr(res_proc, "stdout", "")
+            stderr = getattr(res_proc, "stderr", "")
+            applied_cmd_outputs.append((cmd, stdout, stderr))
         except FileNotFoundError:
             pass
 
     # Output Safety Check: Verify at least one monitor is active in Hyprland if hyprctl is present
     try:
-        live_monitors = get_current_hypr_monitors()
-        if rules and not live_monitors and shutil.which("hyprctl"):
+        live_monitors = get_current_hypr_monitors(runner=runner)
+        if rules and live_monitors is not None and len(live_monitors) == 0 and shutil.which("hyprctl"):
             for m in rules:
                 cmd = ["hyprctl", "keyword", "monitor", f"{m['name']},preferred,auto,1"]
-                subprocess.run(cmd, capture_output=True)
+                runner(cmd, capture_output=True)
             raise RuntimeError("Output configuration error detected: all displays became unviewable. Automatically rolled back to safe screen state.")
     except FileNotFoundError:
         pass
@@ -141,7 +158,9 @@ def ensure_source(user_conf, managed_conf):
             f.write("\n")
         f.write(f"{source_line}\n")
 
-def save_to_monitors_conf(monitors):
+def save_to_monitors_conf(monitors, runner=None):
+    if runner is None:
+        runner = run_command
     config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
     caelestia_dir = os.path.join(config_home, "caelestia")
     os.makedirs(caelestia_dir, exist_ok=True)
@@ -175,7 +194,7 @@ def save_to_monitors_conf(monitors):
             f.write(f'    {{ name = "{name}", res = "{res}", pos = "{pos}", scale = {scale}, transform = {transform}, disabled = {disabled} }},\n')
         f.write("  }\n}\n")
 
-    reload_hyprland()
+    reload_hyprland(runner=runner)
 
 def load_profiles():
     if os.path.exists(PROFILES_PATH):
@@ -201,7 +220,9 @@ def start_daemon_watcher(token, timeout=20):
         stderr=subprocess.DEVNULL
     )
 
-def run_daemon_watch(token, timeout=20.0):
+def run_daemon_watch(token, timeout=20.0, runner=None):
+    if runner is None:
+        runner = run_command
     rollback_path = get_rollback_path()
     start_time = time.time()
     poll_interval = 0.5
@@ -236,7 +257,7 @@ def run_daemon_watch(token, timeout=20.0):
                             "transform": str(m.get("transform", 0)),
                             "disabled": m.get("disabled", False)
                         })
-                    apply_rules(rules)
+                    apply_rules(rules, runner=runner)
                 os.remove(rollback_path)
         except Exception as e:
             print(f"Error during daemon automatic rollback: {e}", file=sys.stderr)
@@ -331,7 +352,7 @@ def main():
     rollback_path = get_rollback_path()
 
     if subcommand == "status":
-        monitors = get_current_hypr_monitors()
+        monitors = get_current_hypr_monitors() or []
         profiles = load_profiles()
         print(json.dumps({
             "monitors": monitors,
@@ -443,7 +464,7 @@ def main():
         target = args.target
         try:
             cmd = ["hyprctl", "dispatch", "movewindowmon", "silent", target]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = run_command(cmd, capture_output=True, text=True)
             if res.returncode == 0:
                 print(f"Moved window to {target}")
             else:
@@ -470,7 +491,7 @@ def main():
             if getattr(args, "monitors_json", None):
                 monitors_data = json.loads(args.monitors_json)
             else:
-                current = get_current_hypr_monitors()
+                current = get_current_hypr_monitors() or []
                 for m in current:
                     res = f"{m.get('width', 1920)}x{m.get('height', 1080)}@{m.get('refreshRate', 60)}"
                     pos = f"{m.get('x', 0)}x{m.get('y', 0)}"
