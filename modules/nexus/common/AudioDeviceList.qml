@@ -154,51 +154,95 @@ ItemList {
                 property var codecItems: []
                 property MenuItem activeCodecItem: null
 
-                function refresh() {
+                property var itemCache: ({})
+
+                function clearAll(): void {
+                    for (const id in itemCache) {
+                        if (itemCache[id])
+                            itemCache[id].destroy();
+                    }
+                    itemCache = ({});
+                    profileItems = [];
+                    codecItems = [];
+                    activeProfileItem = null;
+                    activeCodecItem = null;
+                }
+
+                function refresh(): void {
                     if (!device.btCard || !device.btCard.profileGroups) {
-                        profileItems = [];
-                        activeProfileItem = null;
-                        codecItems = [];
-                        activeCodecItem = null;
+                        clearAll();
                         return;
                     }
 
+                    const newCache = ({});
                     const pItems = [];
                     let aP = null;
 
                     for (const g of device.btCard.profileGroups) {
-                        const item = menuItemComp.createObject(menuHelper, {
-                            text: g.name,
-                            icon: g.icon || "tune"
-                        });
-                        item.groupId = g.id;
-                        pItems.push(item);
-                        if (g.id === device.btCard.activeGroup)
-                            aP = item;
+                        const itemId = "profile:" + g.id;
+                        let item = itemCache[itemId];
+                        if (item) {
+                            item.text = g.name;
+                            item.icon = g.icon || "tune";
+                        } else {
+                            item = menuItemComp.createObject(menuHelper, {
+                                text: g.name,
+                                icon: g.icon || "tune"
+                            });
+                        }
+                        if (item) {
+                            item.groupId = g.id;
+                            newCache[itemId] = item;
+                            pItems.push(item);
+                            if (g.id === device.btCard.activeGroup)
+                                aP = item;
+                        }
                     }
-
-                    profileItems = pItems;
-                    activeProfileItem = aP || pItems[0] || null;
 
                     const cItems = [];
                     let aC = null;
-
                     const codecs = device.btCard.activeGroupCodecs || [];
+
                     for (const c of codecs) {
-                        const item = menuItemComp.createObject(menuHelper, {
-                            text: c.name,
-                            icon: "graphic_eq"
-                        });
-                        item.codecKey = c.key;
-                        cItems.push(item);
-                        if (c.key === device.btCard.activeProfileKey || c.codecKey === device.btCard.activeCodecKey)
-                            aC = item;
+                        const itemId = "codec:" + (device.btCard.activeGroup || "") + ":" + c.key;
+                        let item = itemCache[itemId];
+                        if (item) {
+                            item.text = c.name;
+                            item.icon = "graphic_eq";
+                        } else {
+                            item = menuItemComp.createObject(menuHelper, {
+                                text: c.name,
+                                icon: "graphic_eq"
+                            });
+                        }
+                        if (item) {
+                            item.codecKey = c.key;
+                            item.codecShortKey = c.codecKey;
+                            newCache[itemId] = item;
+                            cItems.push(item);
+                            if (c.key === device.btCard.activeProfileKey)
+                                aC = item;
+                        }
                     }
 
+                    if (!aC && cItems.length > 0 && device.btCard.activeCodecKey) {
+                        aC = cItems.find(it => it.codecShortKey === device.btCard.activeCodecKey) || null;
+                    }
+
+                    for (const id in itemCache) {
+                        if (!newCache[id] && itemCache[id])
+                            itemCache[id].destroy();
+                    }
+
+                    itemCache = newCache;
+                    profileItems = pItems;
+                    activeProfileItem = aP || pItems[0] || null;
                     codecItems = cItems;
                     activeCodecItem = aC || cItems[0] || null;
                 }
             }
+
+            Component.onDestruction: menuHelper.clearAll()
 
             Connections {
                 target: Audio

@@ -71,7 +71,7 @@ Singleton {
         return addr;
     }
 
-    function parseProfileAndCodec(key: string, desc: string): var {
+    function parseProfileAndCodec(key: string, desc: string, profVal: var): var {
         let group = "";
         let groupName = "";
         let groupIcon = "tune";
@@ -79,67 +79,93 @@ Singleton {
         let codecName = "";
 
         const lowerKey = (key || "").toLowerCase();
-        const lowerDesc = (desc || "").toLowerCase();
 
-        if (lowerKey.includes("a2dp") || lowerDesc.includes("a2dp") || lowerDesc.includes("high fidelity")) {
-            group = "a2dp-sink";
-            groupName = qsTr("A2DP (High Fidelity)");
-            groupIcon = "music_note";
-        } else if (lowerKey.includes("headset") || lowerKey.includes("handsfree") || lowerKey.includes("hfp") || lowerKey.includes("hsp") || lowerDesc.includes("headset") || lowerDesc.includes("handsfree")) {
-            group = "headset-head-unit";
-            groupName = qsTr("HSP/HFP (Headset)");
-            groupIcon = "call";
-        } else if (lowerKey === "off") {
+        // Stable profile group classification using PipeWire metadata/keys rather than display strings
+        if (lowerKey === "off") {
             group = "off";
             groupName = qsTr("Off");
             groupIcon = "power_off";
+        } else if (lowerKey.startsWith("a2dp-sink") || lowerKey.startsWith("a2dp_sink")) {
+            group = "a2dp-sink";
+            groupName = qsTr("A2DP (High Fidelity)");
+            groupIcon = "music_note";
+        } else if (lowerKey.startsWith("a2dp-source") || lowerKey.startsWith("a2dp_source")) {
+            group = "a2dp-source";
+            groupName = qsTr("A2DP Source");
+            groupIcon = "graphic_eq";
+        } else if (lowerKey.startsWith("headset-head-unit") || lowerKey.startsWith("headset_head_unit") || lowerKey.startsWith("hsp") || lowerKey.startsWith("hfp")) {
+            group = "headset-head-unit";
+            groupName = qsTr("HSP/HFP (Headset)");
+            groupIcon = "call";
+        } else if (lowerKey.startsWith("bap-sink") || lowerKey.startsWith("bap_sink")) {
+            group = "bap-sink";
+            groupName = qsTr("LE Audio (BAP)");
+            groupIcon = "hearing";
         } else {
-            group = key;
-            groupName = desc || key;
+            const parts = lowerKey.split(/[-_]/);
+            if (parts.length > 1) {
+                group = parts[0];
+                groupName = desc || group;
+            } else {
+                group = lowerKey || "default";
+                groupName = desc || key || qsTr("Default");
+            }
             groupIcon = "tune";
         }
 
-        if (lowerKey.includes("ldac") || lowerDesc.includes("ldac")) {
+        // Codec identification based on profile key or PipeWire bluez5.codec metadata
+        const metaCodec = profVal?.properties?.["bluez5.codec"] || profVal?.codec || "";
+        const codecSource = metaCodec ? String(metaCodec).toLowerCase() : lowerKey;
+
+        if (codecSource.includes("ldac")) {
             codecKey = "ldac";
             codecName = "LDAC";
-        } else if (lowerKey.includes("aptx_hd") || lowerKey.includes("aptx-hd") || lowerDesc.includes("aptx hd") || lowerDesc.includes("aptx-hd")) {
+        } else if (codecSource.includes("aptx_hd") || codecSource.includes("aptx-hd")) {
             codecKey = "aptx_hd";
             codecName = "aptX HD";
-        } else if (lowerKey.includes("aptx_ll") || lowerKey.includes("aptx-ll") || lowerDesc.includes("aptx ll")) {
+        } else if (codecSource.includes("aptx_ll") || codecSource.includes("aptx-ll")) {
             codecKey = "aptx_ll";
             codecName = "aptX LL";
-        } else if (lowerKey.includes("aptx") || lowerDesc.includes("aptx")) {
+        } else if (codecSource.includes("aptx")) {
             codecKey = "aptx";
             codecName = "aptX";
-        } else if (lowerKey.includes("aac") || lowerDesc.includes("aac")) {
+        } else if (codecSource.includes("aac")) {
             codecKey = "aac";
             codecName = "AAC";
-        } else if (lowerKey.includes("sbc_xq") || lowerKey.includes("sbc-xq") || lowerDesc.includes("sbc-xq") || lowerDesc.includes("sbc_xq")) {
-            codecKey = "sbc_xq";
-            codecName = "SBC-XQ";
-        } else if (lowerKey.includes("sbc") || lowerDesc.includes("sbc")) {
-            codecKey = "sbc";
-            codecName = "SBC";
-        } else if (lowerKey.includes("msbc") || lowerDesc.includes("msbc")) {
+        } else if (codecSource.includes("msbc")) {
             codecKey = "msbc";
             codecName = "mSBC";
-        } else if (lowerKey.includes("cvsd") || lowerDesc.includes("cvsd")) {
+        } else if (codecSource.includes("sbc_xq") || codecSource.includes("sbc-xq")) {
+            codecKey = "sbc_xq";
+            codecName = "SBC-XQ";
+        } else if (codecSource.includes("sbc")) {
+            codecKey = "sbc";
+            codecName = "SBC";
+        } else if (codecSource.includes("cvsd")) {
             codecKey = "cvsd";
             codecName = "CVSD";
-        } else if (lowerKey.includes("lc3-swb") || lowerKey.includes("lc3_swb") || lowerDesc.includes("lc3-swb")) {
+        } else if (codecSource.includes("lc3_swb") || codecSource.includes("lc3-swb")) {
             codecKey = "lc3_swb";
             codecName = "LC3-SWB";
-        } else if (lowerKey.includes("lc3") || lowerDesc.includes("lc3")) {
+        } else if (codecSource.includes("lc3")) {
             codecKey = "lc3";
             codecName = "LC3";
+        } else if (codecSource.includes("faststream")) {
+            codecKey = "faststream";
+            codecName = "FastStream";
         } else {
-            const parts = (key || "").split(/[-_]/);
-            if (parts.length > 2 && group !== "off") {
-                codecKey = parts[parts.length - 1];
-                codecName = codecKey.toUpperCase();
+            if (group === "off") {
+                codecKey = "off";
+                codecName = qsTr("Off");
             } else {
-                codecKey = "default";
-                codecName = qsTr("Default");
+                const parts = lowerKey.split(/[-_]/);
+                if (parts.length > 2) {
+                    codecKey = parts[parts.length - 1];
+                    codecName = codecKey.toUpperCase();
+                } else {
+                    codecKey = "default";
+                    codecName = qsTr("Default");
+                }
             }
         }
 
@@ -336,7 +362,8 @@ Singleton {
         if (!groupObj || !groupObj.codecs || groupObj.codecs.length === 0)
             return;
 
-        const targetKey = groupObj.codecs[0].key;
+        const matchingCodec = groupObj.codecs.find(c => c.codecKey === cardInfo.activeCodecKey);
+        const targetKey = matchingCodec ? matchingCodec.key : groupObj.codecs[0].key;
         root.setCardProfile(cardName, targetKey);
     }
 
@@ -519,7 +546,7 @@ Singleton {
                                 if (profVal && (profVal.available === false || profVal.available === "no"))
                                     continue;
 
-                                const parsed = root.parseProfileAndCodec(profKey, profVal.description);
+                                const parsed = root.parseProfileAndCodec(profKey, profVal ? profVal.description : "", profVal);
                                 if (!groupMap[parsed.group]) {
                                     groupMap[parsed.group] = {
                                         id: parsed.group,
@@ -547,7 +574,8 @@ Singleton {
                             let activeCodecName = "";
 
                             if (activeProfileKey) {
-                                const activeParsed = root.parseProfileAndCodec(activeProfileKey, availableProfiles[activeProfileKey]?.description);
+                                const activeVal = availableProfiles[activeProfileKey];
+                                const activeParsed = root.parseProfileAndCodec(activeProfileKey, activeVal?.description, activeVal);
                                 activeGroup = activeParsed.group;
                                 activeGroupName = activeParsed.groupName;
                                 activeCodecKey = activeParsed.codecKey;
@@ -644,7 +672,12 @@ Singleton {
     Process {
         id: profileSwitchProc
 
-        onExited: {
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.pendingProfileSink = "";
+                if (GlobalConfig.utilities.toasts.audioOutputChanged)
+                    Toaster.toast(qsTr("Audio Profile Error"), qsTr("Failed to switch audio profile or codec"), "error");
+            }
             cardRefreshDebounce.restart();
             profileSinkWait.restart();
         }

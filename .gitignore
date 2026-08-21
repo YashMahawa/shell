@@ -3,6 +3,7 @@
 /.qmlls.ini
 build/
 .cache/
+__pycache__/
 logs
 
 *.bak
