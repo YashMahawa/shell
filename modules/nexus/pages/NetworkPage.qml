@@ -112,7 +112,7 @@ PageBase {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 0
-            visible: Nmcli.vpnConnections.length > 0
+            visible: Nmcli.vpnConnections.length > 0 || GlobalConfig.utilities.vpn.provider.length > 0
 
             ConnectedRect {
                 Layout.fillWidth: true
@@ -122,6 +122,7 @@ PageBase {
 
                 RowLayout {
                     id: vpnTitleLayout
+
                     anchors.fill: parent
                     anchors.margins: Tokens.padding.medium
                     anchors.leftMargin: Tokens.padding.largeIncreased
@@ -149,7 +150,7 @@ PageBase {
 
                     Layout.fillWidth: true
                     first: false
-                    last: index === Nmcli.vpnConnections.length - 1
+                    last: index === Nmcli.vpnConnections.length - 1 && GlobalConfig.utilities.vpn.provider.length === 0
                     text: modelData.name
                     subtext: modelData.type
                     checked: modelData.active
@@ -158,6 +159,44 @@ PageBase {
                             Nmcli.connectVpn(modelData.name);
                         } else {
                             Nmcli.disconnectVpn(modelData.name);
+                        }
+                    }
+                }
+            }
+
+            Repeater {
+                model: GlobalConfig.utilities.vpn.provider
+                delegate: ToggleRow {
+                    required property int index
+                    required property var modelData
+
+                    readonly property string nameStr: typeof modelData === "object" ? (modelData.displayName || modelData.name || modelData.interface || qsTr("VPN Profile")) : String(modelData)
+                    readonly property string subStr: typeof modelData === "object" ? (modelData.interface ? `${modelData.name || "Custom"} (${modelData.interface})` : (modelData.name || "Custom")) : "Configured VPN"
+                    readonly property bool isEnabled: typeof modelData === "object" ? (modelData.enabled === true) : false
+
+                    Layout.fillWidth: true
+                    first: false
+                    last: index === GlobalConfig.utilities.vpn.provider.length - 1
+                    text: nameStr
+                    subtext: subStr
+                    checked: isEnabled || (VPN.connected && VPN.providerName === (typeof modelData === "object" ? modelData.name : String(modelData)))
+                    onClicked: {
+                        let providers = [];
+                        for (let i = 0; i < GlobalConfig.utilities.vpn.provider.length; i++) {
+                            let item = GlobalConfig.utilities.vpn.provider[i];
+                            if (typeof item === "object") {
+                                item = Object.assign({}, item);
+                                if (i === index) {
+                                    item.enabled = checked;
+                                }
+                            }
+                            providers.push(item);
+                        }
+                        GlobalConfig.utilities.vpn.provider = providers;
+                        if (checked) {
+                            VPN.connect();
+                        } else {
+                            VPN.disconnect();
                         }
                     }
                 }
@@ -338,7 +377,9 @@ PageBase {
             implicitHeight: addNetworkLayout.implicitHeight + addNetworkLayout.anchors.margins * 2
             last: true
 
-            StateLayer {}
+            StateLayer {
+                onClicked: root.nState.openSubPage(2)
+            }
 
             RowLayout {
                 id: addNetworkLayout

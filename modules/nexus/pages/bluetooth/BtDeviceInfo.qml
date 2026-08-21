@@ -16,6 +16,7 @@ PageBase {
     readonly property BluetoothDevice device: nState.selectedBtDevice
     readonly property bool connected: device?.state === BluetoothDeviceState.Connected // qmllint disable unresolved-type
     readonly property bool loading: device?.state === BluetoothDeviceState.Connecting || device?.state === BluetoothDeviceState.Disconnecting // qmllint disable unresolved-type
+    readonly property var btCard: Audio.getBluetoothCardForDevice(root.device)
 
     readonly property string statusText: {
         if (!device)
@@ -181,6 +182,166 @@ PageBase {
             onToggled: {
                 if (root.device)
                     root.device.wakeAllowed = checked;
+            }
+        }
+
+        // Audio configuration
+        SectionHeader {
+            visible: root.connected && !!root.btCard && root.btCard.profileGroups && root.btCard.profileGroups.length > 0
+            text: qsTr("Audio configuration")
+        }
+
+        Component {
+            id: btMenuItemComp
+
+            AudioMenuItem {}
+        }
+
+        QtObject {
+            id: btMenuHelper
+
+            property var profileItems: []
+            property AudioMenuItem activeProfileItem: null
+
+            property var codecItems: []
+            property AudioMenuItem activeCodecItem: null
+
+            property var itemCache: ({})
+
+            function clearAll(): void {
+                for (const id in itemCache) {
+                    if (itemCache[id])
+                        itemCache[id].destroy();
+                }
+                itemCache = ({});
+                profileItems = [];
+                codecItems = [];
+                activeProfileItem = null;
+                activeCodecItem = null;
+            }
+
+            function refresh(): void {
+                if (!root.btCard || !root.btCard.profileGroups) {
+                    clearAll();
+                    return;
+                }
+
+                const newCache = ({});
+                const pItems = [];
+                let aP = null;
+
+                for (const g of root.btCard.profileGroups) {
+                    const itemId = "profile:" + g.id;
+                    let item = itemCache[itemId];
+                    if (item) {
+                        item.text = g.name;
+                        item.icon = g.icon || "tune";
+                        item.groupId = g.id;
+                    } else {
+                        item = btMenuItemComp.createObject(btMenuHelper, {
+                            text: g.name,
+                            icon: g.icon || "tune",
+                            groupId: g.id
+                        });
+                    }
+                    if (item) {
+                        newCache[itemId] = item;
+                        pItems.push(item);
+                        if (g.id === root.btCard.activeGroup)
+                            aP = item;
+                    }
+                }
+
+                const cItems = [];
+                let aC = null;
+                const codecs = root.btCard.activeGroupCodecs || [];
+
+                for (const c of codecs) {
+                    const itemId = "codec:" + (root.btCard.activeGroup || "") + ":" + c.key;
+                    let item = itemCache[itemId];
+                    if (item) {
+                        item.text = c.name;
+                        item.icon = "graphic_eq";
+                        item.codecKey = c.key;
+                        item.codecShortKey = c.codecKey;
+                    } else {
+                        item = btMenuItemComp.createObject(btMenuHelper, {
+                            text: c.name,
+                            icon: "graphic_eq",
+                            codecKey: c.key,
+                            codecShortKey: c.codecKey
+                        });
+                    }
+                    if (item) {
+                        newCache[itemId] = item;
+                        cItems.push(item);
+                        if (c.key === root.btCard.activeProfileKey)
+                            aC = item;
+                    }
+                }
+
+                if (!aC && cItems.length > 0 && root.btCard.activeCodecKey) {
+                    aC = cItems.find(it => it.codecShortKey === root.btCard.activeCodecKey) || null;
+                }
+
+                for (const id in itemCache) {
+                    if (!newCache[id] && itemCache[id])
+                        itemCache[id].destroy();
+                }
+
+                itemCache = newCache;
+                profileItems = pItems;
+                activeProfileItem = aP || pItems[0] || null;
+                codecItems = cItems;
+                activeCodecItem = aC || cItems[0] || null;
+            }
+        }
+
+        Component.onDestruction: btMenuHelper.clearAll()
+
+        Connections {
+            target: Audio
+            function onBluetoothCardsChanged() {
+                btMenuHelper.refresh();
+            }
+        }
+
+        Component.onCompleted: btMenuHelper.refresh()
+
+        SelectRow {
+            id: btProfileSelect
+
+            Layout.fillWidth: true
+            visible: root.connected && !!root.btCard && root.btCard.profileGroups && root.btCard.profileGroups.length > 0
+            first: true
+            last: !btCodecSelect.visible
+            label: qsTr("Profile")
+            subtext: qsTr("Audio profile mode")
+            fallbackIcon: "tune"
+            fallbackText: root.btCard?.activeGroupName || qsTr("Default")
+            menuItems: btMenuHelper.profileItems
+            active: btMenuHelper.activeProfileItem
+            onSelected: item => {
+                if (item && item.groupId && root.btCard)
+                    Audio.setProfileGroup(root.btCard.cardName, item.groupId);
+            }
+        }
+
+        SelectRow {
+            id: btCodecSelect
+
+            Layout.fillWidth: true
+            visible: root.connected && !!root.btCard && btMenuHelper.codecItems.length > 0
+            last: true
+            label: qsTr("Codec")
+            subtext: qsTr("Bluetooth audio codec")
+            fallbackIcon: "graphic_eq"
+            fallbackText: root.btCard?.activeCodecName || qsTr("Default")
+            menuItems: btMenuHelper.codecItems
+            active: btMenuHelper.activeCodecItem
+            onSelected: item => {
+                if (item && item.codecKey && root.btCard)
+                    Audio.setCardProfile(root.btCard.cardName, item.codecKey);
             }
         }
 

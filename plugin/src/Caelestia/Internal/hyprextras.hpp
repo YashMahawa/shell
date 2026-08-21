@@ -50,11 +50,16 @@ private:
 
     SocketPtr m_optionsRefresh;
     SocketPtr m_devicesRefresh;
+    bool m_optionsRefreshPending = false;
+    bool m_devicesRefreshPending = false;
+    bool m_hasV2Config = false;
+    bool m_hasV2Layout = false;
 
     void socketError(QLocalSocket::LocalSocketError error) const;
     void socketStateChanged(QLocalSocket::LocalSocketState state);
     void readEvent();
-    void handleEvent(const QString& event);
+    void handleEvent(const QString& name, const QString& data);
+    void resetCapabilities();
 
     SocketPtr makeRequestJson(const QString& request, const std::function<void(bool, QJsonDocument)>& callback);
     SocketPtr makeRequest(const QString& request, const std::function<void(bool, QByteArray)>& callback);

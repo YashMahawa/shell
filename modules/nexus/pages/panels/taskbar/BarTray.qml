@@ -20,21 +20,21 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Background")
-            checked: Config.bar.tray.background
+            checked: GlobalConfig.bar.tray.background
             onToggled: GlobalConfig.bar.tray.background = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Recolour icons")
-            checked: Config.bar.tray.recolour
+            checked: GlobalConfig.bar.tray.recolour
             onToggled: GlobalConfig.bar.tray.recolour = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Compact")
-            checked: Config.bar.tray.compact
+            checked: GlobalConfig.bar.tray.compact
             onToggled: GlobalConfig.bar.tray.compact = checked
         }
 
@@ -43,7 +43,7 @@ PageBase {
             last: true
             text: qsTr("Popout on hover")
             subtext: qsTr("Show the tray menu popout when hovering")
-            checked: Config.bar.popouts.tray
+            checked: GlobalConfig.bar.popouts.tray
             onToggled: GlobalConfig.bar.popouts.tray = checked
         }
     }

@@ -4,8 +4,7 @@ import QtQuick
 import Quickshell.Io
 import Caelestia
 import Caelestia.Config
-
-// TODO: handle this better later
+import qs.services
 
 Item {
     id: model
@@ -13,17 +12,17 @@ Item {
     property alias visibleModel: visibleModel
     property string activeLabel: ""
     property int activeIndex: -1
-    property var _xkbMap: ({})
     property bool _notifiedLimit: false
 
     function start() {
-        xkbXmlBase.running = true;
-        getKbLayoutOpt.running = true;
+        updateFromHypr();
     }
 
     function refresh() {
         _notifiedLimit = false;
-        getKbLayoutOpt.running = true;
+        if (Hypr.extras)
+            Hypr.extras.refreshDevices();
+        updateFromHypr();
     }
 
     function switchTo(idx) {
@@ -31,94 +30,128 @@ Item {
         switchProc.running = true;
     }
 
-    function _buildXmlMap(xml) {
-        const map = {};
-
-        const re = /<name>\s*([^<]+?)\s*<\/name>[\s\S]*?<description>\s*([^<]+?)\s*<\/description>/g;
-
-        let m;
-        while ((m = re.exec(xml)) !== null) {
-            const code = (m[1] || "").trim();
-            const desc = (m[2] || "").trim();
-            if (!code || !desc)
-                continue;
-            map[code] = _short(desc);
-        }
-
-        if (Object.keys(map).length === 0)
+    function updateFromHypr() {
+        const kb = Hypr.keyboard;
+        if (!kb)
             return;
 
-        _xkbMap = map;
-
-        if (layoutsModel.count > 0) {
-            const tmp = [];
-            for (let i = 0; i < layoutsModel.count; i++) {
-                const it = layoutsModel.get(i);
-                tmp.push({
-                    layoutIndex: it.layoutIndex,
-                    token: it.token,
-                    label: _pretty(it.token)
-                });
-            }
-            layoutsModel.clear();
-            tmp.forEach(t => layoutsModel.append(t));
-            fetchActiveLayouts.running = true;
+        const raw = (kb.layout || "").trim();
+        if (raw.length > 0) {
+            _setLayouts(raw);
         }
-    }
 
-    function _short(desc) {
-        const m = desc.match(/^(.*)\((.*)\)$/);
-        if (!m)
-            return desc;
-        const lang = m[1].trim();
-        const region = m[2].trim();
-        const code = (region.split(/[,\s-]/)[0] || region).slice(0, 2).toUpperCase();
-        return `${lang} (${code})`;
+        const ipcObj = kb.lastIpcObject || {};
+        const idx = ipcObj.active_layout_index ?? -1;
+
+        model.activeIndex = idx >= 0 ? idx : 0;
+        model.activeLabel = (model.activeIndex >= 0 && model.activeIndex < layoutsModel.count)
+            ? layoutsModel.get(model.activeIndex).label
+            : "";
+
+        _rebuildVisible();
     }
 
     function _setLayouts(raw) {
+        if (!raw)
+            return;
         const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+
         layoutsModel.clear();
-
-        const seen = new Set();
-        let idx = 0;
-
-        for (const p of parts) {
-            if (seen.has(p))
-                continue;
-            seen.add(p);
+        for (let idx = 0; idx < parts.length; idx++) {
+            const token = parts[idx];
             layoutsModel.append({
                 layoutIndex: idx,
-                token: p,
-                label: _pretty(p)
+                token: token,
+                label: _pretty(token)
             });
-            idx++;
-        }
-    }
-
-    function _rebuildVisible() {
-        visibleModel.clear();
-
-        let arr = [];
-        for (let i = 0; i < layoutsModel.count; i++)
-            arr.push(layoutsModel.get(i));
-
-        arr = arr.filter(i => i.layoutIndex !== activeIndex);
-        arr.forEach(i => visibleModel.append(i));
-
-        if (!GlobalConfig.utilities.toasts.kbLimit)
-            return;
-
-        if (layoutsModel.count > 4) {
-            Toaster.toast(qsTr("Keyboard layout limit"), qsTr("XKB supports only 4 layouts at a time"), "warning");
         }
     }
 
     function _pretty(token) {
-        const code = token.replace(/\(.*\)$/, "").trim();
-        if (_xkbMap[code])
-            return code.toUpperCase() + " - " + _xkbMap[code];
-        return code.toUpperCase() + " - " + code;
+        if (!token)
+            return "";
+
+        const match = token.match(/^([a-zA-Z0-9_-]+)(?:\(([^)]+)\))?$/);
+        if (!match)
+            return token.toUpperCase();
+
+        const code = match[1];
+        const variant = match[2] || "";
+        const cache = Hypr.layoutCache || {};
+
+        if (variant) {
+            const exactDesc = cache[token] || cache[`${code}:${variant}`];
+            if (exactDesc)
+                return `${code.toUpperCase()} (${variant}) - ${exactDesc}`;
+
+            const baseDesc = cache[code];
+            if (baseDesc)
+                return `${code.toUpperCase()} (${variant}) - ${baseDesc} (${variant})`;
+
+            return `${code.toUpperCase()} (${variant}) - ${code} (${variant})`;
+        } else {
+            const baseDesc = cache[code];
+            if (baseDesc)
+                return `${code.toUpperCase()} - ${baseDesc}`;
+
+            return `${code.toUpperCase()} - ${code}`;
+        }
+    }
+
+    function _rebuildVisible() {
+        const desired = [];
+        for (let i = 0; i < layoutsModel.count; i++) {
+            const item = layoutsModel.get(i);
+            if (item.layoutIndex !== activeIndex) {
+                desired.push({
+                    layoutIndex: item.layoutIndex,
+                    token: item.token,
+                    label: item.label
+                });
+            }
+        }
+
+        // In-place reconciliation of visibleModel
+        for (let i = 0; i < desired.length; i++) {
+            const target = desired[i];
+            if (i < visibleModel.count) {
+                const current = visibleModel.get(i);
+                if (current.layoutIndex === target.layoutIndex) {
+                    if (current.label !== target.label || current.token !== target.token) {
+                        visibleModel.setProperty(i, "label", target.label);
+                        visibleModel.setProperty(i, "token", target.token);
+                    }
+                } else {
+                    let foundIdx = -1;
+                    for (let j = i + 1; j < visibleModel.count; j++) {
+                        if (visibleModel.get(j).layoutIndex === target.layoutIndex) {
+                            foundIdx = j;
+                            break;
+                        }
+                    }
+                    if (foundIdx !== -1) {
+                        visibleModel.move(foundIdx, i, 1);
+                        visibleModel.setProperty(i, "label", target.label);
+                        visibleModel.setProperty(i, "token", target.token);
+                    } else {
+                        visibleModel.insert(i, target);
+                    }
+                }
+            } else {
+                visibleModel.append(target);
+            }
+        }
+
+        while (visibleModel.count > desired.length) {
+            visibleModel.remove(visibleModel.count - 1);
+        }
+
+        if (GlobalConfig.utilities.toasts.kbLimit && layoutsModel.count > 4) {
+            if (!_notifiedLimit) {
+                _notifiedLimit = true;
+                Toaster.toast(qsTr("Keyboard layout limit"), qsTr("XKB supports only 4 layouts at a time"), "warning");
+            }
+        }
     }
 
     visible: false
@@ -131,91 +164,33 @@ Item {
         id: layoutsModel
     }
 
-    Process {
-        id: xkbXmlBase
-
-        command: ["xmllint", "--xpath", "//layout/configItem[name and description]", "/usr/share/X11/xkb/rules/base.xml"]
-        stdout: StdioCollector {
-            onStreamFinished: model._buildXmlMap(text)
+    Connections {
+        function onLayoutCacheChanged() {
+            model.updateFromHypr();
         }
-        onRunningChanged: if (!running && (typeof xkbXmlBase.exitCode !== "undefined") && xkbXmlBase.exitCode !== 0) // qmllint disable missing-property
-            xkbXmlEvdev.running = true
+
+        target: Hypr
     }
 
-    Process {
-        id: xkbXmlEvdev
-
-        command: ["xmllint", "--xpath", "//layout/configItem[name and description]", "/usr/share/X11/xkb/rules/evdev.xml"]
-        stdout: StdioCollector {
-            onStreamFinished: model._buildXmlMap(text)
+    Connections {
+        function onLastIpcObjectChanged() {
+            model.updateFromHypr();
         }
-    }
 
-    Process {
-        id: getKbLayoutOpt
-
-        command: ["hyprctl", "-j", "getoption", "input:kb_layout"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const j = JSON.parse(text);
-                    const raw = (j?.str || j?.value || "").toString().trim();
-                    if (raw.length) {
-                        model._setLayouts(raw);
-                        fetchActiveLayouts.running = true;
-                        return;
-                    }
-                } catch (e) {}
-                fetchLayoutsFromDevices.running = true;
-            }
+        function onLayoutChanged() {
+            model.updateFromHypr();
         }
-    }
 
-    Process {
-        id: fetchLayoutsFromDevices
-
-        command: ["hyprctl", "-j", "devices"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const dev = JSON.parse(text);
-                    const kb = dev?.keyboards?.find(k => k.main) || dev?.keyboards?.[0];
-                    const raw = (kb?.layout || "").trim();
-                    if (raw.length)
-                        model._setLayouts(raw);
-                } catch (e) {}
-                fetchActiveLayouts.running = true;
-            }
-        }
-    }
-
-    Process {
-        id: fetchActiveLayouts
-
-        command: ["hyprctl", "-j", "devices"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const dev = JSON.parse(text);
-                    const kb = dev?.keyboards?.find(k => k.main) || dev?.keyboards?.[0];
-                    const idx = kb?.active_layout_index ?? -1;
-
-                    model.activeIndex = idx >= 0 ? idx : -1;
-                    model.activeLabel = (idx >= 0 && idx < layoutsModel.count) ? layoutsModel.get(idx).label : "";
-                } catch (e) {
-                    model.activeIndex = -1;
-                    model.activeLabel = "";
-                }
-
-                model._rebuildVisible();
-            }
-        }
+        target: Hypr.keyboard ? Hypr.keyboard : null
     }
 
     Process {
         id: switchProc
 
-        onRunningChanged: if (!running)
-            fetchActiveLayouts.running = true
+        onRunningChanged: if (!running) {
+            if (Hypr.extras)
+                Hypr.extras.refreshDevices();
+            model.updateFromHypr();
+        }
     }
 }

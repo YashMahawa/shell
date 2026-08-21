@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """Checks QML files for Qt coding convention violations.
 
 https://doc.qt.io/qt-6/qml-codingconventions.html
@@ -13,6 +14,8 @@ Required ordering within each QML object (with blank line between sections):
   6. child objects
   7. component definitions
 """
+
+from __future__ import annotations
 
 import re
 import sys
