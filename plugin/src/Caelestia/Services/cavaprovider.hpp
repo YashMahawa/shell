@@ -1,7 +1,14 @@
 #pragma once
 
 #include "audioprovider.hpp"
+#if __has_include(<cava/cavacore.h>)
 #include <cava/cavacore.h>
+#else
+struct cava_plan {};
+inline cava_plan* cava_init(int, int, int, int, double, double, double) { return nullptr; }
+inline void cava_execute(const double*, int, double*, cava_plan*) {}
+inline void cava_destroy(cava_plan*) {}
+#endif
 #include <qqmlintegration.h>
 
 namespace caelestia::services {

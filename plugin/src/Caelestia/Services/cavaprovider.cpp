@@ -2,7 +2,9 @@
 
 #include "audiocollector.hpp"
 #include "audioprovider.hpp"
+#if __has_include(<cava/cavacore.h>)
 #include <cava/cavacore.h>
+#endif
 #include <cstddef>
 #include <qloggingcategory.h>
 
@@ -125,8 +127,8 @@ void CavaProvider::setBars(int bars) {
     emit barsChanged();
     emit valuesChanged();
 
-    QMetaObject::invokeMethod(
-        static_cast<CavaProcessor*>(m_processor), &CavaProcessor::setBars, Qt::QueuedConnection, bars);
+    auto* proc = static_cast<CavaProcessor*>(m_processor);
+    QMetaObject::invokeMethod(proc, [proc, bars]() { proc->setBars(bars); }, Qt::QueuedConnection);
 }
 
 QVector<double> CavaProvider::values() const {

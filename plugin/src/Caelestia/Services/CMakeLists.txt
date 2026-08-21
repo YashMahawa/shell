@@ -23,6 +23,7 @@ qml_module(caelestia-services
     LIBRARIES
         Qt::Concurrent
         Qt::DBus
+        Qt::Gui
         Qt::Network
         PkgConfig::Pipewire
         PkgConfig::Aubio

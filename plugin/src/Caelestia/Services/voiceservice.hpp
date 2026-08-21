@@ -2,20 +2,20 @@
 
 #include "service.hpp"
 
-#include <qbytearray.h>
-#include <qjsonarray.h>
-#include <qjsondocument.h>
-#include <qjsonobject.h>
-#include <qmutex.h>
-#include <qnetworkaccessmanager.h>
-#include <qnetworkreply.h>
-#include <qnetworkrequest.h>
-#include <qobject.h>
+#include <QByteArray>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMutex>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QObject>
 #include <qqmlintegration.h>
-#include <qstring.h>
-#include <qstringlist.h>
-#include <qtimer.h>
-#include <qvariant.h>
+#include <QString>
+#include <QStringList>
+#include <QTimer>
+#include <QVariant>
 
 #include <stop_token>
 #include <thread>
@@ -50,6 +50,7 @@ public:
     Q_INVOKABLE void toggle();
     Q_INVOKABLE void startCapture();
     Q_INVOKABLE void stopCapture();
+    Q_INVOKABLE void cancel();
     Q_INVOKABLE void storeKey(int slot, const QString& key);
     Q_INVOKABLE void clearKey(int slot);
     Q_INVOKABLE void savePrompt(const QString& prompt);
@@ -97,6 +98,7 @@ private:
     QTimer* m_safetyTimer = nullptr;
     QTimer* m_idleResetTimer = nullptr;
     QNetworkAccessManager* m_networkManager = nullptr;
+    QNetworkReply* m_activeReply = nullptr;
 
     bool m_isRecording = false;
     QByteArray m_pcmData;

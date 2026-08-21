@@ -31,6 +31,10 @@ Singleton {
         VoiceService.stopCapture();
     }
 
+    function cancel(): void {
+        VoiceService.cancel();
+    }
+
     function storeKey(slot: int, key: string): void {
         VoiceService.storeKey(slot, key);
     }
@@ -62,6 +66,10 @@ Singleton {
 
         function stop(): void {
             root.stop();
+        }
+
+        function cancel(): void {
+            root.cancel();
         }
 
         function status(): string {

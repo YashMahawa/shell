@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS ShaderTools Core Qml Gui Quick QuickControls2 Concurrent Sql Network DBus)
+find_package(Qt6 REQUIRED COMPONENTS ShaderTools Core Qml Gui Quick QuickControls2 Concurrent Sql Network DBus Test)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(Qalculate IMPORTED_TARGET libqalculate REQUIRED)
 pkg_check_modules(Pipewire IMPORTED_TARGET libpipewire-0.3 REQUIRED)
@@ -16,3 +16,6 @@ include(cmake/pch.cmake)
 include(cmake/qml-module.cmake)
 
 add_subdirectory(src/Caelestia)
+
+enable_testing()
+add_subdirectory(tests)

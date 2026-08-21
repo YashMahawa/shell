@@ -5,20 +5,20 @@
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 
-#include <qclipboard.h>
-#include <qdbusargument.h>
-#include <qdbusconnection.h>
-#include <qdbusmessage.h>
-#include <qdbusobjectpath.h>
-#include <qdbusvariant.h>
-#include <qdir.h>
-#include <qfile.h>
-#include <qfileinfo.h>
-#include <qguiapplication.h>
-#include <qloggingcategory.h>
-#include <qprocess.h>
-#include <qstandardpaths.h>
-#include <qthread.h>
+#include <QClipboard>
+#include <QDBusArgument>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusObjectPath>
+#include <QDBusVariant>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QLoggingCategory>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QThread>
 
 Q_LOGGING_CATEGORY(lcVoice, "caelestia.services.voice", QtInfoMsg)
 
@@ -154,7 +154,7 @@ QString VoiceService::lookupSecretDBus(int slot) {
     attrs["purpose"] = "gemini-voice";
     attrs["slot"] = QString::number(slot);
 
-    searchMsg << attrs;
+    searchMsg << QVariant::fromValue(attrs);
     QDBusMessage reply = bus.call(searchMsg);
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().size() < 2)
         return QString();
@@ -256,7 +256,7 @@ bool VoiceService::clearSecretDBus(int slot) {
     attrs["purpose"] = "gemini-voice";
     attrs["slot"] = QString::number(slot);
 
-    searchMsg << attrs;
+    searchMsg << QVariant::fromValue(attrs);
     QDBusMessage reply = bus.call(searchMsg);
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().size() < 2)
         return false;
@@ -527,6 +527,32 @@ void VoiceService::processTranscription(const QByteArray& wavData) {
     sendGeminiRequest(keys, wavData);
 }
 
+void VoiceService::cancel() {
+    m_idleResetTimer->stop();
+    m_safetyTimer->stop();
+
+    if (m_isRecording) {
+        m_isRecording = false;
+        if (m_recordThread.joinable()) {
+            m_recordThread.request_stop();
+            m_recordThread.join();
+        }
+    }
+
+    if (m_activeReply) {
+        m_activeReply->abort();
+        m_activeReply->deleteLater();
+        m_activeReply = nullptr;
+    }
+
+    {
+        QMutexLocker locker(&m_pcmMutex);
+        m_pcmData.clear();
+    }
+
+    setState("idle", "", "");
+}
+
 void VoiceService::sendGeminiRequest(QStringList remainingKeys, const QByteArray& wavData) {
     if (remainingKeys.isEmpty()) {
         setState("error", "Voice typing failed", "All configured Gemini keys failed");
@@ -570,9 +596,17 @@ void VoiceService::sendGeminiRequest(QStringList remainingKeys, const QByteArray
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = m_networkManager->post(request, QJsonDocument(rootObj).toJson(QJsonDocument::Compact));
+    m_activeReply = reply;
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, remainingKeys, wavData]() {
+        if (m_activeReply == reply) {
+            m_activeReply = nullptr;
+        }
         reply->deleteLater();
+
+        if (reply->error() == QNetworkReply::OperationCanceledError || m_status == "idle") {
+            return;
+        }
 
         if (reply->error() != QNetworkReply::NoError) {
             if (!remainingKeys.isEmpty()) {
