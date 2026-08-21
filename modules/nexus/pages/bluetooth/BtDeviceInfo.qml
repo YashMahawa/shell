@@ -194,17 +194,17 @@ PageBase {
         Component {
             id: btMenuItemComp
 
-            MenuItem {}
+            AudioMenuItem {}
         }
 
         QtObject {
             id: btMenuHelper
 
             property var profileItems: []
-            property MenuItem activeProfileItem: null
+            property AudioMenuItem activeProfileItem: null
 
             property var codecItems: []
-            property MenuItem activeCodecItem: null
+            property AudioMenuItem activeCodecItem: null
 
             property var itemCache: ({})
 
@@ -236,14 +236,15 @@ PageBase {
                     if (item) {
                         item.text = g.name;
                         item.icon = g.icon || "tune";
+                        item.groupId = g.id;
                     } else {
                         item = btMenuItemComp.createObject(btMenuHelper, {
                             text: g.name,
-                            icon: g.icon || "tune"
+                            icon: g.icon || "tune",
+                            groupId: g.id
                         });
                     }
                     if (item) {
-                        item.groupId = g.id;
                         newCache[itemId] = item;
                         pItems.push(item);
                         if (g.id === root.btCard.activeGroup)
@@ -261,15 +262,17 @@ PageBase {
                     if (item) {
                         item.text = c.name;
                         item.icon = "graphic_eq";
+                        item.codecKey = c.key;
+                        item.codecShortKey = c.codecKey;
                     } else {
                         item = btMenuItemComp.createObject(btMenuHelper, {
                             text: c.name,
-                            icon: "graphic_eq"
+                            icon: "graphic_eq",
+                            codecKey: c.key,
+                            codecShortKey: c.codecKey
                         });
                     }
                     if (item) {
-                        item.codecKey = c.key;
-                        item.codecShortKey = c.codecKey;
                         newCache[itemId] = item;
                         cItems.push(item);
                         if (c.key === root.btCard.activeProfileKey)

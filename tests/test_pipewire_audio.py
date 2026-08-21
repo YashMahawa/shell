@@ -330,5 +330,218 @@ class TestPipeWireBluetoothAudio(unittest.TestCase):
         self.assertTrue(len(card_info["profileGroups"]) > 0)
 
 
+class AudioMenuItem:
+    """Mock representing components/controls/AudioMenuItem.qml deriving from MenuItem.qml."""
+    __slots__ = ("text", "icon", "trailingIcon", "activeIcon", "activeText", "groupId", "codecKey", "codecShortKey", "destroyed")
+
+    def __init__(self, text="", icon="", trailingIcon="", activeIcon=None, activeText=None, groupId="", codecKey="", codecShortKey=""):
+        self.text = text
+        self.icon = icon
+        self.trailingIcon = trailingIcon
+        self.activeIcon = activeIcon if activeIcon is not None else icon
+        self.activeText = activeText if activeText is not None else text
+        self.groupId = groupId
+        self.codecKey = codecKey
+        self.codecShortKey = codecShortKey
+        self.destroyed = False
+
+    def destroy(self):
+        self.destroyed = True
+
+
+class MockMenuHelper:
+    """Mock representing the QML menuHelper QtObject in AudioDeviceList.qml and BtDeviceInfo.qml."""
+    def __init__(self):
+        self.profileItems = []
+        self.activeProfileItem = None
+        self.codecItems = []
+        self.activeCodecItem = None
+        self.itemCache = {}
+
+    def clearAll(self):
+        for item in list(self.itemCache.values()):
+            if item and not item.destroyed:
+                item.destroy()
+        self.itemCache = {}
+        self.profileItems = []
+        self.codecItems = []
+        self.activeProfileItem = None
+        self.activeCodecItem = None
+
+    def refresh(self, bt_card):
+        if not bt_card or not bt_card.get("profileGroups"):
+            self.clearAll()
+            return
+
+        new_cache = {}
+        p_items = []
+        a_p = None
+
+        for g in bt_card["profileGroups"]:
+            item_id = "profile:" + g["id"]
+            item = self.itemCache.get(item_id)
+            if item and not item.destroyed:
+                item.text = g["name"]
+                item.icon = g.get("icon") or "tune"
+                item.groupId = g["id"]
+            else:
+                item = AudioMenuItem(
+                    text=g["name"],
+                    icon=g.get("icon") or "tune",
+                    groupId=g["id"]
+                )
+            if item:
+                new_cache[item_id] = item
+                p_items.append(item)
+                if g["id"] == bt_card.get("activeGroup"):
+                    a_p = item
+
+        c_items = []
+        a_c = None
+        codecs = bt_card.get("activeGroupCodecs") or []
+
+        for c in codecs:
+            item_id = "codec:" + (bt_card.get("activeGroup") or "") + ":" + c["key"]
+            item = self.itemCache.get(item_id)
+            if item and not item.destroyed:
+                item.text = c["name"]
+                item.icon = "graphic_eq"
+                item.codecKey = c["key"]
+                item.codecShortKey = c["codecKey"]
+            else:
+                item = AudioMenuItem(
+                    text=c["name"],
+                    icon="graphic_eq",
+                    codecKey=c["key"],
+                    codecShortKey=c["codecKey"]
+                )
+            if item:
+                new_cache[item_id] = item
+                c_items.append(item)
+                if c["key"] == bt_card.get("activeProfileKey"):
+                    a_c = item
+
+        if not a_c and c_items and bt_card.get("activeCodecKey"):
+            a_c = next((it for it in c_items if it.codecShortKey == bt_card["activeCodecKey"]), None)
+
+        for item_id, old_item in list(self.itemCache.items()):
+            if item_id not in new_cache and old_item and not old_item.destroyed:
+                old_item.destroy()
+
+        self.itemCache = new_cache
+        self.profileItems = p_items
+        self.activeProfileItem = a_p or (p_items[0] if p_items else None)
+        self.codecItems = c_items
+        self.activeCodecItem = a_c or (c_items[0] if c_items else None)
+
+
+class TestAudioMenuItemAndMenuHelper(unittest.TestCase):
+
+    def setUp(self):
+        self.mock_card_data = {
+            "name": "bluez_card.00_11_22_33_44_55",
+            "driver": "module-bluez5-device.c",
+            "properties": {
+                "device.api": "bluez5",
+                "bluez5.address": "00:11:22:33:44:55",
+                "device.description": "Test Headphones",
+            },
+            "active_profile": "a2dp-sink-ldac",
+            "profiles": {
+                "off": {"description": "Off", "available": True},
+                "a2dp-sink": {"description": "High Fidelity Playback (A2DP Sink)", "available": True},
+                "a2dp-sink-sbc": {"description": "High Fidelity Playback (A2DP Sink, codec SBC)", "available": True},
+                "a2dp-sink-aac": {"description": "High Fidelity Playback (A2DP Sink, codec AAC)", "available": True},
+                "a2dp-sink-ldac": {"description": "High Fidelity Playback (A2DP Sink, codec LDAC)", "available": True},
+                "headset-head-unit-cvsd": {"description": "Headset Head Unit (HSP/HFP, codec CVSD)", "available": True},
+                "headset-head-unit-msbc": {"description": "Headset Head Unit (HSP/HFP, codec mSBC)", "available": True},
+            },
+        }
+
+    def test_audio_menu_item_typed_properties(self):
+        """Test AudioMenuItem has declared metadata properties and rejects undeclared property assignments."""
+        item = AudioMenuItem(text="A2DP", icon="music_note", groupId="a2dp-sink", codecKey="a2dp-sink-ldac", codecShortKey="ldac")
+        self.assertEqual(item.text, "A2DP")
+        self.assertEqual(item.icon, "music_note")
+        self.assertEqual(item.groupId, "a2dp-sink")
+        self.assertEqual(item.codecKey, "a2dp-sink-ldac")
+        self.assertEqual(item.codecShortKey, "ldac")
+
+        # Verify strict typed attribute bounds
+        with self.assertRaises(AttributeError):
+            item.undeclaredDynamicProperty = "invalid"
+
+    def test_profile_and_codec_selection(self):
+        """Test profile and codec selection via AudioMenuItem instances."""
+        helper = MockMenuHelper()
+        cards = process_cards_json([self.mock_card_data])
+        bt_card = cards["bluez_card.00_11_22_33_44_55"]
+
+        helper.refresh(bt_card)
+
+        # Exercise profile selection
+        self.assertEqual(len(helper.profileItems), 3)  # off, a2dp-sink, headset-head-unit
+        hfp_profile_item = next(it for it in helper.profileItems if it.groupId == "headset-head-unit")
+        self.assertIsNotNone(hfp_profile_item)
+
+        # Simulate profile switch to HSP/HFP
+        hfp_card = json.loads(json.dumps(self.mock_card_data))
+        hfp_card["active_profile"] = "headset-head-unit-msbc"
+        cards_hfp = process_cards_json([hfp_card])
+        bt_card_hfp = cards_hfp["bluez_card.00_11_22_33_44_55"]
+
+        helper.refresh(bt_card_hfp)
+        self.assertEqual(helper.activeProfileItem.groupId, "headset-head-unit")
+        self.assertEqual(helper.activeCodecItem.codecShortKey, "msbc")
+
+        # Exercise codec selection within HSP/HFP
+        cvsd_codec_item = next(it for it in helper.codecItems if it.codecShortKey == "cvsd")
+        self.assertEqual(cvsd_codec_item.codecKey, "headset-head-unit-cvsd")
+
+        # Simulate codec switch to CVSD
+        cvsd_card = json.loads(json.dumps(self.mock_card_data))
+        cvsd_card["active_profile"] = "headset-head-unit-cvsd"
+        cards_cvsd = process_cards_json([cvsd_card])
+        bt_card_cvsd = cards_cvsd["bluez_card.00_11_22_33_44_55"]
+
+        helper.refresh(bt_card_cvsd)
+        self.assertEqual(helper.activeCodecItem.codecShortKey, "cvsd")
+
+    def test_repeated_refresh_item_reuse_and_destruction(self):
+        """Test repeated refresh cycles reuse existing AudioMenuItem instances and destroy obsolete items."""
+        helper = MockMenuHelper()
+        cards = process_cards_json([self.mock_card_data])
+        bt_card = cards["bluez_card.00_11_22_33_44_55"]
+
+        helper.refresh(bt_card)
+        initial_cache_ids = {id_str: id(item) for id_str, item in helper.itemCache.items()}
+        a2dp_ldac_item = helper.itemCache["codec:a2dp-sink:a2dp-sink-ldac"]
+
+        # Run repeated refreshes with unchanged profile
+        for _ in range(50):
+            helper.refresh(bt_card)
+            # Verify cached object identity is preserved (no unnecessary destruction/re-creation)
+            self.assertEqual(id(helper.itemCache["codec:a2dp-sink:a2dp-sink-ldac"]), initial_cache_ids["codec:a2dp-sink:a2dp-sink-ldac"])
+            self.assertFalse(a2dp_ldac_item.destroyed)
+
+        # Switch to HFP (A2DP codec items become obsolete and must be destroyed)
+        hfp_card = json.loads(json.dumps(self.mock_card_data))
+        hfp_card["active_profile"] = "headset-head-unit-msbc"
+        cards_hfp = process_cards_json([hfp_card])
+        bt_card_hfp = cards_hfp["bluez_card.00_11_22_33_44_55"]
+
+        helper.refresh(bt_card_hfp)
+        # Verify obsolete A2DP codec item was destroyed
+        self.assertTrue(a2dp_ldac_item.destroyed)
+        self.assertNotIn("codec:a2dp-sink:a2dp-sink-ldac", helper.itemCache)
+
+        # Disconnect device
+        helper.refresh(None)
+        self.assertEqual(len(helper.itemCache), 0)
+        self.assertIsNone(helper.activeProfileItem)
+        self.assertIsNone(helper.activeCodecItem)
+
+
 if __name__ == "__main__":
     unittest.main()
+
