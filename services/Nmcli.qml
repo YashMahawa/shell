@@ -552,46 +552,60 @@ Singleton {
         }
 
         executeCommand(cmd, addResult => {
+            let tempUuid = "";
+            if (addResult.output) {
+                const match = addResult.output.match(/\(([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)/)
+                           || addResult.output.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
+                if (match) {
+                    tempUuid = match[1];
+                }
+            }
+            if (!tempUuid) {
+                tempUuid = tempConName;
+            }
+
             if (root.wifiConnectionChangeKey !== requestKey) {
-                // Superseded or cancelled. Clean up temporary profile if created.
+                // Superseded or cancelled. Clean up exact temporary profile if created.
                 if (addResult.success) {
-                    executeCommand([root.nmcliCommandConnection, "delete", tempConName], null);
+                    executeCommand([root.nmcliCommandConnection, "delete", tempUuid], null);
                 }
                 return;
             }
 
             if (addResult.success) {
-                activateConnection(tempConName, upResult => {
+                activateConnection(tempUuid, upResult => {
                     if (root.wifiConnectionChangeKey !== requestKey) {
                         // Superseded or cancelled.
-                        executeCommand([root.nmcliCommandConnection, "delete", tempConName], null);
+                        executeCommand([root.nmcliCommandConnection, "delete", tempUuid], null);
                         return;
                     }
 
                     if (upResult.success) {
-                        // Activation succeeded. Replace/rename old profile if one exists.
-                        executeCommand([root.nmcliCommandConnection, "show", ssid], showResult => {
-                            const finalizeRename = () => {
-                                executeCommand([root.nmcliCommandConnection, "modify", tempConName, "connection.id", ssid], modifyResult => {
-                                    root.wifiConnectionChangeKey = "";
-                                    loadSavedConnections(() => {});
-                                    refreshLiveWifiState();
-                                    if (callback)
-                                        callback({ success: true, output: upResult.output, error: "", exitCode: 0 });
-                                });
-                            };
-
-                            if (showResult.success) {
-                                executeCommand([root.nmcliCommandConnection, "delete", ssid], deleteResult => {
-                                    finalizeRename();
-                                });
+                        // Activation succeeded. Promote temporary profile ID to target SSID.
+                        executeCommand([root.nmcliCommandConnection, "modify", tempUuid, "connection.id", ssid], modifyResult => {
+                            if (root.wifiConnectionChangeKey !== requestKey) {
+                                return;
+                            }
+                            root.wifiConnectionChangeKey = "";
+                            if (modifyResult.success) {
+                                loadSavedConnections(() => {});
+                                refreshLiveWifiState();
+                                if (callback)
+                                    callback({ success: true, output: upResult.output, error: "", exitCode: 0 });
                             } else {
-                                finalizeRename();
+                                loadSavedConnections(() => {});
+                                if (callback)
+                                    callback({
+                                        success: false,
+                                        output: modifyResult.output,
+                                        error: modifyResult.error || "Failed to promote connection profile to SSID",
+                                        exitCode: modifyResult.exitCode || -1
+                                    });
                             }
                         });
                     } else {
-                        // Activation failed. Clean up ONLY the temporary profile.
-                        executeCommand([root.nmcliCommandConnection, "delete", tempConName], deleteResult => {
+                        // Activation failed. Clean up ONLY the exact temporary profile/UUID.
+                        executeCommand([root.nmcliCommandConnection, "delete", tempUuid], deleteResult => {
                             root.wifiConnectionChangeKey = "";
                             loadSavedConnections(() => {});
                             if (callback)
