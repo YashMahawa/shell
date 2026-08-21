@@ -111,12 +111,18 @@ void HyprExtras::applyOptions(const QVariantHash& options) {
 
 void HyprExtras::refreshOptions() {
     if (!m_optionsRefresh.isNull()) {
-        m_optionsRefresh->close();
+        m_optionsRefreshPending = true;
+        return;
     }
 
+    m_optionsRefreshPending = false;
     m_optionsRefresh = makeRequestJson("descriptions", [this](bool success, const QJsonDocument& response) {
         m_optionsRefresh.reset();
         if (!success) {
+            if (m_optionsRefreshPending) {
+                m_optionsRefreshPending = false;
+                refreshOptions();
+            }
             return;
         }
 
@@ -136,18 +142,30 @@ void HyprExtras::refreshOptions() {
         if (dirty) {
             emit optionsChanged();
         }
+
+        if (m_optionsRefreshPending) {
+            m_optionsRefreshPending = false;
+            refreshOptions();
+        }
     });
 }
 
 void HyprExtras::refreshDevices() {
     if (!m_devicesRefresh.isNull()) {
-        m_devicesRefresh->close();
+        m_devicesRefreshPending = true;
+        return;
     }
 
+    m_devicesRefreshPending = false;
     m_devicesRefresh = makeRequestJson("devices", [this](bool success, const QJsonDocument& response) {
         m_devicesRefresh.reset();
         if (success) {
             m_devices->updateLastIpcObject(response.object());
+        }
+
+        if (m_devicesRefreshPending) {
+            m_devicesRefreshPending = false;
+            refreshDevices();
         }
     });
 }
@@ -165,26 +183,76 @@ void HyprExtras::socketStateChanged(QLocalSocket::LocalSocketState state) {
         qCWarning(lcHypr) << "socketStateChanged: Hyprland event socket disconnected.";
     }
 
-    m_socketValid = state == QLocalSocket::ConnectedState;
-}
+    const bool wasConnected = m_socketValid;
+    m_socketValid = (state == QLocalSocket::ConnectedState);
 
-void HyprExtras::readEvent() {
-    while (true) {
-        auto rawEvent = m_socket->readLine();
-        if (rawEvent.isEmpty()) {
-            break;
-        }
-        rawEvent.truncate(rawEvent.length() - 1); // Remove trailing \n
-        const auto event = QByteArrayView(rawEvent.data(), rawEvent.indexOf(">>"));
-        handleEvent(QString::fromUtf8(event));
+    if (m_socketValid && !wasConnected) {
+        resetCapabilities();
+        refreshOptions();
+        refreshDevices();
     }
 }
 
-void HyprExtras::handleEvent(const QString& event) {
-    if (event == "configreloaded") {
+void HyprExtras::resetCapabilities() {
+    m_hasV2Config = false;
+    m_hasV2Layout = false;
+}
+
+void HyprExtras::readEvent() {
+    while (m_socket && m_socket->canReadLine()) {
+        auto rawEvent = m_socket->readLine();
+        if (rawEvent.endsWith('\n')) {
+            rawEvent.chop(1);
+        }
+        if (rawEvent.endsWith('\r')) {
+            rawEvent.chop(1);
+        }
+        if (rawEvent.isEmpty()) {
+            continue;
+        }
+
+        const int sep = rawEvent.indexOf(">>");
+        if (sep != -1) {
+            const auto name = QString::fromUtf8(rawEvent.left(sep));
+            const auto data = QString::fromUtf8(rawEvent.mid(sep + 2));
+            handleEvent(name, data);
+        } else {
+            handleEvent(QString::fromUtf8(rawEvent), QString());
+        }
+    }
+}
+
+void HyprExtras::handleEvent(const QString& name, const QString& data) {
+    if (name == QLatin1String("configreloadedv2")) {
+        m_hasV2Config = true;
         refreshOptions();
-    } else if (event == "activelayout") {
+    } else if (name == QLatin1String("configreloaded")) {
+        if (!m_hasV2Config) {
+            refreshOptions();
+        }
+    } else if (name == QLatin1String("activelayoutv2")) {
+        m_hasV2Layout = true;
+        const auto parts = data.split(QLatin1Char(','));
+        if (parts.size() >= 3) {
+            const auto kbName = parts[0].trimmed();
+            const auto layoutName = parts[1].trimmed();
+            bool ok = false;
+            const int layoutIdx = parts[2].trimmed().toInt(&ok);
+            if (ok && m_devices) {
+                m_devices->updateActiveLayout(kbName, layoutName, layoutIdx);
+            }
+        }
         refreshDevices();
+    } else if (name == QLatin1String("activelayout")) {
+        if (!m_hasV2Layout) {
+            const auto parts = data.split(QLatin1Char(','));
+            if (parts.size() >= 2 && m_devices) {
+                const auto kbName = parts[0].trimmed();
+                const auto layoutName = parts[1].trimmed();
+                m_devices->updateActiveLayout(kbName, layoutName, -1);
+            }
+            refreshDevices();
+        }
     }
 }
 
