@@ -274,10 +274,14 @@ void BluetoothAgent::DisplayPasskey(const QDBusObjectPath& device, quint32 passk
 
     clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
     fetchDeviceInfo(device);
-    m_passkey = passkey;
-    emit passkeyChanged();
-    m_passkeyEntered = entered;
-    emit passkeyEnteredChanged();
+    if (m_passkey != passkey) {
+        m_passkey = passkey;
+        emit passkeyChanged();
+    }
+    if (m_passkeyEntered != entered) {
+        m_passkeyEntered = entered;
+        emit passkeyEnteredChanged();
+    }
     setPendingRequest(QDBusMessage(), QStringLiteral("displaypasskey"), device);
 }
 
