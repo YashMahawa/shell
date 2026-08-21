@@ -177,9 +177,12 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Night Light")
-            subtext: qsTr("Warm screen colors to reduce blue light and eye strain")
+            subtext: NightLight.backendAvailable
+                ? qsTr("Warm screen colors to reduce blue light and eye strain")
+                : qsTr("No supported Night Light backend available")
             checked: NightLight.enabled
-            onToggled: checked => NightLight.enabled = checked
+            enabled: NightLight.backendAvailable
+            onToggled: checked => NightLight.setEnabled(checked)
         }
 
         SliderRow {
@@ -187,9 +190,9 @@ PageBase {
             last: true
             icon: "thermostat"
             label: qsTr("Night Light temperature")
-            valueLabel: `${NightLight.temperature} K`
+            valueLabel: NightLight.backendAvailable ? `${NightLight.temperature} K` : qsTr("Unavailable")
             value: NightLight.warmth
-            enabled: NightLight.enabled
+            enabled: NightLight.enabled && NightLight.backendAvailable
             onMoved: v => NightLight.setWarmth(v)
         }
     }
