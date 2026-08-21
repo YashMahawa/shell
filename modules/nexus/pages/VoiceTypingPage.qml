@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Quickshell.Io
 import Caelestia.Config
 import qs.components
 import qs.components.controls
@@ -15,22 +14,12 @@ PageBase {
 
     title: qsTr("Voice typing")
 
-    property var storedKeys: [false, false, false]
+    readonly property var storedKeys: Voice.storedKeys
     property string statusMessage: ""
     property bool statusError: false
 
     function refresh(): void {
-        if (!statusProc.running)
-            statusProc.exec([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "status"]);
-    }
-
-    function submit(command: var, data: string): void {
-        if (manager.running) {
-            statusMessage = qsTr("Please wait for the current change to finish");
-            return;
-        }
-        manager.pendingData = data;
-        manager.exec(command);
+        Voice.refreshKeys();
     }
 
     Component.onCompleted: refresh()
@@ -40,50 +29,6 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
-
-        Process {
-            id: statusProc
-
-            stdout: StdioCollector {
-                onStreamFinished: {
-                    try {
-                        const state = JSON.parse(text);
-                        root.storedKeys = state.keys ?? [false, false, false];
-                        if (!promptField.activeFocus)
-                            promptField.text = state.prompt ?? "";
-                        root.statusError = false;
-                    } catch (error) {
-                        root.statusMessage = qsTr("Could not read voice settings");
-                        root.statusError = true;
-                    }
-                }
-            }
-        }
-
-        Process {
-            id: manager
-            property string pendingData: ""
-            stdinEnabled: true
-
-            onStarted: {
-                write(pendingData + "\n");
-                pendingData = "";
-            }
-            onExited: exitCode => { // qmllint disable signal-handler-parameters
-                root.statusError = exitCode !== 0;
-                root.statusMessage = exitCode === 0 ? qsTr("Voice settings saved securely") : qsTr("Could not save voice settings");
-                root.refresh();
-            }
-            stderr: StdioCollector {
-                onStreamFinished: {
-                    const message = text.trim();
-                    if (message) {
-                        root.statusMessage = message;
-                        root.statusError = true;
-                    }
-                }
-            }
-        }
 
         SectionHeader {
             text: qsTr("Gemini API keys")
@@ -153,17 +98,23 @@ PageBase {
                     TextButton {
                         id: saveButton
                         text: qsTr("Save")
-                        enabled: keyField.text.length >= 20 && !manager.running
+                        enabled: keyField.text.length >= 20
                         onClicked: {
-                            root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "store", String(keyRow.index + 1)], keyField.text);
+                            Voice.storeKey(keyRow.index + 1, keyField.text);
                             keyField.text = "";
+                            root.statusMessage = qsTr("Voice settings saved securely");
+                            root.statusError = false;
                         }
                     }
 
                     TextButton {
                         text: qsTr("Remove")
-                        enabled: root.storedKeys[keyRow.index] && !manager.running
-                        onClicked: root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "clear", String(keyRow.index + 1)], "")
+                        enabled: root.storedKeys[keyRow.index]
+                        onClicked: {
+                            Voice.clearKey(keyRow.index + 1);
+                            root.statusMessage = qsTr("Voice settings saved securely");
+                            root.statusError = false;
+                        }
                     }
                 }
             }
@@ -203,6 +154,7 @@ PageBase {
                         id: promptField
                         anchors.fill: parent
                         anchors.margins: Tokens.padding.medium
+                        text: Voice.prompt
                         color: Colours.palette.m3onSurface
                         selectionColor: Colours.palette.m3primary
                         selectedTextColor: Colours.palette.m3onPrimary
@@ -215,8 +167,12 @@ PageBase {
                 TextButton {
                     Layout.alignment: Qt.AlignRight
                     text: qsTr("Save prompt")
-                    enabled: promptField.text.length >= 40 && !manager.running
-                    onClicked: root.submit([Quickshell.env("HOME") + "/.local/bin/caelestia-voice-settings", "set-prompt"], JSON.stringify(promptField.text))
+                    enabled: promptField.text.length >= 40
+                    onClicked: {
+                        Voice.savePrompt(promptField.text);
+                        root.statusMessage = qsTr("Voice settings saved securely");
+                        root.statusError = false;
+                    }
                 }
             }
         }

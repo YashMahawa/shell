@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
@@ -12,28 +11,10 @@ import qs.services
 Scope {
     id: root
 
-    property string status: "idle"
-    property string message: ""
-    property string detail: ""
-    readonly property bool active: status !== "idle" && status !== ""
-
-    FileView {
-        id: stateFile
-        path: `${Paths.state}/voice-state.json`
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: {
-            try {
-                const state = JSON.parse(text());
-                root.status = state.status ?? "idle";
-                root.message = state.message ?? "";
-                root.detail = state.detail ?? "";
-            } catch (error) {
-                root.status = "idle";
-            }
-        }
-    }
+    readonly property string status: Voice.status
+    readonly property string message: Voice.message
+    readonly property string detail: Voice.detail
+    readonly property bool active: Voice.active
 
     Variants {
         model: Screens.screens
@@ -42,7 +23,7 @@ Scope {
             required property ShellScreen modelData
             screen: modelData
             name: "voice-typing"
-            visible: root.active && (Hypr.focusedMonitor?.name ?? modelData.name) === modelData.name
+            visible: (Hypr.focusedMonitor?.name ?? modelData.name) === modelData.name
             implicitWidth: 520
             implicitHeight: 84
             color: "transparent"
@@ -57,6 +38,8 @@ Scope {
                 anchors.fill: parent
                 anchors.margins: Tokens.padding.small
                 radius: Tokens.rounding.full
+                visible: root.active
+                opacity: root.active ? 1.0 : 0.0
                 color: Colours.layer(
                     Colours.palette.m3surfaceContainerHigh,
                     TrueLite.effectsEnabled ? 0.72 : 0.96
@@ -66,6 +49,10 @@ Scope {
                     root.status === "error" ? Colours.palette.m3error : Colours.palette.m3primary,
                     0.72
                 )
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 150 }
+                }
 
                 Row {
                     anchors.fill: parent

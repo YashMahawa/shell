@@ -19,8 +19,11 @@ qml_module(caelestia-services
         lyriccandidate.cpp
         lyrics.cpp
         backgrounddaemon.cpp
+        voiceservice.cpp voiceservice.hpp
     LIBRARIES
         Qt::Concurrent
+        Qt::DBus
+        Qt::Network
         PkgConfig::Pipewire
         PkgConfig::Aubio
         PkgConfig::Cava
