@@ -165,20 +165,23 @@ Item {
     }
 
     Connections {
-        target: Hypr
         function onLayoutCacheChanged() {
             model.updateFromHypr();
         }
+
+        target: Hypr
     }
 
     Connections {
-        target: Hypr.keyboard ? Hypr.keyboard : null
         function onLastIpcObjectChanged() {
             model.updateFromHypr();
         }
+
         function onLayoutChanged() {
             model.updateFromHypr();
         }
+
+        target: Hypr.keyboard ? Hypr.keyboard : null
     }
 
     Process {

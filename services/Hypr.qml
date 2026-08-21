@@ -33,6 +33,10 @@ Singleton {
     readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? (keyboard?.layout.split(",")[keyboard?.lastIpcObject?.active_layout_index ?? 0]?.trim() ?? defaultKbLayout)
     readonly property var kbMap: new Map()
     property var layoutCache: ({})
+    property bool _hasV2Workspace: false
+    property bool _hasV2Window: false
+    property bool _hasV2Layout: false
+    property bool _hasV2Config: false
 
     readonly property alias extras: extras
     readonly property alias options: extras.options
@@ -137,25 +141,62 @@ Singleton {
 
     Connections {
         function onRawEvent(event: HyprlandEvent): void {
-            let n = event.name;
-            if (n.endsWith("v2"))
-                n = n.slice(0, -2);
+            const name = event.name;
 
-            if (n === "configreloaded") {
+            if (name === "activelayoutv2") {
+                root._hasV2Layout = true;
+                extras.refreshDevices();
+            } else if (name === "activelayout") {
+                if (root._hasV2Layout)
+                    return;
+                extras.refreshDevices();
+            } else if (name === "configreloadedv2") {
+                root._hasV2Config = true;
                 root.configReloaded();
                 root.reloadDynamicConfs();
-            } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(n)) {
+            } else if (name === "configreloaded") {
+                if (root._hasV2Config)
+                    return;
+                root.configReloaded();
+                root.reloadDynamicConfs();
+            } else if (name === "workspacev2") {
+                root._hasV2Workspace = true;
                 root.scheduleRefresh(true, true, false);
-            } else if (["openwindow", "closewindow", "movewindow"].includes(n)) {
+            } else if (name === "workspace") {
+                if (root._hasV2Workspace)
+                    return;
+                root.scheduleRefresh(true, true, false);
+            } else if (["moveworkspace", "activespecial", "focusedmon"].includes(name)) {
+                root.scheduleRefresh(true, true, false);
+            } else if (name === "activewindowv2") {
+                root._hasV2Window = true;
                 root.scheduleRefresh(true, false, true);
-            } else if (n.includes("mon")) {
+            } else if (name === "activewindow") {
+                if (root._hasV2Window)
+                    return;
+                root.scheduleRefresh(true, false, true);
+            } else if (["openwindow", "closewindow", "movewindow"].includes(name)) {
+                root.scheduleRefresh(true, false, true);
+            } else if (name.includes("mon")) {
                 root.scheduleRefresh(false, true, false);
-            } else if (n.includes("workspace")) {
-                root.scheduleRefresh(true, false, false);
-            } else if (n.includes("window") || n.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(n)) {
-                root.scheduleRefresh(false, false, true);
-            } else if (n === "activelayout") {
-                extras.refreshDevices();
+            } else if (name.includes("workspace")) {
+                if (name.endsWith("v2")) {
+                    root._hasV2Workspace = true;
+                    root.scheduleRefresh(true, false, false);
+                } else {
+                    if (root._hasV2Workspace)
+                        return;
+                    root.scheduleRefresh(true, false, false);
+                }
+            } else if (name.includes("window") || name.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(name)) {
+                if (name.endsWith("v2")) {
+                    root._hasV2Window = true;
+                    root.scheduleRefresh(false, false, true);
+                } else {
+                    if (root._hasV2Window)
+                        return;
+                    root.scheduleRefresh(false, false, true);
+                }
             }
         }
 
