@@ -7,7 +7,38 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-ACTION=$1
+ACTION=""
+OPT_IN=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --apply|rollback|uninstall)
+      if [ -z "$ACTION" ]; then
+        ACTION="$arg"
+      fi
+      ;;
+    --force|-f|--overwrite|--overwrite-config|--enable-dm|--opt-in)
+      OPT_IN=1
+      ;;
+  esac
+done
+
+if [ -z "$ACTION" ]; then
+  ACTION="$1"
+fi
+
+detect_active_dm() {
+  if [ -L /etc/systemd/system/display-manager.service ]; then
+    basename "$(readlink /etc/systemd/system/display-manager.service)"
+  else
+    for dm in sddm gdm lightdm lxdm xdm greetd; do
+      if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
+        echo "$dm.service"
+        return
+      fi
+    done
+  fi
+}
 
 if [ "$ACTION" = "rollback" ] || [ "$ACTION" = "uninstall" ]; then
   echo "Rolling back greeter configuration..."
@@ -56,18 +87,7 @@ fi
 if [ "$ACTION" != "--apply" ]; then
   echo "Dry-run / Status Output:"
   echo "Current Default Target: $(systemctl get-default 2>/dev/null)"
-  
-  CURRENT_DM=""
-  if [ -L /etc/systemd/system/display-manager.service ]; then
-    CURRENT_DM=$(basename "$(readlink /etc/systemd/system/display-manager.service)")
-  else
-    for dm in gdm lightdm sddm lxdm xdm; do
-      if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
-        CURRENT_DM="$dm.service"
-        break
-      fi
-    done
-  fi
+  CURRENT_DM=$(detect_active_dm)
   echo "Current Display Manager: ${CURRENT_DM:-None}"
   echo "greetd installed user: $(getent passwd greeter >/dev/null && echo "Yes" || echo "No")"
   if getent passwd greeter >/dev/null; then
@@ -76,7 +96,7 @@ if [ "$ACTION" != "--apply" ]; then
   fi
   echo ""
   echo "To install and enable the greeter as your default display manager, run:"
-  echo "  $0 --apply"
+  echo "  $0 --apply [--force]"
   exit 0
 fi
 
@@ -95,17 +115,16 @@ else
   echo "Greeter user already exists."
 fi
 
-# Assign greeter user to standard hardware groups (video, render, input, seat)
-HW_GROUPS=("video" "render" "input" "seat")
+# Assign greeter user to minimal required display hardware groups (video, render) if present.
+# Do not add greeter to 'input' or 'seat' groups and do not create hardware groups automatically.
+# Minimal input/device access is handled via systemd-logind / udev seat management.
+HW_GROUPS=("video" "render")
 
-echo "Assigning greeter user to hardware groups..."
+echo "Assigning greeter user to existing display hardware groups..."
 for group in "${HW_GROUPS[@]}"; do
   if ! getent group "$group" >/dev/null 2>&1; then
-    echo "Creating missing hardware group '$group'..."
-    if ! groupadd -r "$group"; then
-      echo "WARNING: Failed to create group '$group'!"
-      continue
-    fi
+    echo "Group '$group' does not exist on this system; skipping."
+    continue
   fi
 
   if id -nG greeter 2>/dev/null | grep -qw "$group"; then
@@ -122,6 +141,38 @@ done
 GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
 echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
 
+CURRENT_DM=$(detect_active_dm)
+echo "Detected active display manager: ${CURRENT_DM:-None}"
+
+# Check for existing greetd configuration and active display manager
+CONFIG_EXISTS=0
+if [ -f /etc/greetd/config.toml ]; then
+  CONFIG_EXISTS=1
+fi
+
+DM_ACTIVE=0
+if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
+  DM_ACTIVE=1
+fi
+
+if [ "$OPT_IN" -ne 1 ]; then
+  IF_TOUCHED=0
+  if [ "$CONFIG_EXISTS" -eq 1 ]; then
+    echo "Existing greetd configuration (/etc/greetd/config.toml) detected."
+    echo "Leaving existing greetd configuration untouched (pass --force, --overwrite, or --enable-dm to explicitly opt in)."
+    IF_TOUCHED=1
+  fi
+  if [ "$DM_ACTIVE" -eq 1 ]; then
+    echo "Active display manager ($CURRENT_DM) detected."
+    echo "Leaving existing $CURRENT_DM configuration untouched (pass --force, --overwrite, or --enable-dm to explicitly opt in)."
+    IF_TOUCHED=1
+  fi
+  if [ "$IF_TOUCHED" -eq 1 ]; then
+    echo "Installation finished without modifying existing display manager or greetd configuration."
+    exit 0
+  fi
+fi
+
 mkdir -p /etc/greetd
 if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
   cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
@@ -132,21 +183,9 @@ fi
 systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
 
 # Preserve previous display manager
-PREV_DM=""
-if [ -L /etc/systemd/system/display-manager.service ]; then
-  PREV_DM=$(basename "$(readlink /etc/systemd/system/display-manager.service)")
-else
-  for dm in gdm lightdm sddm lxdm xdm; do
-    if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
-      PREV_DM="$dm.service"
-      break
-    fi
-  done
-fi
-
-if [ -n "$PREV_DM" ] && [ "$PREV_DM" != "greetd.service" ]; then
-  echo "$PREV_DM" > /etc/greetd/prev_dm.bak
-  systemctl disable "$PREV_DM" || true
+if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
+  echo "$CURRENT_DM" > /etc/greetd/prev_dm.bak
+  systemctl disable "$CURRENT_DM" || true
 else
   > /etc/greetd/prev_dm.bak
 fi
