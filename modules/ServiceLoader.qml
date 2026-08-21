@@ -16,6 +16,7 @@ Scope {
         CalendarEvents.reload();
         Timetable;
         CalendarCentre;
+        OverlayManager;
 
         if (GlobalConfig.utilities.vpn.enabled)
             VPN;
