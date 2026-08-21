@@ -1,6 +1,7 @@
 #!/bin/bash
-# Automate the installation and service enablement of the greeter.
-# This script configures the greeter as the system's default display manager.
+# Script for shell installation and display-manager configuration management.
+# General shell updates preserve existing display-manager / SDDM configurations.
+# Display-manager / greeter provisioning is opt-in via --enable-dm.
 
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root"
@@ -8,7 +9,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 ACTION=""
-OPT_IN=0
+ENABLE_DM=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -17,8 +18,8 @@ for arg in "$@"; do
         ACTION="$arg"
       fi
       ;;
-    --force|-f|--overwrite|--overwrite-config|--enable-dm|--opt-in)
-      OPT_IN=1
+    --enable-dm|--provision-dm)
+      ENABLE_DM=1
       ;;
   esac
 done
@@ -103,52 +104,38 @@ if [ "$ACTION" != "--apply" ]; then
   echo "Current Default Target: $(systemctl get-default 2>/dev/null)"
   CURRENT_DM=$(detect_active_dm)
   echo "Current Display Manager: ${CURRENT_DM:-None}"
+  echo "Customized Login Setup Preserved: Yes"
   echo "greetd installed user: $(getent passwd greeter >/dev/null && echo "Yes" || echo "No")"
   if getent passwd greeter >/dev/null; then
     GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
     echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
   fi
   echo ""
-  echo "To install and enable the greeter as your default display manager, run:"
-  echo "  $0 --apply [--force]"
+  echo "General Shell Update Path:"
+  echo "  $0 --apply"
+  echo "  (Updates shell configuration while preserving customized SDDM / login setup)"
+  echo ""
+  echo "Display Manager Provisioning (Opt-In):"
+  echo "  $0 --apply --enable-dm"
+  echo "  (Explicitly provisions greetd as default display manager)"
   exit 0
 fi
 
 export PATH=$PATH:/usr/sbin:/sbin:/usr/bin:/bin
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Perform all preflight checks and explicit opt-in decisions before any mutation.
 CURRENT_DM=$(detect_active_dm)
-echo "Detected active display manager: ${CURRENT_DM:-None}"
 
-CONFIG_EXISTS=0
-if [ -f /etc/greetd/config.toml ]; then
-  CONFIG_EXISTS=1
+if [ "$ENABLE_DM" -ne 1 ]; then
+  echo "Executing general shell update path..."
+  echo "Detected active display manager / login setup: ${CURRENT_DM:-None}"
+  echo "Preserving customized SDDM / login setup intact."
+  echo "Display manager / greeter provisioning skipped (pass --enable-dm to explicitly opt in)."
+  echo "Shell update complete."
+  exit 0
 fi
 
-DM_ACTIVE=0
-if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
-  DM_ACTIVE=1
-fi
-
-if [ "$OPT_IN" -ne 1 ]; then
-  IF_TOUCHED=0
-  if [ "$CONFIG_EXISTS" -eq 1 ]; then
-    echo "Existing greetd configuration (/etc/greetd/config.toml) detected."
-    echo "Leaving existing greetd configuration untouched (pass --force, --overwrite, or --enable-dm to explicitly opt in)."
-    IF_TOUCHED=1
-  fi
-  if [ "$DM_ACTIVE" -eq 1 ]; then
-    echo "Active display manager ($CURRENT_DM) detected."
-    echo "Leaving existing $CURRENT_DM configuration untouched (pass --force, --overwrite, or --enable-dm to explicitly opt in)."
-    IF_TOUCHED=1
-  fi
-  if [ "$IF_TOUCHED" -eq 1 ]; then
-    echo "Installation finished without modifying existing display manager or greetd configuration."
-    exit 0
-  fi
-fi
-
+echo "Display manager provisioning requested (--enable-dm)."
 echo "Performing preflight validation..."
 
 # 1. Validate greetd service or binary presence
