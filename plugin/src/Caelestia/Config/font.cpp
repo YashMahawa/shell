@@ -23,19 +23,16 @@ QFont FontStyleBase::buildFont(const FontConfig* cfg, const QString& fallbackFam
     const int scaledSize = static_cast<int>(cfg->size() * scale);
     const int cappedSize = scaledSize > 0 ? scaledSize : 1;
     font.setPointSize(cappedSize);
-    font.setWeight(QFont::Weight(cfg->weight()));
-    font.setItalic(cfg->italic());
-
-#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     font.setVariableAxis("opsz", static_cast<float>(cappedSize));
+    font.setWeight(QFont::Weight(cfg->weight()));
     font.setVariableAxis("wght", font.weight());
+    font.setItalic(cfg->italic());
 
     const auto axes = cfg->vaxes();
     for (auto it = axes.constBegin(); it != axes.constEnd(); ++it) {
         if (auto tag = QFont::Tag::fromString(it.key()))
             font.setVariableAxis(*tag, it.value().toFloat());
     }
-#endif
 
     return font;
 }

@@ -125,9 +125,8 @@ void CavaProvider::setBars(int bars) {
     emit barsChanged();
     emit valuesChanged();
 
-    auto* proc = static_cast<CavaProcessor*>(m_processor);
     QMetaObject::invokeMethod(
-        proc, [proc, bars]() { proc->setBars(bars); }, Qt::QueuedConnection);
+        static_cast<CavaProcessor*>(m_processor), &CavaProcessor::setBars, Qt::QueuedConnection, bars);
 }
 
 QVector<double> CavaProvider::values() const {

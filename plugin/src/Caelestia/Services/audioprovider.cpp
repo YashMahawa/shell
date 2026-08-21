@@ -24,7 +24,7 @@ void AudioProcessor::init() {
 }
 
 void AudioProcessor::start() {
-    QMetaObject::invokeMethod(&AudioCollector::instance(), [this]() { AudioCollector::instance().ref(this); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(&AudioCollector::instance(), &AudioCollector::ref, Qt::QueuedConnection, this);
     if (m_timer) {
         m_timer->start();
     }
@@ -34,7 +34,7 @@ void AudioProcessor::stop() {
     if (m_timer) {
         m_timer->stop();
     }
-    QMetaObject::invokeMethod(&AudioCollector::instance(), [this]() { AudioCollector::instance().unref(this); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(&AudioCollector::instance(), &AudioCollector::unref, Qt::QueuedConnection, this);
 }
 
 AudioProvider::AudioProvider(QObject* parent)
@@ -68,13 +68,13 @@ void AudioProvider::init() {
 void AudioProvider::start() {
     if (m_processor) {
         AudioCollector::instance(); // Create instance on main thread
-        QMetaObject::invokeMethod(m_processor, [proc = m_processor]() { proc->start(); });
+        QMetaObject::invokeMethod(m_processor, &AudioProcessor::start);
     }
 }
 
 void AudioProvider::stop() {
     if (m_processor) {
-        QMetaObject::invokeMethod(m_processor, [proc = m_processor]() { proc->stop(); });
+        QMetaObject::invokeMethod(m_processor, &AudioProcessor::stop);
     }
 }
 
