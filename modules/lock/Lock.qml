@@ -48,14 +48,6 @@ Scope {
         onPressed: lock.locked = true
     }
 
-    // qmllint disable unresolved-type
-    CustomShortcut {
-        // qmllint enable unresolved-type
-        name: "unlock"
-        description: "Unlock the current session"
-        onPressed: lock.unlock()
-    }
-
     IpcHandler {
         function safeLock(): bool {
             lock.locked = true;
@@ -64,10 +56,6 @@ Scope {
 
         function lock(): void {
             lock.locked = true;
-        }
-
-        function unlock(): void {
-            lock.unlock();
         }
 
         function isLocked(): bool {
