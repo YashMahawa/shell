@@ -13,28 +13,23 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    property string selectedScope: "system"
+    property string selectedScope: "user"
+    property bool expertMode: false
     property string searchText: ""
     property string stateFilter: "all"
     property list<var> systemServices: []
     property list<var> userServices: []
     property var busyUnits: ({})
-    property var pendingCriticalAction: null
+    property string discoveryError: ""
+    property string actionError: ""
+
+    property var pendingImpactData: null
     property string currentActionUnit: ""
+    property string currentActionType: ""
+    property string confirmTypedText: ""
 
     title: qsTr("Systemd Unit Manager")
     isSubPage: true
-
-    readonly property list<string> criticalUnits: [
-        "systemd-logind.service",
-        "logind.service",
-        "dbus.service",
-        "polkit.service",
-        "systemd-journald.service",
-        "display-manager.service",
-        "hyprland.service",
-        "caelestia.service"
-    ]
 
     readonly property list<var> currentRawServices: selectedScope === "user" ? userServices : systemServices
 
@@ -78,24 +73,29 @@ PageBase {
     }
 
     function fetchServices(): void {
+        discoveryError = "";
         if (!sysProc.running)
             sysProc.running = true;
         if (!userProc.running)
             userProc.running = true;
     }
 
-    function isCriticalUnit(unitName: string): bool {
-        const uLower = (unitName || "").toLowerCase();
-        return criticalUnits.some(c => uLower === c || uLower === c.replace(".service", "") || uLower + ".service" === c);
-    }
+    function requestServiceAction(unitName: string, action: string, scope: string, itemData: var): void {
+        actionError = "";
+        currentActionUnit = unitName;
+        currentActionType = action;
 
-    function executeServiceAction(unitName: string, action: string, scope: string): void {
-        if ((action === "stop" || action === "disable") && isCriticalUnit(unitName)) {
-            pendingCriticalAction = {
-                unit: unitName,
-                action: action,
-                scope: scope
-            };
+        const isDestructive = action === "stop" || action === "disable" || action === "restart";
+        const isCritical = itemData && itemData.isCritical;
+        const isSystemScope = scope === "system";
+
+        if (isDestructive || isCritical || isSystemScope) {
+            const newBusy = Object.assign({}, busyUnits);
+            newBusy[unitName] = true;
+            busyUnits = newBusy;
+
+            impactProc.command = ["python3", `${Quickshell.shellDir}/modules/nexus/scripts/manage_systemd.py`, "impact", unitName, scope];
+            impactProc.running = true;
             return;
         }
 
@@ -108,6 +108,7 @@ PageBase {
         busyUnits = newBusy;
 
         currentActionUnit = unitName;
+        currentActionType = action;
 
         if (scope === "system") {
             actionProc.command = ["pkexec", "systemctl", action, unitName];
@@ -118,24 +119,24 @@ PageBase {
         actionProc.running = true;
     }
 
-    function confirmCriticalAction(): void {
-        if (!pendingCriticalAction)
-            return;
-        const act = pendingCriticalAction;
-        pendingCriticalAction = null;
-        confirmAndRunAction(act.unit, act.action, act.scope);
-    }
-
-    function cancelCriticalAction(): void {
-        pendingCriticalAction = null;
+    function cancelImpactAction(): void {
+        if (currentActionUnit) {
+            const newBusy = Object.assign({}, busyUnits);
+            delete newBusy[currentActionUnit];
+            busyUnits = newBusy;
+        }
+        pendingImpactData = null;
+        confirmTypedText = "";
+        currentActionUnit = "";
+        currentActionType = "";
     }
 
     Component.onCompleted: fetchServices()
 
     Timer {
-        interval: 3000
+        interval: 5000
         repeat: true
-        running: root.visible
+        running: root.visible && root.pendingImpactData === null
         onTriggered: root.fetchServices()
     }
 
@@ -146,9 +147,24 @@ PageBase {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    root.systemServices = JSON.parse(text);
+                    const res = JSON.parse(text);
+                    if (Array.isArray(res)) {
+                        root.systemServices = res;
+                    } else if (res && typeof res === "object") {
+                        root.systemServices = res.services || [];
+                        if (res.error)
+                            root.discoveryError = res.error;
+                    }
                 } catch (e) {
                     root.systemServices = [];
+                    root.discoveryError = "Failed to parse system units response: " + e.message;
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim().length > 0) {
+                    root.discoveryError = text.trim();
                 }
             }
         }
@@ -161,9 +177,57 @@ PageBase {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    root.userServices = JSON.parse(text);
+                    const res = JSON.parse(text);
+                    if (Array.isArray(res)) {
+                        root.userServices = res;
+                    } else if (res && typeof res === "object") {
+                        root.userServices = res.services || [];
+                        if (res.error)
+                            root.discoveryError = res.error;
+                    }
                 } catch (e) {
                     root.userServices = [];
+                    root.discoveryError = "Failed to parse user units response: " + e.message;
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim().length > 0) {
+                    root.discoveryError = text.trim();
+                }
+            }
+        }
+    }
+
+    Process {
+        id: impactProc
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const res = JSON.parse(text);
+                    root.pendingImpactData = res;
+                    root.confirmTypedText = "";
+                } catch (e) {
+                    root.actionError = "Failed to analyze unit dependency impact: " + e.message;
+                }
+                if (root.currentActionUnit) {
+                    const newBusy = Object.assign({}, root.busyUnits);
+                    delete newBusy[root.currentActionUnit];
+                    root.busyUnits = newBusy;
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim().length > 0) {
+                    root.actionError = text.trim();
+                }
+                if (root.currentActionUnit) {
+                    const newBusy = Object.assign({}, root.busyUnits);
+                    delete newBusy[root.currentActionUnit];
+                    root.busyUnits = newBusy;
                 }
             }
         }
@@ -172,14 +236,28 @@ PageBase {
     Process {
         id: actionProc
 
-        onExited: exitCode => {
+        onExited: (exitCode, exitStatus) => {
             if (root.currentActionUnit) {
                 const newBusy = Object.assign({}, root.busyUnits);
                 delete newBusy[root.currentActionUnit];
                 root.busyUnits = newBusy;
                 root.currentActionUnit = "";
             }
+            if (exitCode !== 0) {
+                if (!root.actionError) {
+                    root.actionError = qsTr("Command failed with exit code %1").arg(exitCode);
+                }
+            } else {
+                root.actionError = "";
+            }
             root.fetchServices();
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim().length > 0) {
+                    root.actionError = text.trim();
+                }
+            }
         }
     }
 
@@ -189,7 +267,7 @@ PageBase {
         width: root.cappedWidth
         spacing: Tokens.spacing.medium
 
-        // Scope Switcher Header
+        // Header: Scope Switcher & Expert Mode Toggle
         ConnectedRect {
             Layout.fillWidth: true
             first: true
@@ -203,21 +281,37 @@ PageBase {
                 spacing: Tokens.spacing.medium
 
                 IconTextButton {
-                    text: qsTr("System Services (%1)").arg(root.systemServices.length)
-                    icon: "dns"
-                    type: root.selectedScope === "system" ? TextButton.Filled : TextButton.Tonal
-                    onClicked: root.selectedScope = "system"
-                }
-
-                IconTextButton {
                     text: qsTr("User Services (%1)").arg(root.userServices.length)
                     icon: "person"
                     type: root.selectedScope === "user" ? TextButton.Filled : TextButton.Tonal
                     onClicked: root.selectedScope = "user"
                 }
 
+                IconTextButton {
+                    text: qsTr("System Services (%1)").arg(root.systemServices.length)
+                    icon: "dns"
+                    type: root.selectedScope === "system" ? TextButton.Filled : TextButton.Tonal
+                    onClicked: root.selectedScope = "system"
+                }
+
                 Item {
                     Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    visible: root.selectedScope === "system"
+                    spacing: Tokens.spacing.small
+
+                    StyledText {
+                        text: qsTr("Expert Mode")
+                        font: Tokens.font.label.large
+                        color: root.expertMode ? Colours.palette.m3error : Colours.palette.m3onSurface
+                    }
+
+                    StyledSwitch {
+                        checked: root.expertMode
+                        onToggled: root.expertMode = checked
+                    }
                 }
 
                 IconButton {
@@ -225,6 +319,73 @@ PageBase {
                     type: IconButton.Tonal
                     tooltipText: qsTr("Refresh services")
                     onClicked: root.fetchServices()
+                }
+            }
+        }
+
+        // Scope Mode Information Banner
+        ConnectedRect {
+            Layout.fillWidth: true
+            visible: root.selectedScope === "system"
+            implicitHeight: bannerLayout.implicitHeight + Tokens.padding.medium * 2
+
+            RowLayout {
+                id: bannerLayout
+
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.medium
+                spacing: Tokens.spacing.medium
+
+                MaterialIcon {
+                    text: root.expertMode ? "warning" : "info"
+                    color: root.expertMode ? Colours.palette.m3error : Colours.palette.m3primary
+                    fontStyle: Tokens.font.icon.medium
+                }
+
+                StyledText {
+                    Layout.fillWidth: true
+                    text: root.expertMode ? qsTr("Expert Mode Enabled: Full control over system units is granted. Destructive actions require dependency verification and typed confirmation.") : qsTr("System Services Read-Only View: Non-allowlisted system services cannot be modified without enabling Expert Mode.")
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.body.small
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
+        // Error Banner (Discovery or Action Errors)
+        ConnectedRect {
+            Layout.fillWidth: true
+            visible: root.discoveryError.length > 0 || root.actionError.length > 0
+            implicitHeight: errorBannerLayout.implicitHeight + Tokens.padding.medium * 2
+
+            RowLayout {
+                id: errorBannerLayout
+
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.medium
+                spacing: Tokens.spacing.medium
+
+                MaterialIcon {
+                    text: "error"
+                    color: Colours.palette.m3error
+                    fontStyle: Tokens.font.icon.medium
+                }
+
+                StyledText {
+                    Layout.fillWidth: true
+                    text: root.discoveryError || root.actionError
+                    color: Colours.palette.m3onErrorContainer
+                    font: Tokens.font.body.medium
+                    wrapMode: Text.WordWrap
+                }
+
+                IconButton {
+                    icon: "close"
+                    type: IconButton.Text
+                    onClicked: {
+                        root.discoveryError = "";
+                        root.actionError = "";
+                    }
                 }
             }
         }
@@ -323,7 +484,7 @@ PageBase {
 
                 StyledText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("No matching systemd units found")
+                    text: root.discoveryError.length > 0 ? qsTr("Unable to retrieve systemd units (see error above)") : qsTr("No matching systemd units found")
                     color: Colours.palette.m3outline
                     font: Tokens.font.body.large
                 }
@@ -352,6 +513,10 @@ PageBase {
                     readonly property bool isActive: activeState === "active"
                     readonly property bool isFailed: activeState === "failed" || subState === "failed"
                     readonly property bool isBusy: !!root.busyUnits[unitName]
+
+                    readonly property bool isCritical: !!modelData.isCritical
+                    readonly property bool isAllowlisted: !!modelData.isAllowlisted
+                    readonly property bool canModify: root.selectedScope === "user" || root.expertMode || isAllowlisted
 
                     first: index === 0
                     last: index === root.filteredServices.length - 1
@@ -395,6 +560,7 @@ PageBase {
                                     elide: Text.ElideRight
                                 }
 
+                                // Active state badge
                                 StyledRect {
                                     radius: Tokens.rounding.extraSmall
                                     color: serviceItem.isFailed ? Colours.palette.m3errorContainer : (serviceItem.isActive ? Colours.palette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHighest)
@@ -411,6 +577,43 @@ PageBase {
                                     }
                                 }
 
+                                // Critical Service Badge
+                                StyledRect {
+                                    visible: serviceItem.isCritical
+                                    radius: Tokens.rounding.extraSmall
+                                    color: Colours.palette.m3errorContainer
+                                    implicitWidth: critBadgeText.implicitWidth + Tokens.padding.small * 2
+                                    implicitHeight: critBadgeText.implicitHeight + Tokens.padding.extraSmall
+
+                                    StyledText {
+                                        id: critBadgeText
+
+                                        anchors.centerIn: parent
+                                        text: qsTr("Critical")
+                                        color: Colours.palette.m3onErrorContainer
+                                        font: Tokens.font.label.small
+                                    }
+                                }
+
+                                // Read-Only Badge (in system mode when non-allowlisted and expert mode off)
+                                StyledRect {
+                                    visible: root.selectedScope === "system" && !serviceItem.canModify
+                                    radius: Tokens.rounding.extraSmall
+                                    color: Colours.tPalette.m3surfaceContainerHighest
+                                    implicitWidth: roBadgeText.implicitWidth + Tokens.padding.small * 2
+                                    implicitHeight: roBadgeText.implicitHeight + Tokens.padding.extraSmall
+
+                                    StyledText {
+                                        id: roBadgeText
+
+                                        anchors.centerIn: parent
+                                        text: qsTr("Read-Only")
+                                        color: Colours.palette.m3outline
+                                        font: Tokens.font.label.small
+                                    }
+                                }
+
+                                // File State Badge
                                 StyledRect {
                                     visible: serviceItem.fileState !== "unknown"
                                     radius: Tokens.rounding.extraSmall
@@ -457,42 +660,47 @@ PageBase {
 
                                 IconButton {
                                     visible: serviceItem.isActive
+                                    enabled: serviceItem.canModify
                                     icon: "refresh"
                                     type: IconButton.Tonal
-                                    tooltipText: qsTr("Restart service")
-                                    onClicked: root.executeServiceAction(serviceItem.unitName, "restart", root.selectedScope)
+                                    tooltipText: serviceItem.canModify ? qsTr("Restart service") : qsTr("Enable Expert Mode to modify system service")
+                                    onClicked: root.requestServiceAction(serviceItem.unitName, "restart", root.selectedScope, serviceItem.modelData)
                                 }
 
                                 IconButton {
                                     visible: serviceItem.isActive
+                                    enabled: serviceItem.canModify
                                     icon: "stop"
                                     type: IconButton.Tonal
-                                    tooltipText: qsTr("Stop service")
-                                    onClicked: root.executeServiceAction(serviceItem.unitName, "stop", root.selectedScope)
+                                    tooltipText: serviceItem.canModify ? qsTr("Stop service") : qsTr("Enable Expert Mode to modify system service")
+                                    onClicked: root.requestServiceAction(serviceItem.unitName, "stop", root.selectedScope, serviceItem.modelData)
                                 }
 
                                 IconButton {
                                     visible: !serviceItem.isActive
+                                    enabled: serviceItem.canModify
                                     icon: "play_arrow"
                                     type: IconButton.Tonal
-                                    tooltipText: qsTr("Start service")
-                                    onClicked: root.executeServiceAction(serviceItem.unitName, "start", root.selectedScope)
+                                    tooltipText: serviceItem.canModify ? qsTr("Start service") : qsTr("Enable Expert Mode to modify system service")
+                                    onClicked: root.requestServiceAction(serviceItem.unitName, "start", root.selectedScope, serviceItem.modelData)
                                 }
 
                                 IconButton {
                                     visible: serviceItem.fileState === "disabled"
+                                    enabled: serviceItem.canModify
                                     icon: "add_circle"
                                     type: IconButton.Text
-                                    tooltipText: qsTr("Enable on boot")
-                                    onClicked: root.executeServiceAction(serviceItem.unitName, "enable", root.selectedScope)
+                                    tooltipText: serviceItem.canModify ? qsTr("Enable on boot") : qsTr("Enable Expert Mode to modify system service")
+                                    onClicked: root.requestServiceAction(serviceItem.unitName, "enable", root.selectedScope, serviceItem.modelData)
                                 }
 
                                 IconButton {
                                     visible: serviceItem.fileState === "enabled"
+                                    enabled: serviceItem.canModify
                                     icon: "do_not_disturb_on"
                                     type: IconButton.Text
-                                    tooltipText: qsTr("Disable on boot")
-                                    onClicked: root.executeServiceAction(serviceItem.unitName, "disable", root.selectedScope)
+                                    tooltipText: serviceItem.canModify ? qsTr("Disable on boot") : qsTr("Enable Expert Mode to modify system service")
+                                    onClicked: root.requestServiceAction(serviceItem.unitName, "disable", root.selectedScope, serviceItem.modelData)
                                 }
                             }
                         }
@@ -502,12 +710,14 @@ PageBase {
         }
     }
 
-    // Critical Service Confirmation Dialog Overlay
+    // Dependency & Impact Preview Confirmation Dialog Overlay
     Item {
-        id: criticalDialogOverlay
+        id: impactDialogOverlay
+
+        readonly property var impactData: root.pendingImpactData
 
         anchors.fill: parent
-        visible: root.pendingCriticalAction !== null
+        visible: impactData !== null
         z: 9999
 
         Rectangle {
@@ -516,13 +726,13 @@ PageBase {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: root.cancelCriticalAction()
+                onClicked: root.cancelImpactAction()
             }
         }
 
         StyledRect {
             anchors.centerIn: parent
-            width: Math.min(480, parent.width - 32)
+            width: Math.min(520, parent.width - 32)
             implicitHeight: dialogLayout.implicitHeight + Tokens.padding.large * 2
             color: Colours.tPalette.m3surfaceContainerHigh
             radius: Tokens.rounding.large
@@ -540,24 +750,95 @@ PageBase {
 
                 MaterialIcon {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "warning"
-                    color: Colours.palette.m3error
+                    text: (impactDialogOverlay.impactData && impactDialogOverlay.impactData.isCriticalChain) ? "warning" : "info"
+                    color: (impactDialogOverlay.impactData && impactDialogOverlay.impactData.isCriticalChain) ? Colours.palette.m3error : Colours.palette.m3primary
                     fontStyle: Tokens.font.icon.extraLarge
                 }
 
                 StyledText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Critical System Service Warning")
+                    text: qsTr("Confirm %1: %2").arg((root.currentActionType || "action").toUpperCase()).arg(impactDialogOverlay.impactData ? impactDialogOverlay.impactData.unit : "")
                     font: Tokens.font.title.medium
                 }
 
-                StyledText {
+                // Impact/Critical Warning Message
+                StyledRect {
                     Layout.fillWidth: true
-                    text: qsTr("Modifying critical service '%1' may cause system or desktop session instability. Are you sure you want to proceed?").arg(root.pendingCriticalAction ? root.pendingCriticalAction.unit : "")
-                    color: Colours.palette.m3onSurfaceVariant
-                    font: Tokens.font.body.medium
-                    wrapMode: Text.WordWrap
-                    horizontalAlignment: Text.AlignHCenter
+                    visible: impactDialogOverlay.impactData && (impactDialogOverlay.impactData.isCriticalChain || impactDialogOverlay.impactData.isCritical)
+                    color: Colours.palette.m3errorContainer
+                    radius: Tokens.rounding.medium
+                    implicitHeight: warnLayout.implicitHeight + Tokens.padding.medium * 2
+
+                    ColumnLayout {
+                        id: warnLayout
+
+                        anchors.fill: parent
+                        anchors.margins: Tokens.padding.medium
+                        spacing: Tokens.spacing.extraSmall
+
+                        StyledText {
+                            text: qsTr("CRITICAL SERVICE WARNING")
+                            font: Tokens.font.label.large
+                            color: Colours.palette.m3onErrorContainer
+                        }
+
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: impactDialogOverlay.impactData ? (impactDialogOverlay.impactData.chainReason || impactDialogOverlay.impactData.criticalReason || qsTr("Modifying this service may impact system or session stability.")) : ""
+                            color: Colours.palette.m3onErrorContainer
+                            font: Tokens.font.body.small
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
+                // Active Dependents Section
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: Tokens.spacing.extraSmall
+
+                    StyledText {
+                        text: {
+                            const deps = impactDialogOverlay.impactData ? impactDialogOverlay.impactData.activeDependents : [];
+                            return (deps && deps.length > 0) ? qsTr("Active Dependent Services Affected (%1):").arg(deps.length) : qsTr("No active dependent services affected.");
+                        }
+                        font: Tokens.font.label.medium
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+
+                    Repeater {
+                        model: impactDialogOverlay.impactData ? (impactDialogOverlay.impactData.activeDependents || []) : []
+
+                        delegate: StyledText {
+                            required property string modelData
+                            text: "• " + modelData
+                            font: Tokens.font.body.small
+                            color: Colours.palette.m3error
+                        }
+                    }
+                }
+
+                // Typed Confirmation Instruction & Input Field
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: Tokens.spacing.extraSmall
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: qsTr("Type the exact unit name '%1' below to confirm:").arg(impactDialogOverlay.impactData ? impactDialogOverlay.impactData.unit : "")
+                        font: Tokens.font.body.small
+                        color: Colours.palette.m3onSurface
+                        wrapMode: Text.WordWrap
+                    }
+
+                    StyledTextField {
+                        id: typedInput
+
+                        Layout.fillWidth: true
+                        placeholderText: impactDialogOverlay.impactData ? impactDialogOverlay.impactData.unit : ""
+                        text: root.confirmTypedText
+                        onTextChanged: root.confirmTypedText = text
+                    }
                 }
 
                 RowLayout {
@@ -567,16 +848,29 @@ PageBase {
                     TextButton {
                         text: qsTr("Cancel")
                         type: TextButton.Tonal
-                        onClicked: root.cancelCriticalAction()
+                        onClicked: root.cancelImpactAction()
                     }
 
                     TextButton {
-                        text: qsTr("Proceed")
+                        text: qsTr("Proceed & Execute")
                         type: TextButton.Filled
-                        onClicked: root.confirmCriticalAction()
+                        enabled: {
+                            if (!impactDialogOverlay.impactData) return false;
+                            const target = (impactDialogOverlay.impactData.unit || "").trim().toLowerCase();
+                            const val = root.confirmTypedText.trim().toLowerCase();
+                            return val === target || val + ".service" === target;
+                        }
+                        onClicked: {
+                            const unit = impactDialogOverlay.impactData.unit;
+                            const act = root.currentActionType;
+                            root.pendingImpactData = null;
+                            root.confirmTypedText = "";
+                            root.confirmAndRunAction(unit, act, root.selectedScope);
+                        }
                     }
                 }
             }
         }
     }
 }
+
