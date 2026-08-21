@@ -226,7 +226,7 @@ Singleton {
         readonly property bool isInternalPanel: valid && (name.startsWith("eDP-")
             || name.startsWith("LVDS-") || name.startsWith("DSI-"))
         property int maxBrightness: isAppleDisplay ? 101 : 100
-        property real brightness
+        property real brightness: 1.0
         property real queuedBrightness: NaN
         property bool initPending: false
 
@@ -249,6 +249,9 @@ Singleton {
                 }
             }
             onExited: {
+                if (!Number.isFinite(monitor.brightness)) {
+                    monitor.brightness = 1.0;
+                }
                 if (monitor.initPending) {
                     monitor.initPending = false;
                     Qt.callLater(() => monitor.initBrightness());

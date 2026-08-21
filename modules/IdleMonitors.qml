@@ -28,8 +28,6 @@ Scope {
 
         if (action === "lock")
             lock.lock.locked = true;
-        else if (action === "unlock")
-            lock.lock.unlock();
         else if (typeof action === "string")
             Hypr.dispatch(Hypr.usingLua && ["dpms off", "dpms on"].includes(action) ? `hl.dsp.dpms({ action = "${action === "dpms off" ? "disable" : "enable"}" })` : action);
         else
@@ -44,7 +42,6 @@ Scope {
         // Hyprland reports a real connector change. Do not reconfigure outputs
         // from the sleep transition itself; the GPU may still be resuming.
         onLockRequested: root.lock.lock.locked = true
-        onUnlockRequested: root.lock.lock.unlock()
     }
 
     Variants {

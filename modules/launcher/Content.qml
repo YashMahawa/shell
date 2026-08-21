@@ -107,10 +107,13 @@ Item {
             Keys.onEscapePressed: root.visibilities.launcher = false
 
             Keys.onPressed: event => {
-                if (!GlobalConfig.launcher.vimKeybinds)
-                    return;
-
-                if (event.modifiers & Qt.ControlModifier) {
+                if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                    list.currentList?.decrementCurrentIndex();
+                    event.accepted = true;
+                } else if (event.key === Qt.Key_Tab) {
+                    list.currentList?.incrementCurrentIndex();
+                    event.accepted = true;
+                } else if (GlobalConfig.launcher.vimKeybinds && (event.modifiers & Qt.ControlModifier)) {
                     if (event.key === Qt.Key_J || event.key === Qt.Key_N) {
                         list.currentList?.incrementCurrentIndex();
                         event.accepted = true;
@@ -118,12 +121,6 @@ Item {
                         list.currentList?.decrementCurrentIndex();
                         event.accepted = true;
                     }
-                } else if (event.key === Qt.Key_Tab) {
-                    list.currentList?.incrementCurrentIndex();
-                    event.accepted = true;
-                } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
-                    list.currentList?.decrementCurrentIndex();
-                    event.accepted = true;
                 }
             }
 
@@ -172,7 +169,10 @@ Item {
                 hoverEnabled: true
                 cursorShape: search.text ? Qt.PointingHandCursor : undefined
 
-                onClicked: search.text = ""
+                onClicked: {
+                    search.text = "";
+                    search.forceActiveFocus();
+                }
             }
 
             Behavior on width {

@@ -45,6 +45,8 @@ public:
     [[nodiscard]] QString categories() const;
     [[nodiscard]] QString keywords() const;
 
+    [[nodiscard]] Q_INVOKABLE QVariant getProperty(const QString& name) const;
+
 signals:
     void frequencyChanged();
     void nameChanged();
@@ -56,6 +58,8 @@ signals:
     void keywordsChanged();
 
 private:
+    QVariant valueForProperty(const char* name) const;
+
     QObject* m_entry;
     quint32 m_frequency;
 };
