@@ -11,6 +11,10 @@ namespace caelestia::services {
 
 BluetoothAgent::BluetoothAgent(QObject* parent)
     : QObject(parent) {
+    m_timeoutTimer = new QTimer(this);
+    m_timeoutTimer->setSingleShot(true);
+    connect(m_timeoutTimer, &QTimer::timeout, this, &BluetoothAgent::handleTimeout);
+
     auto bus = QDBusConnection::systemBus();
     if (bus.isConnected()) {
         m_serviceWatcher = new QDBusServiceWatcher(
@@ -22,8 +26,6 @@ BluetoothAgent::BluetoothAgent(QObject* parent)
 
         connect(m_serviceWatcher, &QDBusServiceWatcher::serviceOwnerChanged,
                 this, &BluetoothAgent::onBluezServiceOwnerChanged);
-
-        checkAdapterStatus();
     } else {
         qCWarning(lcBtAgent) << "System bus not connected, BluetoothAgent cannot register.";
     }
@@ -52,7 +54,10 @@ void BluetoothAgent::registerAgent() {
     if (!bus.isConnected()) return;
 
     const QString agentPath = QStringLiteral("/org/caelestia/BluetoothAgent");
-    bus.registerObject(agentPath, this, QDBusConnection::ExportAllSlots);
+    if (!bus.registerObject(agentPath, this, QDBusConnection::ExportAllSlots)) {
+        qCWarning(lcBtAgent) << "Failed to register DBus object at" << agentPath;
+        return;
+    }
 
     QDBusInterface agentManager(
         QStringLiteral("org.bluez"),
@@ -61,60 +66,70 @@ void BluetoothAgent::registerAgent() {
         bus
     );
 
-    if (agentManager.isValid()) {
-        QDBusObjectPath path(agentPath);
-        QDBusReply<void> regReply = agentManager.call(
-            QStringLiteral("RegisterAgent"),
-            QVariant::fromValue(path),
-            m_capability
-        );
-
-        if (regReply.isValid()) {
-            QDBusReply<void> defReply = agentManager.call(
-                QStringLiteral("RequestDefaultAgent"),
-                QVariant::fromValue(path)
-            );
-            if (!defReply.isValid()) {
-                qCWarning(lcBtAgent) << "Failed to set default agent:" << defReply.error().message();
-            }
-
-            m_registered = true;
-            qCInfo(lcBtAgent) << "Registered BlueZ agent at" << agentPath << "with capability" << m_capability;
-            emit registeredChanged();
-        } else {
-            qCWarning(lcBtAgent) << "Failed to register BlueZ agent:" << regReply.error().message();
-        }
-    } else {
+    if (!agentManager.isValid()) {
         qCWarning(lcBtAgent) << "BlueZ AgentManager1 interface not available.";
+        bus.unregisterObject(agentPath);
+        return;
     }
+
+    QDBusObjectPath path(agentPath);
+    QDBusReply<void> regReply = agentManager.call(
+        QStringLiteral("RegisterAgent"),
+        QVariant::fromValue(path),
+        m_capability
+    );
+
+    if (!regReply.isValid()) {
+        qCWarning(lcBtAgent) << "Failed to register BlueZ agent:" << regReply.error().message();
+        bus.unregisterObject(agentPath);
+        return;
+    }
+
+    QDBusReply<void> defReply = agentManager.call(
+        QStringLiteral("RequestDefaultAgent"),
+        QVariant::fromValue(path)
+    );
+    if (!defReply.isValid()) {
+        qCWarning(lcBtAgent) << "Failed to set default agent:" << defReply.error().message();
+    }
+
+    m_registered = true;
+    m_wasRegistered = true;
+    qCInfo(lcBtAgent) << "Registered BlueZ agent at" << agentPath << "with capability" << m_capability;
+    emit registeredChanged();
 }
 
 void BluetoothAgent::unregisterAgent() {
-    if (!m_registered) return;
-
+    m_wasRegistered = false;
+    const QString agentPath = QStringLiteral("/org/caelestia/BluetoothAgent");
     auto bus = QDBusConnection::systemBus();
     if (bus.isConnected()) {
-        const QString agentPath = QStringLiteral("/org/caelestia/BluetoothAgent");
-        QDBusInterface agentManager(
-            QStringLiteral("org.bluez"),
-            QStringLiteral("/org/bluez"),
-            QStringLiteral("org.bluez.AgentManager1"),
-            bus
-        );
+        if (m_registered) {
+            QDBusInterface agentManager(
+                QStringLiteral("org.bluez"),
+                QStringLiteral("/org/bluez"),
+                QStringLiteral("org.bluez.AgentManager1"),
+                bus
+            );
 
-        if (agentManager.isValid()) {
-            QDBusObjectPath path(agentPath);
-            agentManager.call(QStringLiteral("UnregisterAgent"), QVariant::fromValue(path));
+            if (agentManager.isValid()) {
+                QDBusObjectPath path(agentPath);
+                agentManager.call(QStringLiteral("UnregisterAgent"), QVariant::fromValue(path));
+            }
         }
         bus.unregisterObject(agentPath);
     }
 
-    m_registered = false;
-    qCInfo(lcBtAgent) << "Unregistered BlueZ agent";
-    emit registeredChanged();
+    if (m_registered) {
+        m_registered = false;
+        qCInfo(lcBtAgent) << "Unregistered BlueZ agent";
+        emit registeredChanged();
+    }
 }
 
 void BluetoothAgent::respondPinCode(const QString& pin) {
+    if (m_timeoutTimer) m_timeoutTimer->stop();
+
     if (m_hasPendingMsg) {
         auto bus = QDBusConnection::systemBus();
         bus.send(m_pendingMsg.createReply(pin));
@@ -127,6 +142,8 @@ void BluetoothAgent::respondPinCode(const QString& pin) {
 }
 
 void BluetoothAgent::respondPasskey(quint32 passkey) {
+    if (m_timeoutTimer) m_timeoutTimer->stop();
+
     if (m_hasPendingMsg) {
         auto bus = QDBusConnection::systemBus();
         bus.send(m_pendingMsg.createReply(passkey));
@@ -139,6 +156,8 @@ void BluetoothAgent::respondPasskey(quint32 passkey) {
 }
 
 void BluetoothAgent::respondConfirmation(bool accept) {
+    if (m_timeoutTimer) m_timeoutTimer->stop();
+
     if (m_hasPendingMsg) {
         auto bus = QDBusConnection::systemBus();
         if (accept) {
@@ -166,9 +185,9 @@ void BluetoothAgent::respondAuthorization(bool accept) {
 }
 
 void BluetoothAgent::cancelPairing() {
+    if (m_timeoutTimer) m_timeoutTimer->stop();
+
     clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Pairing canceled by user"));
-    m_requestActive = false;
-    emit requestActiveChanged();
     emit pairingCanceled();
 }
 
@@ -183,7 +202,8 @@ void BluetoothAgent::clearError() {
 void BluetoothAgent::Release() {
     qCInfo(lcBtAgent) << "Agent released by BlueZ";
     m_registered = false;
-    clearPendingRequest();
+    m_wasRegistered = false;
+    clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Agent released by BlueZ"));
     emit registeredChanged();
 }
 
@@ -204,6 +224,16 @@ QString BluetoothAgent::RequestPinCode(const QDBusObjectPath& device) {
 
 void BluetoothAgent::DisplayPinCode(const QDBusObjectPath& device, const QString& pincode) {
     qCInfo(lcBtAgent) << "DisplayPinCode for" << device.path() << ":" << pincode;
+
+    if (m_requestActive && m_devicePath == device.path() && m_requestType == QStringLiteral("displaypin")) {
+        if (m_pinCode != pincode) {
+            m_pinCode = pincode;
+            emit pinCodeChanged();
+        }
+        if (m_timeoutTimer) m_timeoutTimer->start(60000);
+        return;
+    }
+
     clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
     fetchDeviceInfo(device);
     m_pinCode = pincode;
@@ -228,6 +258,20 @@ quint32 BluetoothAgent::RequestPasskey(const QDBusObjectPath& device) {
 
 void BluetoothAgent::DisplayPasskey(const QDBusObjectPath& device, quint32 passkey, quint16 entered) {
     qCInfo(lcBtAgent) << "DisplayPasskey for" << device.path() << ":" << passkey << "(" << entered << "entered)";
+
+    if (m_requestActive && m_devicePath == device.path() && m_requestType == QStringLiteral("displaypasskey")) {
+        if (m_passkey != passkey) {
+            m_passkey = passkey;
+            emit passkeyChanged();
+        }
+        if (m_passkeyEntered != entered) {
+            m_passkeyEntered = entered;
+            emit passkeyEnteredChanged();
+        }
+        if (m_timeoutTimer) m_timeoutTimer->start(60000);
+        return;
+    }
+
     clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Canceled by new pairing request"));
     fetchDeviceInfo(device);
     m_passkey = passkey;
@@ -277,13 +321,26 @@ void BluetoothAgent::AuthorizeService(const QDBusObjectPath& device, const QStri
 
 void BluetoothAgent::Cancel() {
     qCInfo(lcBtAgent) << "Pairing request canceled by remote device or BlueZ";
+    if (m_timeoutTimer) m_timeoutTimer->stop();
     m_hasPendingMsg = false;
     m_pairingError = tr("Pairing canceled or timed out.");
     emit pairingErrorChanged();
 
-    m_requestActive = false;
-    emit requestActiveChanged();
+    if (m_requestActive) {
+        m_requestActive = false;
+        emit requestActiveChanged();
+    }
     emit pairingCanceled();
+}
+
+void BluetoothAgent::handleTimeout() {
+    qCInfo(lcBtAgent) << "Pairing request timed out";
+    if (m_requestActive || m_hasPendingMsg) {
+        clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("Pairing request timed out"));
+        m_pairingError = tr("Pairing request timed out.");
+        emit pairingErrorChanged();
+        emit pairingCanceled();
+    }
 }
 
 void BluetoothAgent::onBluezServiceOwnerChanged(const QString& service, const QString& oldOwner, const QString& newOwner) {
@@ -292,28 +349,16 @@ void BluetoothAgent::onBluezServiceOwnerChanged(const QString& service, const QS
 
     if (newOwner.isEmpty()) {
         qCInfo(lcBtAgent) << "BlueZ service stopped";
-        m_registered = false;
-        clearPendingRequest();
-        emit registeredChanged();
+        clearPendingRequest(true, QStringLiteral("org.bluez.Error.Canceled"), QStringLiteral("BlueZ service stopped"));
+        if (m_registered) {
+            m_registered = false;
+            emit registeredChanged();
+        }
     } else {
         qCInfo(lcBtAgent) << "BlueZ service started/changed owner";
-        checkAdapterStatus();
-    }
-}
-
-void BluetoothAgent::checkAdapterStatus() {
-    auto bus = QDBusConnection::systemBus();
-    if (!bus.isConnected()) return;
-
-    QDBusInterface manager(
-        QStringLiteral("org.bluez"),
-        QStringLiteral("/"),
-        QStringLiteral("org.freedesktop.DBus.ObjectManager"),
-        bus
-    );
-
-    if (manager.isValid()) {
-        registerAgent();
+        if (m_wasRegistered) {
+            registerAgent();
+        }
     }
 }
 
@@ -360,7 +405,7 @@ void BluetoothAgent::setPendingRequest(const QDBusMessage& msg, const QString& t
     Q_UNUSED(device);
 
     m_pendingMsg = msg;
-    m_hasPendingMsg = msg.type() == QDBusMessage::MethodCallMessage;
+    m_hasPendingMsg = (msg.type() == QDBusMessage::MethodCallMessage);
     m_requestType = type;
     emit requestTypeChanged();
 
@@ -368,10 +413,15 @@ void BluetoothAgent::setPendingRequest(const QDBusMessage& msg, const QString& t
 
     m_requestActive = true;
     emit requestActiveChanged();
+
+    if (m_timeoutTimer) m_timeoutTimer->start(60000);
+
     emit pairingRequested();
 }
 
 void BluetoothAgent::clearPendingRequest(bool sendError, const QString& errorName, const QString& errorMsg) {
+    if (m_timeoutTimer) m_timeoutTimer->stop();
+
     if (m_hasPendingMsg) {
         if (sendError) {
             auto bus = QDBusConnection::systemBus();

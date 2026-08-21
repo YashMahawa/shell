@@ -22,6 +22,12 @@ Scope {
 
     property string pinInputBuffer: ""
 
+    Component.onCompleted: {
+        if (Bluetooth.defaultAdapter?.enabled) {
+            BluetoothAgent.registerAgent();
+        }
+    }
+
     Connections {
         function onEnabledChanged(): void {
             if (Bluetooth.defaultAdapter?.enabled) {

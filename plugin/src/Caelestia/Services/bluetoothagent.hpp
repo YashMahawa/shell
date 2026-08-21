@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QVariantMap>
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusContext>
@@ -89,14 +90,15 @@ public slots: // org.bluez.Agent1 interface slots
 
 private slots:
     void onBluezServiceOwnerChanged(const QString& service, const QString& oldOwner, const QString& newOwner);
-    void checkAdapterStatus();
+    void handleTimeout();
 
 private:
     void fetchDeviceInfo(const QDBusObjectPath& device);
     void setPendingRequest(const QDBusMessage& msg, const QString& type, const QDBusObjectPath& device);
-    void clearPendingRequest(bool sendError = false, const QString& errorName = QString(), const QString& errorMsg = QString());
+    void clearPendingRequest(bool sendError = true, const QString& errorName = QStringLiteral("org.bluez.Error.Canceled"), const QString& errorMsg = QStringLiteral("Canceled"));
 
     bool m_registered = false;
+    bool m_wasRegistered = false;
     bool m_requestActive = false;
     QString m_requestType;
     QString m_devicePath;
@@ -112,6 +114,7 @@ private:
     QDBusMessage m_pendingMsg;
     bool m_hasPendingMsg = false;
     QDBusServiceWatcher* m_serviceWatcher = nullptr;
+    QTimer* m_timeoutTimer = nullptr;
 };
 
 } // namespace caelestia::services

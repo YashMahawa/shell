@@ -14,10 +14,15 @@ private slots:
     void testRequestPasskey();
     void testRequestConfirmation();
     void testRequestAuthorization();
+    void testRepeatedDisplayPasskey();
+    void testRepeatedDisplayPinCode();
     void testSingleActiveRequest();
     void testCancelByRemote();
     void testUserCancel();
     void testRelease();
+    void testBluezRestart();
+    void testRegistrationFailure();
+    void testTimeout();
 };
 
 void TestBluetoothAgent::testInitialState() {
@@ -106,6 +111,54 @@ void TestBluetoothAgent::testRequestAuthorization() {
     QCOMPARE(finSpy.count(), 1);
 }
 
+void TestBluetoothAgent::testRepeatedDisplayPasskey() {
+    BluetoothAgent agent;
+    QSignalSpy reqSpy(&agent, &BluetoothAgent::pairingRequested);
+    QSignalSpy passkeySpy(&agent, &BluetoothAgent::passkeyChanged);
+    QSignalSpy enteredSpy(&agent, &BluetoothAgent::passkeyEnteredChanged);
+
+    QDBusObjectPath devPath("/org/bluez/hci0/dev_11_22_33_44_55_66");
+
+    // Initial DisplayPasskey call
+    agent.DisplayPasskey(devPath, 123456, 0);
+    QCOMPARE(agent.requestActive(), true);
+    QCOMPARE(agent.requestType(), QString("displaypasskey"));
+    QCOMPARE(agent.passkey(), static_cast<quint32>(123456));
+    QCOMPARE(agent.passkeyEntered(), static_cast<quint16>(0));
+    QCOMPARE(reqSpy.count(), 1);
+
+    // Repeated DisplayPasskey calls for keypresses (1st digit entered)
+    agent.DisplayPasskey(devPath, 123456, 1);
+    QCOMPARE(agent.requestActive(), true);
+    QCOMPARE(agent.passkeyEntered(), static_cast<quint16>(1));
+    QCOMPARE(reqSpy.count(), 1); // Should NOT re-emit pairingRequested
+    QCOMPARE(enteredSpy.count(), 1);
+
+    // Repeated DisplayPasskey call (2nd digit entered)
+    agent.DisplayPasskey(devPath, 123456, 2);
+    QCOMPARE(agent.passkeyEntered(), static_cast<quint16>(2));
+    QCOMPARE(reqSpy.count(), 1); // Still 1
+    QCOMPARE(enteredSpy.count(), 2);
+}
+
+void TestBluetoothAgent::testRepeatedDisplayPinCode() {
+    BluetoothAgent agent;
+    QSignalSpy reqSpy(&agent, &BluetoothAgent::pairingRequested);
+    QSignalSpy pinSpy(&agent, &BluetoothAgent::pinCodeChanged);
+
+    QDBusObjectPath devPath("/org/bluez/hci0/dev_11_22_33_44_55_66");
+
+    agent.DisplayPinCode(devPath, "1234");
+    QCOMPARE(agent.requestActive(), true);
+    QCOMPARE(agent.pinCode(), QString("1234"));
+    QCOMPARE(reqSpy.count(), 1);
+
+    agent.DisplayPinCode(devPath, "123456");
+    QCOMPARE(agent.requestActive(), true);
+    QCOMPARE(agent.pinCode(), QString("123456"));
+    QCOMPARE(reqSpy.count(), 1); // Updated in place without re-triggering pairingRequested
+}
+
 void TestBluetoothAgent::testSingleActiveRequest() {
     BluetoothAgent agent;
 
@@ -151,6 +204,8 @@ void TestBluetoothAgent::testUserCancel() {
 
 void TestBluetoothAgent::testRelease() {
     BluetoothAgent agent;
+    QSignalSpy regSpy(&agent, &BluetoothAgent::registeredChanged);
+
     QDBusObjectPath devPath("/org/bluez/hci0/dev_11_22_33_44_55_66");
     agent.RequestConfirmation(devPath, 123456);
     QCOMPARE(agent.requestActive(), true);
@@ -158,6 +213,51 @@ void TestBluetoothAgent::testRelease() {
     agent.Release();
     QCOMPARE(agent.registered(), false);
     QCOMPARE(agent.requestActive(), false);
+    QCOMPARE(regSpy.count(), 1);
+}
+
+void TestBluetoothAgent::testBluezRestart() {
+    BluetoothAgent agent;
+
+    // Call registerAgent (will set wasRegistered if system bus connected or safely handle disconnection)
+    agent.registerAgent();
+
+    // Simulate BlueZ stopping
+    QMetaObject::invokeMethod(&agent, "onBluezServiceOwnerChanged",
+                              Q_ARG(QString, "org.bluez"),
+                              Q_ARG(QString, "1.1"),
+                              Q_ARG(QString, ""));
+    QCOMPARE(agent.registered(), false);
+
+    // Simulate BlueZ starting back up
+    QMetaObject::invokeMethod(&agent, "onBluezServiceOwnerChanged",
+                              Q_ARG(QString, "org.bluez"),
+                              Q_ARG(QString, ""),
+                              Q_ARG(QString, "1.2"));
+}
+
+void TestBluetoothAgent::testRegistrationFailure() {
+    BluetoothAgent agent;
+    // Attempt registration when system bus is disconnected or invalid
+    agent.registerAgent();
+    // Verify object path was not left registered if agent registration failed
+    QCOMPARE(agent.registered(), false);
+}
+
+void TestBluetoothAgent::testTimeout() {
+    BluetoothAgent agent;
+    QSignalSpy cancelSpy(&agent, &BluetoothAgent::pairingCanceled);
+
+    QDBusObjectPath devPath("/org/bluez/hci0/dev_11_22_33_44_55_66");
+    agent.RequestConfirmation(devPath, 123456);
+    QCOMPARE(agent.requestActive(), true);
+
+    // Trigger handleTimeout directly
+    QMetaObject::invokeMethod(&agent, "handleTimeout");
+
+    QCOMPARE(agent.requestActive(), false);
+    QCOMPARE(cancelSpy.count(), 1);
+    QCOMPARE(agent.pairingError(), QString("Pairing request timed out."));
 }
 
 QTEST_MAIN(TestBluetoothAgent)
