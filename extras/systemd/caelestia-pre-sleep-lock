@@ -5,48 +5,145 @@ log() {
     printf '%s\n' "$*" >&2
 }
 
+LOGINCTL="${LOGINCTL:-loginctl}"
+GETENT="${GETENT:-getent}"
+SETPRIV="${SETPRIV:-setpriv}"
+TIMEOUT="${TIMEOUT:-timeout}"
+SLEEP="${SLEEP:-sleep}"
+GREP="${GREP:-grep}"
+SEQ="${SEQ:-seq}"
+
+SESSION_RETRIES="${SESSION_RETRIES:-5}"
+SESSION_RETRY_DELAY="${SESSION_RETRY_DELAY:-0.2}"
+
+LOCK_ACK_TIMEOUT_LOOPS="${LOCK_ACK_TIMEOUT_LOOPS:-20}"
+LOCK_ACK_LOOP_INTERVAL="${LOCK_ACK_LOOP_INTERVAL:-0.15}"
+
+is_active_user_graphical_session() {
+    local candidate="$1"
+    [[ -n "$candidate" ]] || return 1
+
+    local active remote type session_class user_name
+    active="$("$LOGINCTL" show-session "$candidate" -p Active --value 2>/dev/null || true)"
+    remote="$("$LOGINCTL" show-session "$candidate" -p Remote --value 2>/dev/null || true)"
+    type="$("$LOGINCTL" show-session "$candidate" -p Type --value 2>/dev/null || true)"
+    session_class="$("$LOGINCTL" show-session "$candidate" -p Class --value 2>/dev/null || true)"
+    user_name="$("$LOGINCTL" show-session "$candidate" -p Name --value 2>/dev/null || true)"
+
+    if [[ "$active" != yes || "$remote" != no ]]; then
+        return 1
+    fi
+
+    if [[ "$type" != wayland && "$type" != x11 ]]; then
+        return 1
+    fi
+
+    if [[ "$session_class" == greeter ]]; then
+        return 1
+    fi
+
+    case "$user_name" in
+        sddm|gdm|lightdm|greeter|greetd)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+find_active_user_session() {
+    local candidate active_id="" active_uid="" active_user=""
+    while read -r candidate _; do
+        [[ -n "$candidate" ]] || continue
+        if is_active_user_graphical_session "$candidate"; then
+            active_id="$candidate"
+            active_uid="$("$LOGINCTL" show-session "$candidate" -p User --value 2>/dev/null || true)"
+            active_user="$("$LOGINCTL" show-session "$candidate" -p Name --value 2>/dev/null || true)"
+            if [[ -n "$active_id" && -n "$active_uid" && -n "$active_user" ]]; then
+                printf '%s %s %s\n' "$active_id" "$active_uid" "$active_user"
+                return 0
+            fi
+        fi
+    done < <("$LOGINCTL" list-sessions --no-legend 2>/dev/null || true)
+    return 1
+}
+
 session_id=""
 user_id=""
 user_name=""
-while read -r candidate _; do
-    [[ -n "$candidate" ]] || continue
-    active="$(loginctl show-session "$candidate" -p Active --value 2>/dev/null || true)"
-    remote="$(loginctl show-session "$candidate" -p Remote --value 2>/dev/null || true)"
-    type="$(loginctl show-session "$candidate" -p Type --value 2>/dev/null || true)"
-    if [[ "$active" == yes && "$remote" == no && ( "$type" == wayland || "$type" == x11 ) ]]; then
-        session_id="$candidate"
-        user_id="$(loginctl show-session "$candidate" -p User --value 2>/dev/null || true)"
-        user_name="$(loginctl show-session "$candidate" -p Name --value 2>/dev/null || true)"
-        break
+
+for ((i = 1; i <= SESSION_RETRIES; i++)); do
+    if session_info="$(find_active_user_session)"; then
+        read -r session_id user_id user_name <<< "$session_info"
+        if [[ -n "$session_id" && -n "$user_id" && -n "$user_name" ]]; then
+            break
+        fi
     fi
-done < <(loginctl list-sessions --no-legend 2>/dev/null || true)
+    if (( i < SESSION_RETRIES )); then
+        "$SLEEP" "$SESSION_RETRY_DELAY" 2>/dev/null || true
+    fi
+done
 
 if [[ -z "$session_id" || -z "$user_id" || -z "$user_name" ]]; then
-    log "pre-sleep: active session parameter resolution failed; refusing unsafe sleep"
-    exit 1
+    log "pre-sleep: no active local graphical user session found; allowing sleep"
+    exit 0
 fi
 
-user_home="$(getent passwd "$user_id" | cut -d: -f6)"
+user_home="$("$GETENT" passwd "$user_id" 2>/dev/null | cut -d: -f6 || true)"
+if [[ -z "$user_home" ]]; then
+    user_home="/home/${user_name}"
+fi
 runtime_dir="/run/user/${user_id}"
-ipc="${user_home}/.local/bin/caelestia-qs-ipc"
+ipc="${CAELESTIA_IPC_PATH:-${user_home}/.local/bin/caelestia-qs-ipc}"
+
 run_user() {
-    /usr/bin/setpriv --reuid="$user_id" --regid="$user_id" --init-groups \
+    "$SETPRIV" --reuid="$user_id" --regid="$user_id" --init-groups \
         /usr/bin/env HOME="$user_home" USER="$user_name" LOGNAME="$user_name" \
         XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus" "$@"
 }
 
-[[ -x "$ipc" ]] || { log "pre-sleep: IPC unavailable; refusing unsafe sleep"; exit 1; }
-run_user /usr/bin/timeout 4 "$ipc" lock safeLock >&2 || {
-    log "pre-sleep: lock request failed; refusing unsafe sleep"
-    exit 1
+session_still_active() {
+    is_active_user_graphical_session "$session_id"
 }
 
-for _ in $(/usr/bin/seq 1 20); do
-    if run_user /usr/bin/timeout 1 "$ipc" lock isLocked 2>/dev/null | /usr/bin/grep -qx true; then
-        log "pre-sleep: secure lock confirmed"
+if [[ ! -x "$ipc" ]]; then
+    if session_still_active; then
+        log "pre-sleep: IPC unavailable for active session $session_id; refusing unsafe sleep"
+        exit 1
+    else
+        log "pre-sleep: session $session_id disappeared when checking IPC; allowing sleep"
         exit 0
     fi
-    /usr/bin/sleep 0.15
+fi
+
+if ! run_user "$TIMEOUT" 4 "$ipc" lock safeLock >&2; then
+    if session_still_active; then
+        log "pre-sleep: lock request failed for active session $session_id; refusing unsafe sleep"
+        exit 1
+    else
+        log "pre-sleep: session $session_id disappeared during lock request; allowing sleep"
+        exit 0
+    fi
+fi
+
+locked=false
+for _ in $("$SEQ" 1 "$LOCK_ACK_TIMEOUT_LOOPS"); do
+    if run_user "$TIMEOUT" 1 "$ipc" lock isLocked 2>/dev/null | "$GREP" -qx true; then
+        locked=true
+        break
+    fi
+    "$SLEEP" "$LOCK_ACK_LOOP_INTERVAL" 2>/dev/null || true
 done
-log "pre-sleep: lock confirmation timed out; refusing unsafe sleep"
-exit 1
+
+if [[ "$locked" == true ]]; then
+    log "pre-sleep: secure lock confirmed for session $session_id"
+    exit 0
+fi
+
+if session_still_active; then
+    log "pre-sleep: lock confirmation timed out for active session $session_id; refusing unsafe sleep"
+    exit 1
+else
+    log "pre-sleep: session $session_id disappeared during lock confirmation; allowing sleep"
+    exit 0
+fi
