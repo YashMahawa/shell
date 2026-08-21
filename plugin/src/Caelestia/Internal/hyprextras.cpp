@@ -111,12 +111,18 @@ void HyprExtras::applyOptions(const QVariantHash& options) {
 
 void HyprExtras::refreshOptions() {
     if (!m_optionsRefresh.isNull()) {
-        m_optionsRefresh->close();
+        m_optionsRefreshPending = true;
+        return;
     }
 
+    m_optionsRefreshPending = false;
     m_optionsRefresh = makeRequestJson("descriptions", [this](bool success, const QJsonDocument& response) {
         m_optionsRefresh.reset();
         if (!success) {
+            if (m_optionsRefreshPending) {
+                m_optionsRefreshPending = false;
+                refreshOptions();
+            }
             return;
         }
 
@@ -136,18 +142,30 @@ void HyprExtras::refreshOptions() {
         if (dirty) {
             emit optionsChanged();
         }
+
+        if (m_optionsRefreshPending) {
+            m_optionsRefreshPending = false;
+            refreshOptions();
+        }
     });
 }
 
 void HyprExtras::refreshDevices() {
     if (!m_devicesRefresh.isNull()) {
-        m_devicesRefresh->close();
+        m_devicesRefreshPending = true;
+        return;
     }
 
+    m_devicesRefreshPending = false;
     m_devicesRefresh = makeRequestJson("devices", [this](bool success, const QJsonDocument& response) {
         m_devicesRefresh.reset();
         if (success) {
             m_devices->updateLastIpcObject(response.object());
+        }
+
+        if (m_devicesRefreshPending) {
+            m_devicesRefreshPending = false;
+            refreshDevices();
         }
     });
 }
@@ -180,7 +198,12 @@ void HyprExtras::readEvent() {
     }
 }
 
-void HyprExtras::handleEvent(const QString& event) {
+void HyprExtras::handleEvent(const QString& rawEvent) {
+    auto event = rawEvent;
+    if (event.endsWith("v2")) {
+        event.chop(2);
+    }
+
     if (event == "configreloaded") {
         refreshOptions();
     } else if (event == "activelayout") {

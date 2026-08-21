@@ -30,8 +30,9 @@ Singleton {
     readonly property bool numLock: keyboard?.numLock ?? false
     readonly property string defaultKbLayout: keyboard?.layout.split(",")[0] ?? "??"
     readonly property string kbLayoutFull: keyboard?.activeKeymap ?? "Unknown"
-    readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? "??"
+    readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? (keyboard?.layout.split(",")[keyboard?.lastIpcObject?.active_layout_index ?? 0]?.trim() ?? defaultKbLayout)
     readonly property var kbMap: new Map()
+    property var layoutCache: ({})
 
     readonly property alias extras: extras
     readonly property alias options: extras.options
@@ -136,9 +137,9 @@ Singleton {
 
     Connections {
         function onRawEvent(event: HyprlandEvent): void {
-            const n = event.name;
+            let n = event.name;
             if (n.endsWith("v2"))
-                return;
+                n = n.slice(0, -2);
 
             if (n === "configreloaded") {
                 root.configReloaded();
@@ -153,6 +154,8 @@ Singleton {
                 root.scheduleRefresh(true, false, false);
             } else if (n.includes("window") || n.includes("group") || ["pin", "fullscreen", "changefloatingmode", "minimize"].includes(n)) {
                 root.scheduleRefresh(false, false, true);
+            } else if (n === "activelayout") {
+                extras.refreshDevices();
             }
         }
 
@@ -197,6 +200,7 @@ Singleton {
 
         path: Quickshell.env("CAELESTIA_XKB_RULES_PATH") || "/usr/share/X11/xkb/rules/base.lst"
         onLoaded: {
+            const cache = {};
             const layoutMatch = text().match(/! layout\n([\s\S]*?)\n\n/);
             if (layoutMatch) {
                 const lines = layoutMatch[1].split("\n");
@@ -204,9 +208,13 @@ Singleton {
                     if (!line.trim() || line.trim().startsWith("!"))
                         continue;
 
-                    const match = line.match(/^\s*([a-z]{2,})\s+([a-zA-Z() ]+)$/);
-                    if (match)
-                        root.kbMap.set(match[2], match[1]);
+                    const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s+(.+)$/);
+                    if (match) {
+                        const code = match[1].trim();
+                        const desc = match[2].trim();
+                        cache[code] = desc;
+                        root.kbMap.set(desc, code);
+                    }
                 }
             }
 
@@ -217,11 +225,18 @@ Singleton {
                     if (!line.trim() || line.trim().startsWith("!"))
                         continue;
 
-                    const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s+([a-z]{2,}): (.+)$/);
-                    if (match)
-                        root.kbMap.set(match[3], match[2]);
+                    const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s+([a-zA-Z0-9_-]+):\s*(.+)$/);
+                    if (match) {
+                        const variantCode = match[1].trim();
+                        const layoutCode = match[2].trim();
+                        const desc = match[3].trim();
+                        cache[`${layoutCode}(${variantCode})`] = desc;
+                        cache[`${layoutCode}:${variantCode}`] = desc;
+                        root.kbMap.set(desc, `${layoutCode}(${variantCode})`);
+                    }
                 }
             }
+            root.layoutCache = cache;
         }
     }
 
