@@ -18,6 +18,7 @@ Singleton {
     property list<PwNode> sources: []
     property list<PwNode> streams: []
     property var profileSinks: []
+    property var bluetoothCards: ({})
     property string pendingProfileSink: ""
 
     property alias safeBluetoothVolumeEnabled: audioPreferences.safeBluetoothVolumeEnabled
@@ -48,8 +49,139 @@ Singleton {
         return node.isSink && (nodeName.startsWith("bluez_output.") || properties["device.api"] === "bluez5" || properties["device.bus"] === "bluetooth");
     }
 
+    function isBluetoothCard(card): bool {
+        if (!card)
+            return false;
+
+        const name = card.name ?? "";
+        const driver = card.driver ?? "";
+        const props = card.properties ?? {};
+        return name.startsWith("bluez_card.") || driver.includes("bluez") || props["device.api"] === "bluez5" || props["device.bus"] === "bluetooth";
+    }
+
+    function formatBtAddress(rawAddress: string): string {
+        if (!rawAddress)
+            return "";
+
+        let addr = String(rawAddress).toUpperCase();
+        if (addr.startsWith("BLUEZ_CARD."))
+            addr = addr.substring(11);
+        if (addr.includes("_"))
+            addr = addr.replaceAll("_", ":");
+        return addr;
+    }
+
+    function parseProfileAndCodec(key: string, desc: string): var {
+        let group = "";
+        let groupName = "";
+        let groupIcon = "tune";
+        let codecKey = "";
+        let codecName = "";
+
+        const lowerKey = (key || "").toLowerCase();
+        const lowerDesc = (desc || "").toLowerCase();
+
+        if (lowerKey.includes("a2dp") || lowerDesc.includes("a2dp") || lowerDesc.includes("high fidelity")) {
+            group = "a2dp-sink";
+            groupName = qsTr("A2DP (High Fidelity)");
+            groupIcon = "music_note";
+        } else if (lowerKey.includes("headset") || lowerKey.includes("handsfree") || lowerKey.includes("hfp") || lowerKey.includes("hsp") || lowerDesc.includes("headset") || lowerDesc.includes("handsfree")) {
+            group = "headset-head-unit";
+            groupName = qsTr("HSP/HFP (Headset)");
+            groupIcon = "call";
+        } else if (lowerKey === "off") {
+            group = "off";
+            groupName = qsTr("Off");
+            groupIcon = "power_off";
+        } else {
+            group = key;
+            groupName = desc || key;
+            groupIcon = "tune";
+        }
+
+        if (lowerKey.includes("ldac") || lowerDesc.includes("ldac")) {
+            codecKey = "ldac";
+            codecName = "LDAC";
+        } else if (lowerKey.includes("aptx_hd") || lowerKey.includes("aptx-hd") || lowerDesc.includes("aptx hd") || lowerDesc.includes("aptx-hd")) {
+            codecKey = "aptx_hd";
+            codecName = "aptX HD";
+        } else if (lowerKey.includes("aptx_ll") || lowerKey.includes("aptx-ll") || lowerDesc.includes("aptx ll")) {
+            codecKey = "aptx_ll";
+            codecName = "aptX LL";
+        } else if (lowerKey.includes("aptx") || lowerDesc.includes("aptx")) {
+            codecKey = "aptx";
+            codecName = "aptX";
+        } else if (lowerKey.includes("aac") || lowerDesc.includes("aac")) {
+            codecKey = "aac";
+            codecName = "AAC";
+        } else if (lowerKey.includes("sbc_xq") || lowerKey.includes("sbc-xq") || lowerDesc.includes("sbc-xq") || lowerDesc.includes("sbc_xq")) {
+            codecKey = "sbc_xq";
+            codecName = "SBC-XQ";
+        } else if (lowerKey.includes("sbc") || lowerDesc.includes("sbc")) {
+            codecKey = "sbc";
+            codecName = "SBC";
+        } else if (lowerKey.includes("msbc") || lowerDesc.includes("msbc")) {
+            codecKey = "msbc";
+            codecName = "mSBC";
+        } else if (lowerKey.includes("cvsd") || lowerDesc.includes("cvsd")) {
+            codecKey = "cvsd";
+            codecName = "CVSD";
+        } else if (lowerKey.includes("lc3-swb") || lowerKey.includes("lc3_swb") || lowerDesc.includes("lc3-swb")) {
+            codecKey = "lc3_swb";
+            codecName = "LC3-SWB";
+        } else if (lowerKey.includes("lc3") || lowerDesc.includes("lc3")) {
+            codecKey = "lc3";
+            codecName = "LC3";
+        } else {
+            const parts = (key || "").split(/[-_]/);
+            if (parts.length > 2 && group !== "off") {
+                codecKey = parts[parts.length - 1];
+                codecName = codecKey.toUpperCase();
+            } else {
+                codecKey = "default";
+                codecName = qsTr("Default");
+            }
+        }
+
+        return {
+            group: group,
+            groupName: groupName,
+            groupIcon: groupIcon,
+            codecKey: codecKey,
+            codecName: codecName
+        };
+    }
+
     function bluetoothSinkKey(node: PwNode): string {
         return node?.name ?? node?.properties?.["node.name"] ?? String(node?.id ?? "");
+    }
+
+    function getBluetoothCardForNode(node: PwNode): var {
+        if (!node || !root.isBluetoothSink(node))
+            return null;
+
+        const props = node.properties ?? {};
+        const devName = props["device.name"] ?? "";
+        const cardName = props["card.name"] ?? "";
+        const rawAddr = props["bluez5.address"] ?? props["device.string"] ?? node.name ?? "";
+        const address = root.formatBtAddress(rawAddr);
+
+        return root.bluetoothCards[devName] ||
+               root.bluetoothCards[cardName] ||
+               root.bluetoothCards[address] ||
+               root.bluetoothCards[node.name] || null;
+    }
+
+    function getBluetoothCardForDevice(device: var): var {
+        if (!device)
+            return null;
+
+        const address = root.formatBtAddress(device.address);
+        const cardName = "bluez_card." + (device.address || "").replaceAll(":", "_");
+
+        return root.bluetoothCards[address] ||
+               root.bluetoothCards[cardName] ||
+               root.bluetoothCards[device.address] || null;
     }
 
     function setSafeBluetoothVolumeEnabled(enabled: bool): void {
@@ -168,14 +300,44 @@ Singleton {
     }
 
     function setOutputProfile(profile): void {
-        if (!profile?.cardName || !profile?.profileName || profileSwitchProc.running)
+        if (!profile?.cardName || !profile?.profileName)
             return;
 
         root.pendingProfileSink = profile.matchName ?? profile.description ?? "";
+        root.setCardProfile(profile.cardName, profile.profileName);
+    }
+
+    function setCardProfile(cardName: string, profileKey: string): void {
+        if (!cardName || !profileKey || profileSwitchProc.running)
+            return;
+
         profileSwitchProc.command = [
-            "pactl", "set-card-profile", profile.cardName, profile.profileName
+            "pactl", "set-card-profile", cardName, profileKey
         ];
         profileSwitchProc.running = true;
+
+        if (audioPreferences.safeBluetoothVolumeEnabled) {
+            for (const node of root.sinks) {
+                if (root.isBluetoothSink(node)) {
+                    const key = root.bluetoothSinkKey(node);
+                    root.bluetoothSinksPending[key] = true;
+                }
+            }
+            bluetoothSafetyTimer.restart();
+        }
+    }
+
+    function setProfileGroup(cardName: string, groupId: string): void {
+        const cardInfo = root.bluetoothCards[cardName];
+        if (!cardInfo || !cardInfo.profileGroups)
+            return;
+
+        const groupObj = cardInfo.profileGroups.find(g => g.id === groupId);
+        if (!groupObj || !groupObj.codecs || groupObj.codecs.length === 0)
+            return;
+
+        const targetKey = groupObj.codecs[0].key;
+        root.setCardProfile(cardName, targetKey);
     }
 
     function refreshCardProfiles(): void {
@@ -338,7 +500,92 @@ Singleton {
                 try {
                     const cards = JSON.parse(text);
                     const choices = [];
+                    const newBtCards = ({});
+
                     for (const card of cards) {
+                        if (!card.name)
+                            continue;
+
+                        if (root.isBluetoothCard(card)) {
+                            const props = card.properties ?? {};
+                            const rawAddr = props["bluez5.address"] || props["device.string"] || card.name;
+                            const address = root.formatBtAddress(rawAddr);
+                            const activeProfileKey = card.active_profile ?? "";
+
+                            const availableProfiles = card.profiles ?? {};
+                            const groupMap = ({});
+
+                            for (const [profKey, profVal] of Object.entries(availableProfiles)) {
+                                if (profVal && (profVal.available === false || profVal.available === "no"))
+                                    continue;
+
+                                const parsed = root.parseProfileAndCodec(profKey, profVal.description);
+                                if (!groupMap[parsed.group]) {
+                                    groupMap[parsed.group] = {
+                                        id: parsed.group,
+                                        name: parsed.groupName,
+                                        icon: parsed.groupIcon,
+                                        codecs: []
+                                    };
+                                }
+
+                                if (!groupMap[parsed.group].codecs.some(c => c.key === profKey)) {
+                                    groupMap[parsed.group].codecs.push({
+                                        key: profKey,
+                                        codecKey: parsed.codecKey,
+                                        name: parsed.codecName,
+                                        description: profVal.description || profKey
+                                    });
+                                }
+                            }
+
+                            const profileGroups = Object.values(groupMap);
+
+                            let activeGroup = "";
+                            let activeGroupName = "";
+                            let activeCodecKey = "";
+                            let activeCodecName = "";
+
+                            if (activeProfileKey) {
+                                const activeParsed = root.parseProfileAndCodec(activeProfileKey, availableProfiles[activeProfileKey]?.description);
+                                activeGroup = activeParsed.group;
+                                activeGroupName = activeParsed.groupName;
+                                activeCodecKey = activeParsed.codecKey;
+                                activeCodecName = activeParsed.codecName;
+                            }
+
+                            if (!activeGroup && profileGroups.length > 0) {
+                                activeGroup = profileGroups[0].id;
+                                activeGroupName = profileGroups[0].name;
+                            }
+
+                            const currentGroupObj = profileGroups.find(g => g.id === activeGroup);
+                            let activeGroupCodecs = currentGroupObj ? currentGroupObj.codecs : [];
+                            if (!activeCodecKey && activeGroupCodecs.length > 0) {
+                                activeCodecKey = activeGroupCodecs[0].codecKey;
+                                activeCodecName = activeGroupCodecs[0].name;
+                            }
+
+                            const cardInfo = {
+                                cardName: card.name,
+                                address: address,
+                                description: props["device.description"] || card.description || card.name,
+                                activeProfileKey: activeProfileKey,
+                                activeGroup: activeGroup,
+                                activeGroupName: activeGroupName,
+                                activeCodecKey: activeCodecKey,
+                                activeCodecName: activeCodecName,
+                                activeGroupCodecs: activeGroupCodecs,
+                                profileGroups: profileGroups
+                            };
+
+                            newBtCards[card.name] = cardInfo;
+                            if (address)
+                                newBtCards[address] = cardInfo;
+
+                            continue;
+                        }
+
                         if (!card.name?.startsWith("alsa_card."))
                             continue;
 
@@ -385,8 +632,10 @@ Singleton {
                         }
                     }
                     root.profileSinks = choices;
+                    root.bluetoothCards = newBtCards;
                 } catch (error) {
                     root.profileSinks = [];
+                    root.bluetoothCards = ({});
                 }
             }
         }
