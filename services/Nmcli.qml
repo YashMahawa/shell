@@ -500,6 +500,88 @@ Singleton {
         connectWireless(ssid, password, bssid, callback);
     }
 
+    function connectHiddenNetwork(ssid: string, password: string, security: string, hidden: bool, callback: var): void {
+        if (!ssid || ssid.length === 0) {
+            if (callback)
+                callback({ success: false, error: "SSID is required" });
+            return;
+        }
+
+        const isSecure = security !== "none";
+        const requestKey = `${ssid}|hidden`;
+
+        cancelPendingWifiOperation();
+        root.wifiConnectionChangeKey = requestKey;
+
+        if (callback) {
+            root.pendingConnection = {
+                ssid: ssid,
+                bssid: "",
+                callback: callback,
+                retryCount: 0
+            };
+            connectionCheckTimer.start();
+            immediateCheckTimer.checkCount = 0;
+            immediateCheckTimer.start();
+        }
+
+        checkAndDeleteConnection(ssid, () => {
+            const cmd = [
+                root.nmcliCommandConnection, "add",
+                root.connectionParamType, root.deviceTypeWifi,
+                root.connectionParamConName, ssid,
+                root.connectionParamIfname, "*",
+                root.connectionParamSsid, ssid
+            ];
+
+            if (hidden) {
+                cmd.push("802-11-wireless.hidden", "yes");
+            }
+
+            if (isSecure && password && password.length > 0) {
+                cmd.push(root.securityKeyMgmt, root.keyMgmtWpaPsk, root.securityPsk, password);
+            }
+
+            executeCommand(cmd, addResult => {
+                if (addResult.success) {
+                    loadSavedConnections(() => {});
+                    activateConnection(ssid, upResult => {
+                        root.wifiConnectionChangeKey = "";
+                        if (!upResult.success) {
+                            checkAndDeleteConnection(ssid, () => {
+                                loadSavedConnections(() => {});
+                            });
+                        } else {
+                            refreshLiveWifiState();
+                        }
+                        if (callback)
+                            callback(upResult);
+                    });
+                } else {
+                    let fallbackCmd = [root.nmcliCommandDevice, root.nmcliCommandWifi, "connect", ssid];
+                    if (isSecure && password && password.length > 0) {
+                        fallbackCmd.push(root.connectionParamPassword, password);
+                    }
+                    if (hidden) {
+                        fallbackCmd.push("hidden", "yes");
+                    }
+                    executeCommand(fallbackCmd, fallbackResult => {
+                        root.wifiConnectionChangeKey = "";
+                        if (fallbackResult.success) {
+                            refreshLiveWifiState();
+                        } else {
+                            checkAndDeleteConnection(ssid, () => {
+                                loadSavedConnections(() => {});
+                            });
+                        }
+                        if (callback)
+                            callback(fallbackResult);
+                    });
+                }
+            });
+        });
+    }
+
     function connectWireless(ssid: string, password: string, bssid: string, callback: var, retryCount: int): void {
         const hasBssid = bssid !== undefined && bssid !== null && bssid.length > 0;
         const retries = retryCount !== undefined ? retryCount : 0;
