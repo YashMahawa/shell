@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Io
 import Caelestia.Config
+import qs.utils
 
 Singleton {
     id: root

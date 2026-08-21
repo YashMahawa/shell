@@ -21,6 +21,10 @@ Scope {
     readonly property bool active: BluetoothAgent.requestActive || (BluetoothAgent.pairingError !== "")
 
     property string pinInputBuffer: ""
+    property var passkeyValidator: IntValidator {
+        bottom: 0
+        top: 999999
+    }
 
     Component.onCompleted: {
         if (Bluetooth.defaultAdapter?.enabled) {
@@ -67,7 +71,10 @@ Scope {
             WlrLayershell.exclusionMode: ExclusionMode.Ignore
             WlrLayershell.keyboardFocus: root.active ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-            anchors.fill: parent
+            anchors.top: true
+            anchors.bottom: true
+            anchors.left: true
+            anchors.right: true
 
             MouseArea {
                 anchors.fill: parent
@@ -263,10 +270,7 @@ Scope {
                         Layout.topMargin: Tokens.spacing.small
                         visible: BluetoothAgent.pairingError === "" && (BluetoothAgent.requestType === "pincode" || BluetoothAgent.requestType === "passkey")
                         text: root.pinInputBuffer
-                        validator: BluetoothAgent.requestType === "passkey" ? IntValidator {
-                            bottom: 0
-                            top: 999999
-                        } : null
+                        validator: BluetoothAgent.requestType === "passkey" ? root.passkeyValidator : null
 
                         onTextEdited: txt => root.pinInputBuffer = txt
                         onEditingFinished: {

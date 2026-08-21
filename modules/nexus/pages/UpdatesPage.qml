@@ -27,9 +27,7 @@ PageBase {
 
     title: qsTr("Updates")
 
-    Timer {
-        id: checkTimeoutTimer
-
+    property Timer checkTimeoutTimer: Timer {
         interval: 15000
         repeat: false
         onTriggered: {
@@ -49,9 +47,7 @@ PageBase {
         }
     }
 
-    Process {
-        id: updateCheckProcess
-
+    property Process updateCheckProcess: Process {
         running: false
         command: [
             "sh", "-c",
@@ -219,7 +215,7 @@ PageBase {
         }
     }
 
-    Process {
+    property Process quickshellVersionProcess: Process {
         running: true
         command: ["quickshell", "--version"]
         stdout: StdioCollector {
@@ -227,7 +223,7 @@ PageBase {
         }
     }
 
-    Process {
+    property Process cliVersionProcess: Process {
         running: true
         command: ["sh", "-c", "caelestia --version 2>/dev/null"]
         stdout: StdioCollector {
