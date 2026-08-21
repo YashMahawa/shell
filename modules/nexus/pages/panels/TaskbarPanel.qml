@@ -1,7 +1,11 @@
 pragma ComponentBehavior: Bound
 
+import QtQuick
 import QtQuick.Layouts
 import Caelestia.Config
+import qs.components
+import qs.components.controls
+import qs.services
 import qs.modules.nexus.common
 
 PageBase {
@@ -19,12 +23,45 @@ PageBase {
         // Behaviour
         SectionHeader {
             first: true
-            text: qsTr("Behaviour")
+            text: qsTr("Behaviour & Position")
+        }
+
+        SelectRow {
+            Layout.fillWidth: true
+            first: true
+            label: qsTr("Position")
+            subtext: qsTr("Screen edge where the status bar is placed")
+            active: {
+                switch (Config.bar.edge) {
+                case "top": return qsTr("Top");
+                case "bottom": return qsTr("Bottom");
+                case "right": return qsTr("Right");
+                case "left":
+                default: return qsTr("Left");
+                }
+            }
+            menuItems: [
+                MenuItem {
+                    text: qsTr("Left")
+                    onTriggered: GlobalConfig.bar.edge = "left"
+                },
+                MenuItem {
+                    text: qsTr("Top")
+                    onTriggered: GlobalConfig.bar.edge = "top"
+                },
+                MenuItem {
+                    text: qsTr("Right")
+                    onTriggered: GlobalConfig.bar.edge = "right"
+                },
+                MenuItem {
+                    text: qsTr("Bottom")
+                    onTriggered: GlobalConfig.bar.edge = "bottom"
+                }
+            ]
         }
 
         ToggleRow {
             Layout.fillWidth: true
-            first: true
             text: qsTr("Persistent")
             subtext: qsTr("Keep the bar visible at all times")
             checked: Config.bar.persistent
@@ -49,6 +86,121 @@ PageBase {
             to: 200
             stepSize: 5
             onMoved: v => GlobalConfig.bar.dragThreshold = v
+        }
+
+        // Module arrangement
+        SectionHeader {
+            text: qsTr("Module arrangement")
+        }
+
+        Repeater {
+            model: GlobalConfig.bar.entries
+
+            delegate: ConnectedRect {
+                required property int index
+                required property var modelData
+
+                readonly property string entryId: modelData.id || ""
+                readonly property bool entryEnabled: modelData.enabled !== false
+
+                readonly property string entryName: {
+                    switch (entryId) {
+                    case "logo": return qsTr("Logo");
+                    case "workspaces": return qsTr("Workspaces");
+                    case "spacer": return qsTr("Spacer");
+                    case "activeWindow": return qsTr("Active window");
+                    case "tray": return qsTr("Tray");
+                    case "clock": return qsTr("Clock");
+                    case "statusIcons": return qsTr("Status icons");
+                    case "power": return qsTr("Power");
+                    default: return entryId;
+                    }
+                }
+
+                readonly property string entryIcon: {
+                    switch (entryId) {
+                    case "logo": return "home";
+                    case "workspaces": return "workspaces";
+                    case "spacer": return "space_bar";
+                    case "activeWindow": return "web_asset";
+                    case "tray": return "widgets";
+                    case "clock": return "schedule";
+                    case "statusIcons": return "signal_cellular_alt";
+                    case "power": return "power_settings_new";
+                    default: return "extension";
+                    }
+                }
+
+                Layout.fillWidth: true
+                first: index === 0
+                last: index === GlobalConfig.bar.entries.length - 1
+                implicitHeight: entryRow.implicitHeight + entryRow.anchors.margins * 2
+
+                RowLayout {
+                    id: entryRow
+
+                    anchors.fill: parent
+                    anchors.margins: Tokens.padding.medium
+                    anchors.leftMargin: Tokens.padding.largeIncreased
+                    anchors.rightMargin: Tokens.padding.largeIncreased
+                    spacing: Tokens.spacing.medium
+
+                    MaterialIcon {
+                        text: parent.parent.entryIcon
+                        font: Tokens.font.icon.medium
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: parent.parent.entryName
+                        font: Tokens.font.body.small
+                        elide: Text.ElideRight
+                    }
+
+                    IconButton {
+                        icon: "arrow_upward"
+                        disabled: index === 0
+                        onClicked: {
+                            let list = [];
+                            for (let i = 0; i < GlobalConfig.bar.entries.length; i++) {
+                                list.push(Object.assign({}, GlobalConfig.bar.entries[i]));
+                            }
+                            let temp = list[index - 1];
+                            list[index - 1] = list[index];
+                            list[index] = temp;
+                            GlobalConfig.bar.entries = list;
+                        }
+                    }
+
+                    IconButton {
+                        icon: "arrow_downward"
+                        disabled: index === GlobalConfig.bar.entries.length - 1
+                        onClicked: {
+                            let list = [];
+                            for (let i = 0; i < GlobalConfig.bar.entries.length; i++) {
+                                list.push(Object.assign({}, GlobalConfig.bar.entries[i]));
+                            }
+                            let temp = list[index + 1];
+                            list[index + 1] = list[index];
+                            list[index] = temp;
+                            GlobalConfig.bar.entries = list;
+                        }
+                    }
+
+                    StyledSwitch {
+                        checked: parent.parent.entryEnabled
+                        onToggled: {
+                            let list = [];
+                            for (let i = 0; i < GlobalConfig.bar.entries.length; i++) {
+                                list.push(Object.assign({}, GlobalConfig.bar.entries[i]));
+                            }
+                            list[index].enabled = checked;
+                            GlobalConfig.bar.entries = list;
+                        }
+                    }
+                }
+            }
         }
 
         // Components

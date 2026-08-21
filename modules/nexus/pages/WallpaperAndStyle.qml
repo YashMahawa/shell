@@ -198,5 +198,55 @@ PageBase {
             checked: !Colours.light
             onToggled: Colours.setMode(checked ? "dark" : "light")
         }
+
+        SectionHeader {
+            text: qsTr("Design system tokens")
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            first: true
+            label: qsTr("Corner rounding scale")
+            subtext: qsTr("Scale factor for corner rounding tokens")
+            value: Config.appearance.rounding.scale
+            from: 0.5
+            to: 2.0
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.appearance.rounding.scale = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Shell padding scale")
+            subtext: qsTr("Scale factor for shell padding tokens")
+            value: Config.appearance.padding.scale
+            from: 0.5
+            to: 2.0
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.appearance.padding.scale = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Shell spacing scale")
+            subtext: qsTr("Scale factor for shell spacing tokens")
+            value: Config.appearance.spacing.scale
+            from: 0.5
+            to: 2.0
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.appearance.spacing.scale = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            last: true
+            label: qsTr("Font scale")
+            subtext: qsTr("Scale factor for font tokens")
+            value: Config.appearance.font.scale
+            from: 0.5
+            to: 2.0
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.appearance.font.scale = v
+        }
     }
 }
