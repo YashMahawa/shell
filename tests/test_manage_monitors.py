@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -123,7 +124,7 @@ class TestManageMonitors(unittest.TestCase):
         self.assertEqual(len(monitors_after_cut), 1)
         self.assertEqual(monitors_after_cut[0]["name"], "eDP-1")
 
-    def test_display_config_integration_and_restart_persistence(self):
+    def test_native_lua_config_and_no_legacy_hypr_user_conf(self):
         monitors = [
             {"name": "eDP-1", "res": "1920x1080@60", "pos": "0x0", "scale": "1"},
             {"name": "HDMI-A-1", "res": "2560x1440@144", "pos": "1920x0", "scale": "1.25"}
@@ -135,23 +136,84 @@ class TestManageMonitors(unittest.TestCase):
         user_conf = os.path.join(caelestia_dir, "hypr-user.conf")
         lua_conf = os.path.join(caelestia_dir, "display.lua")
 
-        self.assertTrue(os.path.exists(managed_conf))
-        self.assertTrue(os.path.exists(user_conf))
+        # Native Lua fragment must exist
         self.assertTrue(os.path.exists(lua_conf))
-
-        with open(managed_conf, "r") as f:
-            content = f.read()
-            self.assertIn("eDP-1,1920x1080@60,0x0,1", content)
-            self.assertIn("HDMI-A-1,2560x1440@144,1920x0,1.25", content)
-
-        with open(user_conf, "r") as f:
-            user_content = f.read()
-            self.assertIn(f"source = {managed_conf}", user_content)
+        # Legacy hypr-user.conf and hypr-monitors.conf must NOT be written or modified!
+        self.assertFalse(os.path.exists(managed_conf))
+        self.assertFalse(os.path.exists(user_conf))
 
         with open(lua_conf, "r") as f:
             lua_content = f.read()
             self.assertIn('name = "eDP-1"', lua_content)
             self.assertIn('scale = 1.25', lua_content)
+            self.assertIn('return {', lua_content)
+
+    def test_compositor_return_code_validation_and_rollback(self):
+        runner = MagicMock()
+        # First command fails (returncode=1)
+        runner.return_value = MagicMock(returncode=1, stdout="", stderr="invalid rule")
+
+        rules = [{"name": "HDMI-A-1", "res": "1920x1080@60", "pos": "0x0", "scale": "1"}]
+        previous = [{"name": "eDP-1", "width": 1920, "height": 1080, "refreshRate": 60, "x": 0, "y": 0, "scale": 1}]
+
+        with self.assertRaises(RuntimeError) as ctx:
+            manage_monitors.apply_rules(rules, previous_layout=previous, runner=runner)
+        self.assertIn("Compositor command failed with exit code 1", str(ctx.exception))
+
+        # Check that rollback command to eDP-1 was attempted via runner
+        calls = [c[0][0] for c in runner.call_args_list]
+        self.assertTrue(any(any("eDP-1" in arg for arg in cmd) for cmd in calls))
+
+    def test_atomic_write_and_locking(self):
+        target = os.path.join(self.config_dir, "test_file.txt")
+        manage_monitors.atomic_write(target, "hello world")
+        self.assertTrue(os.path.exists(target))
+        with open(target, "r") as f:
+            self.assertEqual(f.read(), "hello world")
+
+        with manage_monitors.TransactionLock():
+            # Ensure transaction lock opens and closes without error
+            pass
+
+    @patch("manage_monitors.save_to_monitors_conf")
+    @patch("manage_monitors.apply_rules")
+    def test_token_validation_for_confirm_and_rollback(self, mock_apply, mock_save):
+        rollback_info = {
+            "token": "valid_token_xyz",
+            "previous_layout": [{"name": "eDP-1", "width": 1920, "height": 1080}],
+            "pending_layout": [{"name": "eDP-1", "res": "1920x1080@60"}],
+            "created_at": time.time(),
+            "timeout": 20
+        }
+        manage_monitors.write_rollback_file(rollback_info)
+
+        # Test CLI confirm with invalid/empty token using sys.argv
+        with patch.object(sys, "argv", ["manage_monitors.py", "confirm", ""]):
+            with self.assertRaises(SystemExit) as cm:
+                manage_monitors.main()
+            self.assertEqual(cm.exception.code, 1)
+
+        with patch.object(sys, "argv", ["manage_monitors.py", "confirm", "wrong_token"]):
+            with self.assertRaises(SystemExit) as cm:
+                manage_monitors.main()
+            self.assertEqual(cm.exception.code, 1)
+
+        # Test CLI rollback with invalid/empty token using sys.argv
+        with patch.object(sys, "argv", ["manage_monitors.py", "rollback", ""]):
+            with self.assertRaises(SystemExit) as cm:
+                manage_monitors.main()
+            self.assertEqual(cm.exception.code, 1)
+
+        with patch.object(sys, "argv", ["manage_monitors.py", "rollback", "wrong_token"]):
+            with self.assertRaises(SystemExit) as cm:
+                manage_monitors.main()
+            self.assertEqual(cm.exception.code, 1)
+
+        # Confirm with exact valid token succeeds
+        with patch.object(sys, "argv", ["manage_monitors.py", "confirm", "valid_token_xyz"]):
+            manage_monitors.main()
+        mock_save.assert_called_once()
+        self.assertFalse(os.path.exists(manage_monitors.get_rollback_path()))
 
     @patch("manage_monitors.apply_rules")
     def test_standalone_backend_auto_rollback_on_ui_failure(self, mock_apply_rules):
