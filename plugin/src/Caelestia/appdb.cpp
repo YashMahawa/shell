@@ -49,60 +49,76 @@ void AppEntry::incrementFrequency() {
     emit frequencyChanged();
 }
 
-QString AppEntry::id() const {
+QVariant AppEntry::valueForProperty(const char* name) const {
     if (!m_entry) {
-        return "";
+        return QVariant(QString());
     }
-    return m_entry->property("id").toString();
+    const QVariant val = m_entry->property(name);
+    if (!val.isValid() || val.isNull()) {
+        return QVariant(QString());
+    }
+    if (val.typeId() == QMetaType::QString) {
+        const QString str = val.toString();
+        if (str == QStringLiteral("undefined")) {
+            return QVariant(QString());
+        }
+        return val;
+    }
+    if (val.typeId() == QMetaType::QStringList) {
+        const QStringList list = val.toStringList();
+        QStringList filtered;
+        for (const QString& item : list) {
+            if (!item.isEmpty() && item != QStringLiteral("undefined")) {
+                filtered.append(item);
+            }
+        }
+        return QVariant(filtered);
+    }
+    return val;
+}
+
+QVariant AppEntry::getProperty(const QString& name) const {
+    return valueForProperty(name.toUtf8().constData());
+}
+
+QString AppEntry::id() const {
+    return valueForProperty("id").toString();
 }
 
 QString AppEntry::name() const {
-    if (!m_entry) {
-        return "";
-    }
-    return m_entry->property("name").toString();
+    return valueForProperty("name").toString();
 }
 
 QString AppEntry::comment() const {
-    if (!m_entry) {
-        return "";
-    }
-    return m_entry->property("comment").toString();
+    return valueForProperty("comment").toString();
 }
 
 QString AppEntry::execString() const {
-    if (!m_entry) {
-        return "";
-    }
-    return m_entry->property("execString").toString();
+    return valueForProperty("execString").toString();
 }
 
 QString AppEntry::startupClass() const {
-    if (!m_entry) {
-        return "";
-    }
-    return m_entry->property("startupClass").toString();
+    return valueForProperty("startupClass").toString();
 }
 
 QString AppEntry::genericName() const {
-    if (!m_entry) {
-        return "";
-    }
-    return m_entry->property("genericName").toString();
+    return valueForProperty("genericName").toString();
 }
 
 QString AppEntry::categories() const {
-    if (!m_entry) {
-        return "";
+    const auto val = valueForProperty("categories");
+    if (val.typeId() == QMetaType::QStringList) {
+        return val.toStringList().join(QLatin1Char(' '));
     }
-    return m_entry->property("categories").toStringList().join(" ");
+    return val.toString();
 }
 
 QString AppEntry::keywords() const {
-    if (!m_entry) {
-        return "";
+    const auto val = valueForProperty("keywords");
+    if (val.typeId() == QMetaType::QStringList) {
+        return val.toStringList().join(QLatin1Char(' '));
     }
-    return m_entry->property("keywords").toStringList().join(" ");
+    return val.toString();
 }
 
 AppDb::AppDb(QObject* parent)
@@ -288,8 +304,9 @@ void AppDb::updateApps() {
     bool dirty = false;
 
     for (const auto& entry : std::as_const(m_entries)) {
-        const auto id = entry->property("id").toString();
-        if (!m_apps.contains(id)) {
+        const auto idVal = entry->property("id").toString();
+        const auto id = (idVal == QStringLiteral("undefined")) ? QString() : idVal;
+        if (!id.isEmpty() && !m_apps.contains(id)) {
             dirty = true;
             auto* const newEntry = new AppEntry(entry, getFrequency(id), this);
             QObject::connect(newEntry, &QObject::destroyed, this, [id, this]() {
@@ -303,7 +320,11 @@ void AppDb::updateApps() {
 
     QSet<QString> newIds;
     for (const auto& entry : std::as_const(m_entries)) {
-        newIds.insert(entry->property("id").toString());
+        const auto idVal = entry->property("id").toString();
+        const auto id = (idVal == QStringLiteral("undefined")) ? QString() : idVal;
+        if (!id.isEmpty()) {
+            newIds.insert(id);
+        }
     }
 
     for (auto it = m_apps.begin(); it != m_apps.end();) {
