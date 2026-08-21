@@ -22,30 +22,36 @@ Singleton {
     property real pendingPointerDelta: 0
 
     function getMonitorForScreen(screen: ShellScreen): var {
-        return monitors.find(m => m.modelData === screen); // qmllint disable missing-property
+        if (!screen)
+            return null;
+        return monitors.find(m => m?.valid && (m.modelData === screen || m.name === screen.name))
+            ?? null; // qmllint disable missing-property
     }
 
     function getMonitor(query: string): var {
+        if (!query)
+            return null;
         if (query === "active") {
-            return monitors.find(m => Hypr.monitorFor(m.modelData)?.focused); // qmllint disable missing-property
+            return monitors.find(m => m?.valid && Hypr.monitorFor(m.modelData)?.focused)
+                ?? null; // qmllint disable missing-property
         }
 
         if (query.startsWith("model:")) {
             const model = query.slice(6);
-            return monitors.find(m => m.modelData.model === model); // qmllint disable missing-property
+            return monitors.find(m => m?.valid && m.modelData.model === model) ?? null; // qmllint disable missing-property
         }
 
         if (query.startsWith("serial:")) {
             const serial = query.slice(7);
-            return monitors.find(m => m.modelData.serialNumber === serial); // qmllint disable missing-property
+            return monitors.find(m => m?.valid && m.modelData.serialNumber === serial) ?? null; // qmllint disable missing-property
         }
 
         if (query.startsWith("id:")) {
             const id = parseInt(query.slice(3), 10);
-            return monitors.find(m => Hypr.monitorFor(m.modelData)?.id === id); // qmllint disable missing-property
+            return monitors.find(m => m?.valid && Hypr.monitorFor(m.modelData)?.id === id) ?? null; // qmllint disable missing-property
         }
 
-        return monitors.find(m => m.modelData.name === query); // qmllint disable missing-property
+        return monitors.find(m => m?.valid && m.modelData.name === query) ?? null; // qmllint disable missing-property
     }
 
     function adjustBrightnessAtPointer(delta: real): void {
