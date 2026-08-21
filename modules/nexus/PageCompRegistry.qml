@@ -91,6 +91,14 @@ QtObject {
         Component {
             PlaceholderComp {}
         },
+        Component {
+            // Input
+            StackPage {
+                Component {
+                    InputPage {}
+                }
+            }
+        },
 
         // Shell
         Component {

@@ -54,6 +54,12 @@ QtObject {
             description: qsTr("Manage plugins"),
             category: "system"
         },
+        {
+            label: qsTr("Input"),
+            icon: "keyboard",
+            description: qsTr("Pointer speed, touchpad and keyboard preferences"),
+            category: "system"
+        },
 
         // Shell
         {

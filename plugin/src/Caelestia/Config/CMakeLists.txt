@@ -4,6 +4,7 @@ qml_module(caelestia-config
         config.cpp
         configattached.cpp
         configobject.cpp
+        inputconfig.cpp
         rootconfig.cpp
         appearanceconfig.cpp
         font.cpp
@@ -17,6 +18,7 @@ qml_module(caelestia-config
         borderconfig.hpp
         dashboardconfig.hpp
         generalconfig.hpp
+        inputconfig.hpp
         launcherconfig.hpp
         lockconfig.hpp
         nexusconfig.hpp
