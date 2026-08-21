@@ -100,51 +100,12 @@ if [ "$ACTION" != "--apply" ]; then
   exit 0
 fi
 
-echo "Installing greeter configuration..."
-
 export PATH=$PATH:/usr/sbin:/sbin:/usr/bin:/bin
 
-# Create/validate greeter user
-if ! getent passwd greeter >/dev/null; then
-  echo "Creating greeter user..."
-  if ! useradd -M -r -s /sbin/nologin greeter; then
-    echo "FATAL: Failed to create greeter user!"
-    exit 1
-  fi
-else
-  echo "Greeter user already exists."
-fi
-
-# Assign greeter user to minimal required display hardware groups (video, render) if present.
-# Do not add greeter to 'input' or 'seat' groups and do not create hardware groups automatically.
-# Minimal input/device access is handled via systemd-logind / udev seat management.
-HW_GROUPS=("video" "render")
-
-echo "Assigning greeter user to existing display hardware groups..."
-for group in "${HW_GROUPS[@]}"; do
-  if ! getent group "$group" >/dev/null 2>&1; then
-    echo "Group '$group' does not exist on this system; skipping."
-    continue
-  fi
-
-  if id -nG greeter 2>/dev/null | grep -qw "$group"; then
-    echo "Greeter user is already in group '$group'."
-  else
-    echo "Adding greeter user to group '$group'..."
-    if ! usermod -aG "$group" greeter; then
-      echo "FATAL: Failed to add greeter user to group '$group'!"
-      exit 1
-    fi
-  fi
-done
-
-GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
-echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
-
+# Perform all preflight checks and explicit opt-in decisions before any mutation.
 CURRENT_DM=$(detect_active_dm)
 echo "Detected active display manager: ${CURRENT_DM:-None}"
 
-# Check for existing greetd configuration and active display manager
 CONFIG_EXISTS=0
 if [ -f /etc/greetd/config.toml ]; then
   CONFIG_EXISTS=1
@@ -173,24 +134,13 @@ if [ "$OPT_IN" -ne 1 ]; then
   fi
 fi
 
+echo "Installing greeter configuration..."
+
+# Stage and validate greetd files before modifying system services
 mkdir -p /etc/greetd
-if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
-  cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
-  echo "Backed up existing config to /etc/greetd/config.toml.bak"
-fi
+STAGING_CONFIG="/etc/greetd/config.toml.tmp"
 
-# Preserve previous default target
-systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
-
-# Preserve previous display manager
-if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
-  echo "$CURRENT_DM" > /etc/greetd/prev_dm.bak
-  systemctl disable "$CURRENT_DM" || true
-else
-  > /etc/greetd/prev_dm.bak
-fi
-
-cat <<CONF > /etc/greetd/config.toml
+cat <<CONF > "$STAGING_CONFIG"
 [terminal]
 vt = 1
 
@@ -198,6 +148,52 @@ vt = 1
 command = "caelestia-shell -c /usr/share/quickshell/caelestia/greeter.qml"
 user = "greeter"
 CONF
+
+if [ ! -s "$STAGING_CONFIG" ]; then
+  echo "FATAL: Staged greetd configuration is empty or was not created!"
+  rm -f "$STAGING_CONFIG"
+  exit 1
+fi
+
+if command -v greetd >/dev/null 2>&1; then
+  if greetd --check --config "$STAGING_CONFIG" >/dev/null 2>&1; then
+    echo "Validated staged greetd configuration."
+  fi
+fi
+
+if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
+  cp /etc/greetd/config.toml /etc/greetd/config.toml.bak
+  echo "Backed up existing config to /etc/greetd/config.toml.bak"
+fi
+
+mv "$STAGING_CONFIG" /etc/greetd/config.toml
+echo "Staged greetd configuration written to /etc/greetd/config.toml"
+
+# Create/validate greeter user without adding supplementary hardware groups.
+# Device access on seat0 is provided via standard logind / udev seat ACLs.
+if ! getent passwd greeter >/dev/null; then
+  echo "Creating greeter user..."
+  if ! useradd -M -r -s /sbin/nologin greeter; then
+    echo "FATAL: Failed to create greeter user!"
+    exit 1
+  fi
+else
+  echo "Greeter user already exists."
+fi
+
+GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
+echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
+
+# Preserve previous target & display manager state before disabling current DM
+systemctl get-default > /etc/greetd/prev_default_target.bak 2>/dev/null || true
+
+if [ -n "$CURRENT_DM" ] && [ "$CURRENT_DM" != "greetd.service" ]; then
+  echo "$CURRENT_DM" > /etc/greetd/prev_dm.bak
+  echo "Disabling current display manager: $CURRENT_DM..."
+  systemctl disable "$CURRENT_DM" || true
+else
+  > /etc/greetd/prev_dm.bak
+fi
 
 if ! systemctl enable greetd.service; then
   echo "FATAL: Failed to enable greetd.service!"
