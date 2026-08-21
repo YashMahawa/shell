@@ -40,6 +40,10 @@ public:
     // Atomic write to disk for next boot using QSaveFile
     Q_INVOKABLE bool saveGeneratedConfig(const QString& customFilePath = QString(), bool forceLua = false);
 
+    // Ensure config files are consumed/sourced by authoritative hyprland config
+    Q_INVOKABLE void ensureConfigConsumed(const QString& generatedFilePath = QString(), bool forceLua = false);
+    Q_INVOKABLE void syncVariablesFile();
+
     // Live validated socket IPC
     Q_INVOKABLE bool dispatchCompositorIpc();
 

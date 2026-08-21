@@ -191,7 +191,161 @@ bool InputConfig::saveGeneratedConfig(const QString& customFilePath, bool forceL
         return false;
     }
 
+    ensureConfigConsumed(targetPath, isLua);
+    syncVariablesFile();
+
     return true;
+}
+
+void InputConfig::ensureConfigConsumed(const QString& generatedFilePath, bool forceLua) {
+    const bool isLua = usingLua() || forceLua;
+    QString genPath = generatedFilePath;
+    if (genPath.isEmpty()) {
+        QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/caelestia/generated/");
+        genPath = configDir + (isLua ? QStringLiteral("input.lua") : QStringLiteral("input.conf"));
+    }
+
+    if (isLua) {
+        QString configBase = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+        QStringList luaCandidates = {
+            configBase + QStringLiteral("/hypr/hyprland.lua"),
+            configBase + QStringLiteral("/caelestia/hyprland.lua")
+        };
+
+        bool foundTarget = false;
+        for (const QString& luaPath : luaCandidates) {
+            QFile file(luaPath);
+            if (file.exists()) {
+                foundTarget = true;
+                if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    QString content = QString::fromUtf8(file.readAll());
+                    file.close();
+                    if (!content.contains(QStringLiteral("caelestia/generated/input.lua")) &&
+                        !content.contains(QStringLiteral("input.lua"))) {
+                        if (file.open(QIODevice::Append | QIODevice::Text)) {
+                            QTextStream out(&file);
+                            out << QStringLiteral("\n\n-- Caelestia Input Configuration\n"
+                                                  "local _caelestia_input = os.getenv(\"HOME\") .. \"/.config/caelestia/generated/input.lua\"\n"
+                                                  "if io.open(_caelestia_input, \"r\") then\n"
+                                                  "    local _ok, _cfg = pcall(dofile, _caelestia_input)\n"
+                                                  "    if _ok and type(_cfg) == \"table\" and hl and hl.config then\n"
+                                                  "        hl.config(_cfg)\n"
+                                                  "    end\n"
+                                                  "end\n");
+                            file.close();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!foundTarget) {
+            QString primaryLua = configBase + QStringLiteral("/hypr/hyprland.lua");
+            QFileInfo info(primaryLua);
+            QDir().mkpath(info.absolutePath());
+            QFile file(primaryLua);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream out(&file);
+                out << QStringLiteral("-- Authoritative Hyprland Lua Configuration\n"
+                                      "local hl = require(\"hyprland\")\n\n"
+                                      "-- Caelestia Input Configuration\n"
+                                      "local _caelestia_input = os.getenv(\"HOME\") .. \"/.config/caelestia/generated/input.lua\"\n"
+                                      "if io.open(_caelestia_input, \"r\") then\n"
+                                      "    local _ok, _cfg = pcall(dofile, _caelestia_input)\n"
+                                      "    if _ok and type(_cfg) == \"table\" and hl and hl.config then\n"
+                                      "        hl.config(_cfg)\n"
+                                      "    end\n"
+                                      "end\n");
+                file.close();
+            }
+        }
+    } else {
+        QString configBase = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+        QString userConf = configBase + QStringLiteral("/caelestia/hypr-user.conf");
+        QString sourceLine = QStringLiteral("source = ") + genPath;
+
+        QFileInfo info(userConf);
+        QDir().mkpath(info.absolutePath());
+
+        bool alreadySourced = false;
+        if (QFile::exists(userConf)) {
+            QFile file(userConf);
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QString content = QString::fromUtf8(file.readAll());
+                file.close();
+                if (content.contains(genPath) || content.contains(QStringLiteral("generated/input.conf"))) {
+                    alreadySourced = true;
+                }
+            }
+        }
+
+        if (!alreadySourced) {
+            QFile file(userConf);
+            if (file.open(QIODevice::Append | QIODevice::Text)) {
+                QTextStream out(&file);
+                out << QStringLiteral("\n# Caelestia Input Configuration\n") << sourceLine << QStringLiteral("\n");
+                file.close();
+            }
+        }
+    }
+}
+
+void InputConfig::syncVariablesFile() {
+    QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/caelestia/");
+    QDir().mkpath(configDir);
+    QString varsFilePath = configDir + QStringLiteral("hypr-vars.conf");
+
+    QFile file(varsFilePath);
+    QStringList lines;
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            lines.append(in.readLine());
+        }
+        file.close();
+    }
+
+    struct VarDef {
+        QString name;
+        QString value;
+        bool found = false;
+    };
+
+    QList<VarDef> vars = {
+        { QStringLiteral("$pointerSensitivity"), QString::number(pointerSpeed()) },
+        { QStringLiteral("$touchpadTapToClick"), touchpadTapToClick() ? QStringLiteral("true") : QStringLiteral("false") },
+        { QStringLiteral("$touchpadNaturalScroll"), touchpadNaturalScroll() ? QStringLiteral("true") : QStringLiteral("false") },
+        { QStringLiteral("$kbRepeatRate"), QString::number(keyboardRepeatRate()) },
+        { QStringLiteral("$kbRepeatDelay"), QString::number(keyboardRepeatDelay()) }
+    };
+
+    for (int i = 0; i < lines.size(); ++i) {
+        QString trimmed = lines[i].trimmed();
+        for (auto& var : vars) {
+            if (trimmed.startsWith(var.name + QStringLiteral(" ")) ||
+                trimmed.startsWith(var.name + QStringLiteral("="))) {
+                lines[i] = var.name + QStringLiteral(" = ") + var.value;
+                var.found = true;
+                break;
+            }
+        }
+    }
+
+    for (const auto& var : vars) {
+        if (!var.found) {
+            lines.append(var.name + QStringLiteral(" = ") + var.value);
+        }
+    }
+
+    QSaveFile saveFile(varsFilePath);
+    if (saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&saveFile);
+        for (const auto& line : lines) {
+            out << line << "\n";
+        }
+        out.flush();
+        saveFile.commit();
+    }
 }
 
 bool InputConfig::dispatchCompositorIpc() {
@@ -218,64 +372,28 @@ bool InputConfig::dispatchCompositorIpc() {
 
     QStringList cmds;
 
-    if (usingLua()) {
-        QString luaInput = QStringLiteral("eval hl.config({ input = { sensitivity = %1, touchpad = { tap_to_click = %2, natural_scroll = %3 }, repeat_rate = %4, repeat_delay = %5 } })")
-            .arg(pointerSpeed())
-            .arg(touchpadTapToClick() ? QStringLiteral("true") : QStringLiteral("false"))
-            .arg(touchpadNaturalScroll() ? QStringLiteral("true") : QStringLiteral("false"))
-            .arg(keyboardRepeatRate())
-            .arg(keyboardRepeatDelay());
-        cmds.append(luaInput);
+    cmds.append(QStringLiteral("keyword input:sensitivity %1").arg(pointerSpeed()));
+    cmds.append(QStringLiteral("keyword input:touchpad:tap-to-click %1").arg(touchpadTapToClick() ? 1 : 0));
+    cmds.append(QStringLiteral("keyword input:touchpad:natural_scroll %1").arg(touchpadNaturalScroll() ? 1 : 0));
+    cmds.append(QStringLiteral("keyword input:repeat_rate %1").arg(keyboardRepeatRate()));
+    cmds.append(QStringLiteral("keyword input:repeat_delay %1").arg(keyboardRepeatDelay()));
 
-        const QVariantMap devMap = devices();
-        for (auto it = devMap.constBegin(); it != devMap.constEnd(); ++it) {
-            if (it.value().canConvert<QVariantMap>()) {
-                const QVariantMap opts = it.value().toMap();
-                QStringList devOptsLua;
-                for (auto oIt = opts.constBegin(); oIt != opts.constEnd(); ++oIt) {
-                    QString k = oIt.key();
-                    if (k == QStringLiteral("pointerSpeed") || k == QStringLiteral("sensitivity")) {
-                        devOptsLua.append(QStringLiteral("sensitivity = %1").arg(oIt.value().toDouble()));
-                    } else if (k == QStringLiteral("touchpadTapToClick") || k == QStringLiteral("tap_to_click")) {
-                        devOptsLua.append(QStringLiteral("tap_to_click = %1").arg(oIt.value().toBool() ? QStringLiteral("true") : QStringLiteral("false")));
-                    } else if (k == QStringLiteral("touchpadNaturalScroll") || k == QStringLiteral("natural_scroll")) {
-                        devOptsLua.append(QStringLiteral("natural_scroll = %1").arg(oIt.value().toBool() ? QStringLiteral("true") : QStringLiteral("false")));
-                    } else if (k == QStringLiteral("keyboardRepeatRate") || k == QStringLiteral("repeat_rate")) {
-                        devOptsLua.append(QStringLiteral("repeat_rate = %1").arg(oIt.value().toInt()));
-                    } else if (k == QStringLiteral("keyboardRepeatDelay") || k == QStringLiteral("repeat_delay")) {
-                        devOptsLua.append(QStringLiteral("repeat_delay = %1").arg(oIt.value().toInt()));
-                    }
-                }
-                if (!devOptsLua.isEmpty()) {
-                    cmds.append(QStringLiteral("eval hl.config({ device = { [\"%1\"] = { %2 } } })")
-                        .arg(it.key(), devOptsLua.join(QStringLiteral(", "))));
-                }
-            }
-        }
-    } else {
-        cmds.append(QStringLiteral("keyword input:sensitivity %1").arg(pointerSpeed()));
-        cmds.append(QStringLiteral("keyword input:touchpad:tap-to-click %1").arg(touchpadTapToClick() ? 1 : 0));
-        cmds.append(QStringLiteral("keyword input:touchpad:natural_scroll %1").arg(touchpadNaturalScroll() ? 1 : 0));
-        cmds.append(QStringLiteral("keyword input:repeat_rate %1").arg(keyboardRepeatRate()));
-        cmds.append(QStringLiteral("keyword input:repeat_delay %1").arg(keyboardRepeatDelay()));
-
-        const QVariantMap devMap = devices();
-        for (auto it = devMap.constBegin(); it != devMap.constEnd(); ++it) {
-            if (it.value().canConvert<QVariantMap>()) {
-                const QVariantMap opts = it.value().toMap();
-                for (auto oIt = opts.constBegin(); oIt != opts.constEnd(); ++oIt) {
-                    QString k = oIt.key();
-                    if (k == QStringLiteral("pointerSpeed") || k == QStringLiteral("sensitivity")) {
-                        cmds.append(QStringLiteral("keyword device[%1]:sensitivity %2").arg(it.key()).arg(oIt.value().toDouble()));
-                    } else if (k == QStringLiteral("touchpadTapToClick") || k == QStringLiteral("tap_to_click")) {
-                        cmds.append(QStringLiteral("keyword device[%1]:tap-to-click %2").arg(it.key()).arg(oIt.value().toBool() ? 1 : 0));
-                    } else if (k == QStringLiteral("touchpadNaturalScroll") || k == QStringLiteral("natural_scroll")) {
-                        cmds.append(QStringLiteral("keyword device[%1]:natural_scroll %2").arg(it.key()).arg(oIt.value().toBool() ? 1 : 0));
-                    } else if (k == QStringLiteral("keyboardRepeatRate") || k == QStringLiteral("repeat_rate")) {
-                        cmds.append(QStringLiteral("keyword device[%1]:repeat_rate %2").arg(it.key()).arg(oIt.value().toInt()));
-                    } else if (k == QStringLiteral("keyboardRepeatDelay") || k == QStringLiteral("repeat_delay")) {
-                        cmds.append(QStringLiteral("keyword device[%1]:repeat_delay %2").arg(it.key()).arg(oIt.value().toInt()));
-                    }
+    const QVariantMap devMap = devices();
+    for (auto it = devMap.constBegin(); it != devMap.constEnd(); ++it) {
+        if (it.value().canConvert<QVariantMap>()) {
+            const QVariantMap opts = it.value().toMap();
+            for (auto oIt = opts.constBegin(); oIt != opts.constEnd(); ++oIt) {
+                QString k = oIt.key();
+                if (k == QStringLiteral("pointerSpeed") || k == QStringLiteral("sensitivity")) {
+                    cmds.append(QStringLiteral("keyword device[%1]:sensitivity %2").arg(it.key()).arg(oIt.value().toDouble()));
+                } else if (k == QStringLiteral("touchpadTapToClick") || k == QStringLiteral("tap_to_click")) {
+                    cmds.append(QStringLiteral("keyword device[%1]:tap-to-click %2").arg(it.key()).arg(oIt.value().toBool() ? 1 : 0));
+                } else if (k == QStringLiteral("touchpadNaturalScroll") || k == QStringLiteral("natural_scroll")) {
+                    cmds.append(QStringLiteral("keyword device[%1]:natural_scroll %2").arg(it.key()).arg(oIt.value().toBool() ? 1 : 0));
+                } else if (k == QStringLiteral("keyboardRepeatRate") || k == QStringLiteral("repeat_rate")) {
+                    cmds.append(QStringLiteral("keyword device[%1]:repeat_rate %2").arg(it.key()).arg(oIt.value().toInt()));
+                } else if (k == QStringLiteral("keyboardRepeatDelay") || k == QStringLiteral("repeat_delay")) {
+                    cmds.append(QStringLiteral("keyword device[%1]:repeat_delay %2").arg(it.key()).arg(oIt.value().toInt()));
                 }
             }
         }

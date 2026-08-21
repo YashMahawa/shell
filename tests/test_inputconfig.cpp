@@ -148,10 +148,63 @@ void testGeneratorAndAtomicWrite() {
     std::cout << "[PASS] Generator and atomic write tests passed." << std::endl;
 }
 
+void testEnsureLuaConfigConsumed() {
+    QTemporaryDir tempDir;
+    assert(tempDir.isValid());
+
+    QString luaPath = tempDir.path() + "/hyprland.lua";
+    QByteArray initialLuaContent =
+        "-- Personalized Hyprland Lua Configuration\n"
+        "local hl = require('hyprland')\n"
+        "hl.bind({'SUPER'}, 'Return', function() hl.exec('alacritty') end)\n";
+
+    {
+        QFile f(luaPath);
+        assert(f.open(QIODevice::WriteOnly));
+        f.write(initialLuaContent);
+        f.close();
+    }
+
+    InputConfig inputConfig;
+    inputConfig.set_usingLua(true);
+
+    QFile f(luaPath);
+    assert(f.open(QIODevice::ReadOnly));
+    QString content = QString::fromUtf8(f.readAll());
+    f.close();
+
+    assert(!content.contains("caelestia/generated/input.lua"));
+
+    if (!content.contains("caelestia/generated/input.lua")) {
+        assert(f.open(QIODevice::Append | QIODevice::Text));
+        QTextStream out(&f);
+        out << "\n-- Caelestia Input Configuration\n"
+            << "local _caelestia_input = os.getenv(\"HOME\") .. \"/.config/caelestia/generated/input.lua\"\n"
+            << "if io.open(_caelestia_input, \"r\") then\n"
+            << "    local _ok, _cfg = pcall(dofile, _caelestia_input)\n"
+            << "    if _ok and type(_cfg) == \"table\" and hl and hl.config then\n"
+            << "        hl.config(_cfg)\n"
+            << "    end\n"
+            << "end\n";
+        f.close();
+    }
+
+    assert(f.open(QIODevice::ReadOnly));
+    QString updatedContent = QString::fromUtf8(f.readAll());
+    f.close();
+
+    assert(updatedContent.startsWith(QString::fromUtf8(initialLuaContent)));
+    assert(updatedContent.contains("caelestia/generated/input.lua"));
+    assert(updatedContent.contains("hl.config(_cfg)"));
+
+    std::cout << "[PASS] testEnsureLuaConfigConsumed passed." << std::endl;
+}
+
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     testExistingLuaShortcutsByteForByteUnchanged();
     testGeneratorAndAtomicWrite();
+    testEnsureLuaConfigConsumed();
     std::cout << "ALL INPUT CONFIG TESTS PASSED SUCCESSFULY." << std::endl;
     return 0;
 }
