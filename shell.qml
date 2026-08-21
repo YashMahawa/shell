@@ -31,6 +31,7 @@ ShellRoot {
 
     ConfigToasts {}
     VoiceOverlay {}
+    BluetoothAuthModal {}
     CodexVoiceController {}
     Shortcuts {}
     BatteryMonitor {}
