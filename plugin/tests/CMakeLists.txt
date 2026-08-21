@@ -15,3 +15,17 @@ target_include_directories(test_bluetoothagent PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 
 add_test(NAME test_bluetoothagent COMMAND test_bluetoothagent)
 set_tests_properties(test_bluetoothagent PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_voiceservice test_voiceservice.cpp)
+target_link_libraries(test_voiceservice PRIVATE
+    caelestia-services
+    Qt6::Test
+    Qt6::DBus
+    Qt6::Core
+    Qt6::Qml
+    Qt6::Quick
+)
+target_include_directories(test_voiceservice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src/Caelestia)
+
+add_test(NAME test_voiceservice COMMAND test_voiceservice)
+set_tests_properties(test_voiceservice PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

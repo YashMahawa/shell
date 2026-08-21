@@ -20,6 +20,7 @@ qml_module(caelestia-services
         lyrics.cpp
         backgrounddaemon.cpp
         bluetoothagent.hpp bluetoothagent.cpp
+        voiceservice.hpp voiceservice.cpp
     LIBRARIES
         Qt::Concurrent
         Qt::DBus
