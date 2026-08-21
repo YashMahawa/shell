@@ -1,6 +1,7 @@
 #pragma once
 
 #include "configobject.hpp"
+#include <qvariant.h>
 
 namespace caelestia::config {
 
@@ -13,6 +14,8 @@ class InputConfig : public ConfigObject {
     CONFIG_PROPERTY(bool, touchpadNaturalScroll, true)
     CONFIG_PROPERTY(int, keyboardRepeatRate, 35)
     CONFIG_PROPERTY(int, keyboardRepeatDelay, 250)
+    CONFIG_PROPERTY(bool, usingLua, false)
+    CONFIG_PROPERTY(QVariantMap, devices, {})
 
     // Aliases
     Q_PROPERTY(double mouseSensitivity READ pointerSpeed WRITE set_pointerSpeed NOTIFY pointerSpeedChanged)
@@ -24,9 +27,23 @@ class InputConfig : public ConfigObject {
 public:
     explicit InputConfig(QObject* parent = nullptr);
 
+    // Per-device settings helpers
+    Q_INVOKABLE void setDeviceSetting(const QString& deviceName, const QString& key, const QVariant& value);
+    Q_INVOKABLE QVariant deviceSetting(const QString& deviceName, const QString& key, const QVariant& defaultValue = QVariant()) const;
+    Q_INVOKABLE void removeDeviceSetting(const QString& deviceName, const QString& key = QString());
+
+    // Version-aware Lua / Config generator
+    [[nodiscard]] Q_INVOKABLE QString generateLuaConfig() const;
+    [[nodiscard]] Q_INVOKABLE QString generateConfConfig() const;
+    [[nodiscard]] Q_INVOKABLE QString generateConfig(bool forceLua = false) const;
+
+    // Atomic write to disk for next boot using QSaveFile
+    Q_INVOKABLE bool saveGeneratedConfig(const QString& customFilePath = QString(), bool forceLua = false);
+
+    // Live validated socket IPC
+    Q_INVOKABLE bool dispatchCompositorIpc();
+
     void applyInputSettings();
-    void syncVariablesFile();
-    void dispatchCompositorIpc();
 };
 
 } // namespace caelestia::config

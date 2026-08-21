@@ -59,6 +59,11 @@ if("plugin" IN_LIST ENABLE_MODULES)
     add_subdirectory(plugin)
 endif()
 
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 if("shell" IN_LIST ENABLE_MODULES)
     foreach(dir assets components modules services utils)
         install(DIRECTORY ${dir} DESTINATION "${INSTALL_QSCONFDIR}")
