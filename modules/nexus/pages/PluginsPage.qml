@@ -68,33 +68,38 @@ PageBase {
         InfoRow {
             first: true
             label: qsTr("Caelestia Native Plugin")
-            value: qsTr("Active (%1)").arg(CUtils.version || "1.0.0")
+            value: CUtils.version ? qsTr("Active (v%1)").arg(CUtils.version) : qsTr("Unavailable")
         }
 
         InfoRow {
             label: qsTr("M3Shapes Extension")
-            value: qsTr("Active")
+            value: CUtils.version ? qsTr("Active") : qsTr("Unavailable")
         }
 
         InfoRow {
             label: qsTr("Network Service Plugin")
-            value: Nmcli.wifiEnabled ? qsTr("Wi-Fi Active") : qsTr("Enabled")
+            value: Nmcli.wifiEnabled ? qsTr("Wi-Fi Active (%1 network(s))").arg(Network.wifiNetworks ? Network.wifiNetworks.length : 0) : Nmcli.networkingEnabled ? qsTr("Networking Active") : qsTr("Disabled")
         }
 
         InfoRow {
             label: qsTr("Audio & Pipewire Service")
-            value: qsTr("Active")
+            value: Audio.sink ? qsTr("PipeWire Active (%1 sink(s))").arg(Audio.sinks ? Audio.sinks.length : 1) : qsTr("PipeWire Unavailable")
         }
 
         InfoRow {
             label: qsTr("VPN Management Service")
-            value: GlobalConfig.utilities.vpn.enabled ? qsTr("Enabled") : qsTr("Standby")
+            value: VPN.active ? qsTr("Connected (%1)").arg(VPN.activeProfileName || "VPN") : GlobalConfig.utilities.vpn.enabled ? qsTr("Enabled (Disconnected)") : qsTr("Disabled")
+        }
+
+        InfoRow {
+            label: qsTr("Weather & Location Service")
+            value: Weather.cc ? qsTr("Active (%1)").arg(Weather.city || Weather.description) : Weather.ipApiRequestPending ? qsTr("Fetching location...") : qsTr("Unavailable")
         }
 
         InfoRow {
             last: true
-            label: qsTr("Weather & Location Service")
-            value: GlobalConfig.services.weatherLocation ? GlobalConfig.services.weatherLocation : qsTr("Auto-detect")
+            label: qsTr("Display & Brightness Service")
+            value: Brightness.monitors && Brightness.monitors.length > 0 ? qsTr("Active (%1 monitor(s))").arg(Brightness.monitors.length) : qsTr("Standby / Auto")
         }
     }
 }

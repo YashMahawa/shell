@@ -28,7 +28,7 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Enabled")
-            checked: Config.launcher.enabled
+            checked: GlobalConfig.launcher.enabled
             onToggled: GlobalConfig.launcher.enabled = checked
         }
 
@@ -37,7 +37,7 @@ PageBase {
             last: true
             text: qsTr("Show on hover")
             subtext: qsTr("Reveal when the cursor reaches the screen edge")
-            checked: Config.launcher.showOnHover
+            checked: GlobalConfig.launcher.showOnHover
             onToggled: GlobalConfig.launcher.showOnHover = checked
         }
 
@@ -50,7 +50,7 @@ PageBase {
             Layout.fillWidth: true
             first: true
             label: qsTr("Max items shown")
-            value: Config.launcher.maxShown
+            value: GlobalConfig.launcher.maxShown
             from: 1
             to: 20
             stepSize: 1
@@ -60,7 +60,7 @@ PageBase {
         StepperRow {
             Layout.fillWidth: true
             label: qsTr("Max wallpapers")
-            value: Config.launcher.maxWallpapers
+            value: GlobalConfig.launcher.maxWallpapers
             from: 1
             to: 30
             stepSize: 1
@@ -72,7 +72,7 @@ PageBase {
             last: true
             label: qsTr("Drag threshold")
             subtext: qsTr("Pixels dragged before the launcher opens")
-            value: Config.launcher.dragThreshold
+            value: GlobalConfig.launcher.dragThreshold
             from: 0
             to: 200
             stepSize: 5

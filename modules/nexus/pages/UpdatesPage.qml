@@ -17,6 +17,7 @@ PageBase {
     property string quickshellVersion: ""
     property string cliVersion: ""
     property bool isChecking: false
+    property bool hasError: false
     property string updateStatusText: qsTr("System up to date")
 
     title: qsTr("Updates")
@@ -26,6 +27,51 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        Process {
+            id: updateCheckProcess
+
+            running: false
+            command: [
+                "sh", "-c",
+                "found=0; updates=0; " +
+                "if command -v checkupdates >/dev/null 2>&1; then found=1; count=$(checkupdates 2>/dev/null | wc -l); updates=$((updates + count)); fi; " +
+                "if command -v flatpak >/dev/null 2>&1; then found=1; count=$(flatpak remote-ls --updates 2>/dev/null | wc -l); updates=$((updates + count)); fi; " +
+                "if command -v apt-get >/dev/null 2>&1; then found=1; count=$(apt-get -s upgrade 2>/dev/null | grep -E '^Inst ' | wc -l); updates=$((updates + count)); fi; " +
+                "if command -v dnf >/dev/null 2>&1; then found=1; count=$(dnf check-update --q 2>/dev/null | grep -v '^$' | wc -l); updates=$((updates + count)); fi; " +
+                "if [ $found -eq 0 ]; then echo 'UNAVAILABLE'; else echo \"UPDATES:$updates\"; fi"
+            ]
+
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    root.isChecking = false;
+                    const output = text.trim();
+                    if (output.startsWith("UPDATES:")) {
+                        const count = parseInt(output.substring(8), 10) || 0;
+                        root.hasError = false;
+                        if (count === 0) {
+                            root.updateStatusText = qsTr("System is up to date (checked just now)");
+                        } else {
+                            root.updateStatusText = qsTr("%1 update(s) available").arg(count);
+                        }
+                    } else if (output === "UNAVAILABLE") {
+                        root.hasError = true;
+                        root.updateStatusText = qsTr("Package update checking unavailable (no supported package manager found)");
+                    } else {
+                        root.hasError = true;
+                        root.updateStatusText = qsTr("Update check returned invalid status");
+                    }
+                }
+            }
+
+            onExited: (exitCode, exitStatus) => {
+                root.isChecking = false;
+                if (exitCode !== 0 && exitCode !== 100) {
+                    root.hasError = true;
+                    root.updateStatusText = qsTr("Update check failed (exit code %1)").arg(exitCode);
+                }
+            }
+        }
 
         Process {
             running: true
@@ -62,9 +108,9 @@ PageBase {
                 spacing: Tokens.spacing.medium
 
                 MaterialIcon {
-                    text: root.isChecking ? "sync" : "check_circle"
+                    text: root.isChecking ? "sync" : root.hasError ? "error" : "check_circle"
                     font: Tokens.font.icon.large
-                    color: Colours.palette.m3primary
+                    color: root.isChecking ? Colours.palette.m3primary : root.hasError ? Colours.palette.m3error : Colours.palette.m3primary
                 }
 
                 ColumnLayout {
@@ -90,19 +136,11 @@ PageBase {
                     disabled: root.isChecking
                     onClicked: {
                         root.isChecking = true;
-                        checkTimer.restart();
+                        root.hasError = false;
+                        root.updateStatusText = qsTr("Querying package repositories...");
+                        updateCheckProcess.running = true;
                     }
                 }
-            }
-        }
-
-        Timer {
-            id: checkTimer
-
-            interval: 1500
-            onTriggered: {
-                root.isChecking = false;
-                root.updateStatusText = qsTr("System is up to date (checked just now)");
             }
         }
 

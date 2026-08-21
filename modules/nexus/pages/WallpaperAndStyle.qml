@@ -40,7 +40,7 @@ PageBase {
 
             Loader {
                 anchors.centerIn: parent
-                opacity: Config.background.wallpaperEnabled ? 0 : 1
+                opacity: GlobalConfig.background.wallpaperEnabled ? 0 : 1
                 active: opacity > 0
 
                 sourceComponent: ColumnLayout {
@@ -70,7 +70,7 @@ PageBase {
 
             Item {
                 anchors.fill: parent
-                opacity: Config.background.wallpaperEnabled ? 1 : 0
+                opacity: GlobalConfig.background.wallpaperEnabled ? 1 : 0
 
                 Behavior on opacity {
                     Anim {
@@ -153,7 +153,7 @@ PageBase {
                 type: IconTextButton.Tonal
                 horizontalPadding: Tokens.padding.extraLarge
                 verticalPadding: Tokens.padding.medium
-                disabled: !Config.background.wallpaperEnabled
+                disabled: !GlobalConfig.background.wallpaperEnabled
                 onClicked: root.nState.openSubPage(1) // Wallpaper page
             }
 
@@ -175,7 +175,7 @@ PageBase {
 
             first: true
             text: qsTr("Display wallpaper")
-            checked: Config.background.wallpaperEnabled
+            checked: GlobalConfig.background.wallpaperEnabled
             onToggled: GlobalConfig.background.wallpaperEnabled = checked
         }
 
@@ -208,7 +208,7 @@ PageBase {
             first: true
             label: qsTr("Corner rounding scale")
             subtext: qsTr("Scale factor for corner rounding tokens")
-            value: Config.appearance.rounding.scale
+            value: GlobalConfig.appearance.rounding.scale
             from: 0.5
             to: 2.0
             stepSize: 0.1
@@ -219,7 +219,7 @@ PageBase {
             Layout.fillWidth: true
             label: qsTr("Shell padding scale")
             subtext: qsTr("Scale factor for shell padding tokens")
-            value: Config.appearance.padding.scale
+            value: GlobalConfig.appearance.padding.scale
             from: 0.5
             to: 2.0
             stepSize: 0.1
@@ -230,7 +230,7 @@ PageBase {
             Layout.fillWidth: true
             label: qsTr("Shell spacing scale")
             subtext: qsTr("Scale factor for shell spacing tokens")
-            value: Config.appearance.spacing.scale
+            value: GlobalConfig.appearance.spacing.scale
             from: 0.5
             to: 2.0
             stepSize: 0.1
@@ -242,7 +242,7 @@ PageBase {
             last: true
             label: qsTr("Font scale")
             subtext: qsTr("Scale factor for font tokens")
-            value: Config.appearance.font.scale
+            value: GlobalConfig.appearance.font.scale
             from: 0.5
             to: 2.0
             stepSize: 0.1

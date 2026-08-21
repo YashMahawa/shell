@@ -32,28 +32,36 @@ PageBase {
             label: qsTr("Position")
             subtext: qsTr("Screen edge where the status bar is placed")
             active: {
-                switch (Config.bar.edge) {
-                case "top": return qsTr("Top");
-                case "bottom": return qsTr("Bottom");
-                case "right": return qsTr("Right");
+                switch (GlobalConfig.bar.edge) {
+                case "top": return itemTop;
+                case "bottom": return itemBottom;
+                case "right": return itemRight;
                 case "left":
-                default: return qsTr("Left");
+                default: return itemLeft;
                 }
             }
             menuItems: [
                 MenuItem {
+                    id: itemLeft
+
                     text: qsTr("Left")
                     onTriggered: GlobalConfig.bar.edge = "left"
                 },
                 MenuItem {
+                    id: itemTop
+
                     text: qsTr("Top")
                     onTriggered: GlobalConfig.bar.edge = "top"
                 },
                 MenuItem {
+                    id: itemRight
+
                     text: qsTr("Right")
                     onTriggered: GlobalConfig.bar.edge = "right"
                 },
                 MenuItem {
+                    id: itemBottom
+
                     text: qsTr("Bottom")
                     onTriggered: GlobalConfig.bar.edge = "bottom"
                 }
@@ -64,7 +72,7 @@ PageBase {
             Layout.fillWidth: true
             text: qsTr("Persistent")
             subtext: qsTr("Keep the bar visible at all times")
-            checked: Config.bar.persistent
+            checked: GlobalConfig.bar.persistent
             onToggled: GlobalConfig.bar.persistent = checked
         }
 
@@ -72,7 +80,7 @@ PageBase {
             Layout.fillWidth: true
             text: qsTr("Show on hover")
             subtext: qsTr("Reveal the bar when the cursor reaches the screen edge")
-            checked: Config.bar.showOnHover
+            checked: GlobalConfig.bar.showOnHover
             onToggled: GlobalConfig.bar.showOnHover = checked
         }
 
@@ -81,7 +89,7 @@ PageBase {
             last: true
             label: qsTr("Drag threshold")
             subtext: qsTr("Pixels dragged before the bar reveals")
-            value: Config.bar.dragThreshold
+            value: GlobalConfig.bar.dragThreshold
             from: 0
             to: 200
             stepSize: 5
@@ -255,7 +263,7 @@ PageBase {
             first: true
             text: qsTr("Workspaces")
             subtext: qsTr("Scroll over the workspace indicator to switch workspaces")
-            checked: Config.bar.scrollActions.workspaces
+            checked: GlobalConfig.bar.scrollActions.workspaces
             onToggled: GlobalConfig.bar.scrollActions.workspaces = checked
         }
 
@@ -263,7 +271,7 @@ PageBase {
             Layout.fillWidth: true
             text: qsTr("Volume")
             subtext: qsTr("Scroll on the top half of the bar to adjust volume")
-            checked: Config.bar.scrollActions.volume
+            checked: GlobalConfig.bar.scrollActions.volume
             onToggled: GlobalConfig.bar.scrollActions.volume = checked
         }
 
@@ -272,7 +280,7 @@ PageBase {
             last: true
             text: qsTr("Brightness")
             subtext: qsTr("Scroll on the bottom half of the bar to adjust brightness")
-            checked: Config.bar.scrollActions.brightness
+            checked: GlobalConfig.bar.scrollActions.brightness
             onToggled: GlobalConfig.bar.scrollActions.brightness = checked
         }
     }

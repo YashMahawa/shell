@@ -27,7 +27,7 @@ PageBase {
             Layout.fillWidth: true
             first: true
             text: qsTr("Enabled")
-            checked: Config.sidebar.enabled
+            checked: GlobalConfig.sidebar.enabled
             onToggled: GlobalConfig.sidebar.enabled = checked
         }
 
@@ -36,7 +36,7 @@ PageBase {
             last: true
             label: qsTr("Drag threshold")
             subtext: qsTr("Pixels dragged before the sidebar opens")
-            value: Config.sidebar.dragThreshold
+            value: GlobalConfig.sidebar.dragThreshold
             from: 0
             to: 200
             stepSize: 5
