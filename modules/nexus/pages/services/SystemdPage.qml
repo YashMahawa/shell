@@ -14,7 +14,6 @@ PageBase {
     id: root
 
     property string selectedScope: "user"
-    property bool expertMode: false
     property string searchText: ""
     property string stateFilter: "all"
     property list<var> systemServices: []
@@ -143,8 +142,7 @@ PageBase {
             "execute",
             action,
             unitName,
-            scope,
-            root.expertMode ? "--expert" : "--no-expert"
+            scope
         ];
 
         actionProc.running = true;
@@ -300,7 +298,7 @@ PageBase {
         width: root.cappedWidth
         spacing: Tokens.spacing.medium
 
-        // Header: Scope Switcher & Expert Mode Toggle
+        // Header: Scope Switcher
         ConnectedRect {
             Layout.fillWidth: true
             first: true
@@ -333,22 +331,6 @@ PageBase {
                     Layout.fillWidth: true
                 }
 
-                RowLayout {
-                    visible: root.selectedScope === "system"
-                    spacing: Tokens.spacing.small
-
-                    StyledText {
-                        text: qsTr("Expert Mode")
-                        font: Tokens.font.label.large
-                        color: root.expertMode ? Colours.palette.m3error : Colours.palette.m3onSurface
-                    }
-
-                    StyledSwitch {
-                        checked: root.expertMode
-                        onToggled: root.expertMode = checked
-                    }
-                }
-
                 IconButton {
                     icon: "refresh"
                     type: IconButton.Tonal
@@ -372,14 +354,14 @@ PageBase {
                 spacing: Tokens.spacing.medium
 
                 MaterialIcon {
-                    text: root.expertMode ? "warning" : "info"
-                    color: root.expertMode ? Colours.palette.m3error : Colours.palette.m3primary
+                    text: "info"
+                    color: Colours.palette.m3primary
                     fontStyle: Tokens.font.icon.medium
                 }
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: root.expertMode ? qsTr("Expert Mode Enabled: Full control over system units is granted. Destructive actions require dependency verification and typed confirmation.") : qsTr("System Services Read-Only View: Non-allowlisted system services cannot be modified without enabling Expert Mode.")
+                    text: qsTr("System Services (Read-Only Inspection Mode): System-level unit mutations are disabled to protect system stability.")
                     color: Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.small
                     wrapMode: Text.WordWrap
@@ -550,8 +532,7 @@ PageBase {
                     readonly property bool isBusy: !!root.busyUnits[unitName]
 
                     readonly property bool isCritical: !!modelData.isCritical
-                    readonly property bool isAllowlisted: !!modelData.isAllowlisted
-                    readonly property bool canModify: root.selectedScope === "user" || root.expertMode || isAllowlisted
+                    readonly property bool canModify: root.selectedScope === "user" && !isCritical
 
                     first: index === 0
                     last: index === root.filteredServices.length - 1
@@ -630,9 +611,9 @@ PageBase {
                                     }
                                 }
 
-                                // Read-Only Badge (in system mode when non-allowlisted and expert mode off)
+                                // Read-Only Badge (in system mode)
                                 StyledRect {
-                                    visible: root.selectedScope === "system" && !serviceItem.canModify
+                                    visible: root.selectedScope === "system"
                                     radius: Tokens.rounding.extraSmall
                                     color: Colours.tPalette.m3surfaceContainerHighest
                                     implicitWidth: roBadgeText.implicitWidth + Tokens.padding.small * 2
@@ -698,7 +679,7 @@ PageBase {
                                     enabled: serviceItem.canModify
                                     icon: "refresh"
                                     type: IconButton.Tonal
-                                    tooltipText: serviceItem.canModify ? qsTr("Restart service") : qsTr("Enable Expert Mode to modify system service")
+                                    tooltipText: serviceItem.canModify ? qsTr("Restart service") : (root.selectedScope === "system" ? qsTr("System units are read-only") : qsTr("Critical user services cannot be modified"))
                                     onClicked: root.requestServiceAction(serviceItem.unitName, "restart", root.selectedScope, serviceItem.modelData)
                                 }
 
@@ -707,7 +688,7 @@ PageBase {
                                     enabled: serviceItem.canModify
                                     icon: "stop"
                                     type: IconButton.Tonal
-                                    tooltipText: serviceItem.canModify ? qsTr("Stop service") : qsTr("Enable Expert Mode to modify system service")
+                                    tooltipText: serviceItem.canModify ? qsTr("Stop service") : (root.selectedScope === "system" ? qsTr("System units are read-only") : qsTr("Critical user services cannot be modified"))
                                     onClicked: root.requestServiceAction(serviceItem.unitName, "stop", root.selectedScope, serviceItem.modelData)
                                 }
 
@@ -716,7 +697,7 @@ PageBase {
                                     enabled: serviceItem.canModify
                                     icon: "play_arrow"
                                     type: IconButton.Tonal
-                                    tooltipText: serviceItem.canModify ? qsTr("Start service") : qsTr("Enable Expert Mode to modify system service")
+                                    tooltipText: serviceItem.canModify ? qsTr("Start service") : (root.selectedScope === "system" ? qsTr("System units are read-only") : qsTr("Critical user services cannot be modified"))
                                     onClicked: root.requestServiceAction(serviceItem.unitName, "start", root.selectedScope, serviceItem.modelData)
                                 }
 
@@ -725,7 +706,7 @@ PageBase {
                                     enabled: serviceItem.canModify
                                     icon: "add_circle"
                                     type: IconButton.Text
-                                    tooltipText: serviceItem.canModify ? qsTr("Enable on boot") : qsTr("Enable Expert Mode to modify system service")
+                                    tooltipText: serviceItem.canModify ? qsTr("Enable on boot") : (root.selectedScope === "system" ? qsTr("System units are read-only") : qsTr("Critical user services cannot be modified"))
                                     onClicked: root.requestServiceAction(serviceItem.unitName, "enable", root.selectedScope, serviceItem.modelData)
                                 }
 
@@ -734,7 +715,7 @@ PageBase {
                                     enabled: serviceItem.canModify
                                     icon: "do_not_disturb_on"
                                     type: IconButton.Text
-                                    tooltipText: serviceItem.canModify ? qsTr("Disable on boot") : qsTr("Enable Expert Mode to modify system service")
+                                    tooltipText: serviceItem.canModify ? qsTr("Enable on boot") : (root.selectedScope === "system" ? qsTr("System units are read-only") : qsTr("Critical user services cannot be modified"))
                                     onClicked: root.requestServiceAction(serviceItem.unitName, "disable", root.selectedScope, serviceItem.modelData)
                                 }
                             }

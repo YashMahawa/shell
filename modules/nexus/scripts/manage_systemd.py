@@ -260,7 +260,7 @@ def get_services(user=False) -> dict:
 
 ALLOWED_ACTIONS = {"start", "stop", "restart", "enable", "disable", "reload", "mask", "unmask"}
 
-def execute_action(action: str, unit_name: str, scope: str = "user", expert: bool = False) -> dict:
+def execute_action(action: str, unit_name: str, scope: str = "user") -> dict:
     action = action.lower().strip()
     if action not in ALLOWED_ACTIONS:
         err = f"Error: Invalid action '{action}'. Allowed actions: {', '.join(sorted(ALLOWED_ACTIONS))}"
@@ -275,23 +275,19 @@ def execute_action(action: str, unit_name: str, scope: str = "user", expert: boo
     is_user = (scope.lower() == "user")
 
     if not is_user:
-        info = resolve_unit_info(unit_name, user=False)
-        is_crit, crit_reason = evaluate_critical_status(unit_name, info["aliases"])
-        allowlisted = is_allowlisted(unit_name, info["aliases"])
+        err = "Action rejected: System-scoped unit mutations are disabled to protect system stability."
+        sys.stderr.write(f"{err}\n")
+        return {"success": False, "error": err}
 
-        if not expert:
-            if is_crit:
-                err = f"Action rejected: Service '{unit_name}' is a critical system service ({crit_reason}). Enable Expert Mode to modify critical system services."
-                sys.stderr.write(f"{err}\n")
-                return {"success": False, "error": err}
-            if not allowlisted:
-                err = f"Action rejected: Service '{unit_name}' is not in the system allowlist. Enable Expert Mode to modify non-allowlisted system services."
-                sys.stderr.write(f"{err}\n")
-                return {"success": False, "error": err}
+    info = resolve_unit_info(unit_name, user=True)
+    is_crit, crit_reason = evaluate_critical_status(unit_name, info["aliases"])
 
-        cmd = ["pkexec", "systemctl", action, unit_name]
-    else:
-        cmd = ["systemctl", "--user", action, unit_name]
+    if is_crit:
+        err = f"Action rejected: Service '{unit_name}' is a critical user service ({crit_reason})."
+        sys.stderr.write(f"{err}\n")
+        return {"success": False, "error": err}
+
+    cmd = ["systemctl", "--user", action, unit_name]
 
     try:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -418,10 +414,7 @@ def main():
                 action = sys.argv[2]
                 unit_name = sys.argv[3]
                 scope = sys.argv[4] if len(sys.argv) > 4 else "user"
-                expert = False
-                if len(sys.argv) > 5:
-                    expert = (sys.argv[5] == "--expert")
-                res = execute_action(action, unit_name, scope=scope, expert=expert)
+                res = execute_action(action, unit_name, scope=scope)
                 if not res["success"]:
                     sys.exit(1)
                 print(json.dumps(res))
