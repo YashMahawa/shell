@@ -692,21 +692,24 @@ Singleton {
                     stableId: computeStableId(matchedToplevel)
                 });
 
-                if (!(ipc.floating ?? false)) {
-                    dispatchCmd(`setfloating address:${fullAddr}`, `hl.dsp.window.float({ action = "enable", window = "address:${fullAddr}" })`);
-                }
+                const isAlreadyRegistered = root.registeredOverlays[normAddr] !== undefined;
+                if (!isAlreadyRegistered) {
+                    if (!(ipc.floating ?? false)) {
+                        dispatchCmd(`setfloating address:${fullAddr}`, `hl.dsp.window.float({ action = "enable", window = "address:${fullAddr}" })`);
+                    }
 
-                if (updatedEntry.pinned && !ipc.pinned) {
-                    dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
-                }
+                    if (updatedEntry.pinned && !ipc.pinned) {
+                        dispatchCmd(`pin address:${fullAddr}`, `hl.dsp.window.pin({ window = "address:${fullAddr}" })`);
+                    }
 
-                if (updatedEntry.clickthrough) {
-                    dispatchCmd(`setprop address:${fullAddr} noinput 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "1" })`);
-                    dispatchCmd(`setprop address:${fullAddr} passthrough 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "1" })`);
-                }
+                    if (updatedEntry.clickthrough) {
+                        dispatchCmd(`setprop address:${fullAddr} noinput 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "noinput", value = "1" })`);
+                        dispatchCmd(`setprop address:${fullAddr} passthrough 1`, `hl.dsp.setprop({ window = "address:${fullAddr}", prop = "passthrough", value = "1" })`);
+                    }
 
-                if (updatedEntry.anchored) {
-                    applyAnchor(matchedToplevel, updatedEntry.anchored);
+                    if (updatedEntry.anchored) {
+                        applyAnchor(matchedToplevel, updatedEntry.anchored);
+                    }
                 }
 
                 newRegistered[normAddr] = updatedEntry;
@@ -751,7 +754,7 @@ Singleton {
     Connections {
         function onRawEvent(event: HyprlandEvent): void {
             const n = event.name;
-            if (n === "closewindow" || n === "openwindow" || n === "movewindow" || n === "configreloaded") {
+            if (n === "closewindow" || n === "openwindow") {
                 reconcileTimer.restart();
             }
         }

@@ -477,18 +477,20 @@ class OverlayManagerSim:
                 updated_entry["instanceDiscriminator"] = self.compute_instance_discriminator(matched_toplevel)
                 updated_entry["stableId"] = self.compute_stable_id(matched_toplevel)
 
-                if not ipc.get("floating"):
-                    self.dispatch_cmd(f"setfloating address:{full_addr}", None)
+                is_already_registered = norm_addr in self.registered_overlays
+                if not is_already_registered:
+                    if not ipc.get("floating"):
+                        self.dispatch_cmd(f"setfloating address:{full_addr}", None)
 
-                if updated_entry.get("pinned") and not ipc.get("pinned"):
-                    self.dispatch_cmd(f"pin address:{full_addr}", None)
+                    if updated_entry.get("pinned") and not ipc.get("pinned"):
+                        self.dispatch_cmd(f"pin address:{full_addr}", None)
 
-                if updated_entry.get("clickthrough"):
-                    self.dispatch_cmd(f"setprop address:{full_addr} noinput 1", None)
-                    self.dispatch_cmd(f"setprop address:{full_addr} passthrough 1", None)
+                    if updated_entry.get("clickthrough"):
+                        self.dispatch_cmd(f"setprop address:{full_addr} noinput 1", None)
+                        self.dispatch_cmd(f"setprop address:{full_addr} passthrough 1", None)
 
-                if updated_entry.get("anchored"):
-                    self.apply_anchor(matched_toplevel, updated_entry["anchored"])
+                    if updated_entry.get("anchored"):
+                        self.apply_anchor(matched_toplevel, updated_entry["anchored"])
 
                 new_registered[norm_addr] = updated_entry
 
@@ -624,7 +626,8 @@ def test_dispatch_success_validation_before_persisting_state(tmp_path):
     assert "0xfailwin" not in sim.registered_overlays
 
 def test_qml_ipc_contract_and_structure_validation():
-    qml_file_path = "/app/shell/services/OverlayManager.qml"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    qml_file_path = os.path.join(base_dir, "services", "OverlayManager.qml")
     assert os.path.exists(qml_file_path), "OverlayManager.qml file must exist"
 
     with open(qml_file_path, "r", encoding="utf-8") as f:
@@ -663,6 +666,10 @@ def test_qml_ipc_contract_and_structure_validation():
     # 5. Verify explicit appIdentity and instanceDiscriminator helper functions
     assert "function computeAppIdentity(" in content
     assert "function computeInstanceDiscriminator(" in content
+
+    # 6. Verify event filtering to avoid conflicts with pet/window rules after moves/sleep/workspace switches
+    assert 'n === "movewindow"' not in content
+    assert 'n === "configreloaded"' not in content
 
 def test_state_persistence_and_serialization(tmp_path):
     state_file = str(tmp_path / "overlay-manager-state.json")
