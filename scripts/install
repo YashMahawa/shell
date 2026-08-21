@@ -70,6 +70,10 @@ if [ "$ACTION" != "--apply" ]; then
   fi
   echo "Current Display Manager: ${CURRENT_DM:-None}"
   echo "greetd installed user: $(getent passwd greeter >/dev/null && echo "Yes" || echo "No")"
+  if getent passwd greeter >/dev/null; then
+    GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
+    echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
+  fi
   echo ""
   echo "To install and enable the greeter as your default display manager, run:"
   echo "  $0 --apply"
@@ -78,6 +82,8 @@ fi
 
 echo "Installing greeter configuration..."
 
+export PATH=$PATH:/usr/sbin:/sbin:/usr/bin:/bin
+
 # Create/validate greeter user
 if ! getent passwd greeter >/dev/null; then
   echo "Creating greeter user..."
@@ -85,7 +91,36 @@ if ! getent passwd greeter >/dev/null; then
     echo "FATAL: Failed to create greeter user!"
     exit 1
   fi
+else
+  echo "Greeter user already exists."
 fi
+
+# Assign greeter user to standard hardware groups (video, render, input, seat)
+HW_GROUPS=("video" "render" "input" "seat")
+
+echo "Assigning greeter user to hardware groups..."
+for group in "${HW_GROUPS[@]}"; do
+  if ! getent group "$group" >/dev/null 2>&1; then
+    echo "Creating missing hardware group '$group'..."
+    if ! groupadd -r "$group"; then
+      echo "WARNING: Failed to create group '$group'!"
+      continue
+    fi
+  fi
+
+  if id -nG greeter 2>/dev/null | grep -qw "$group"; then
+    echo "Greeter user is already in group '$group'."
+  else
+    echo "Adding greeter user to group '$group'..."
+    if ! usermod -aG "$group" greeter; then
+      echo "FATAL: Failed to add greeter user to group '$group'!"
+      exit 1
+    fi
+  fi
+done
+
+GREETER_GROUPS=$(id -Gn greeter 2>/dev/null | tr ' ' ',')
+echo "Greeter account group memberships: ${GREETER_GROUPS:-none}"
 
 mkdir -p /etc/greetd
 if [ -f /etc/greetd/config.toml ] && [ ! -f /etc/greetd/config.toml.bak ]; then
