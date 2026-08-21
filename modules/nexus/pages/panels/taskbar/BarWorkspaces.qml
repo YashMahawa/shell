@@ -21,7 +21,7 @@ PageBase {
             first: true
             label: qsTr("Shown")
             subtext: qsTr("Number of workspaces displayed")
-            value: Config.bar.workspaces.shown
+            value: GlobalConfig.bar.workspaces.shown
             from: 1
             to: 20
             stepSize: 1
@@ -31,21 +31,21 @@ PageBase {
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Active indicator")
-            checked: Config.bar.workspaces.activeIndicator
+            checked: GlobalConfig.bar.workspaces.activeIndicator
             onToggled: GlobalConfig.bar.workspaces.activeIndicator = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Active trail")
-            checked: Config.bar.workspaces.activeTrail
+            checked: GlobalConfig.bar.workspaces.activeTrail
             onToggled: GlobalConfig.bar.workspaces.activeTrail = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Occupied background")
-            checked: Config.bar.workspaces.occupiedBg
+            checked: GlobalConfig.bar.workspaces.occupiedBg
             onToggled: GlobalConfig.bar.workspaces.occupiedBg = checked
         }
 
@@ -53,21 +53,21 @@ PageBase {
             Layout.fillWidth: true
             text: qsTr("Show windows")
             subtext: qsTr("Show icons of open windows on each workspace")
-            checked: Config.bar.workspaces.showWindows
+            checked: GlobalConfig.bar.workspaces.showWindows
             onToggled: GlobalConfig.bar.workspaces.showWindows = checked
         }
 
         ToggleRow {
             Layout.fillWidth: true
             text: qsTr("Windows on special workspaces")
-            checked: Config.bar.workspaces.showWindowsOnSpecialWorkspaces
+            checked: GlobalConfig.bar.workspaces.showWindowsOnSpecialWorkspaces
             onToggled: GlobalConfig.bar.workspaces.showWindowsOnSpecialWorkspaces = checked
         }
 
         StepperRow {
             Layout.fillWidth: true
             label: qsTr("Max window icons")
-            value: Config.bar.workspaces.maxWindowIcons
+            value: GlobalConfig.bar.workspaces.maxWindowIcons
             from: 0
             to: 20
             stepSize: 1

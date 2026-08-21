@@ -82,6 +82,23 @@ bool HyprKeyboard::updateLastIpcObject(QJsonObject object) {
     return dirty;
 }
 
+bool HyprKeyboard::updateActiveLayout(const QString& layoutName, int layoutIndex) {
+    auto obj = m_lastIpcObject;
+    bool changed = false;
+    if (layoutIndex >= 0 && obj.value(QStringLiteral("active_layout_index")).toInt(-1) != layoutIndex) {
+        obj.insert(QStringLiteral("active_layout_index"), layoutIndex);
+        changed = true;
+    }
+    if (!layoutName.isEmpty() && obj.value(QStringLiteral("active_keymap")).toString() != layoutName) {
+        obj.insert(QStringLiteral("active_keymap"), layoutName);
+        changed = true;
+    }
+    if (changed) {
+        return updateLastIpcObject(obj);
+    }
+    return false;
+}
+
 HyprDevices::HyprDevices(QObject* parent)
     : QObject(parent) {}
 
@@ -128,6 +145,16 @@ bool HyprDevices::updateLastIpcObject(QJsonObject object) {
         emit keyboardsChanged();
     }
 
+    return dirty;
+}
+
+bool HyprDevices::updateActiveLayout(const QString& keyboardName, const QString& layoutName, int layoutIndex) {
+    bool dirty = false;
+    for (auto* const kb : std::as_const(m_keyboards)) {
+        if (keyboardName.isEmpty() || kb->name() == keyboardName || kb->main()) {
+            dirty |= kb->updateActiveLayout(layoutName, layoutIndex);
+        }
+    }
     return dirty;
 }
 

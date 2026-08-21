@@ -161,7 +161,6 @@ target notifs
   function clear(): void
 target lock
   function lock(): void
-  function unlock(): void
   function isLocked(): bool
 target mpris
   function playPause(): void

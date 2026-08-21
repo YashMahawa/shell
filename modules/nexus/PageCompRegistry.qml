@@ -56,6 +56,9 @@ QtObject {
                 Component {
                     WifiNetworkInfo {}
                 }
+                Component {
+                    WifiAddNetwork {}
+                }
             }
         },
         Component {
@@ -94,10 +97,18 @@ QtObject {
             }
         },
         Component {
-            PlaceholderComp {}
+            StackPage {
+                Component {
+                    UpdatesPage {}
+                }
+            }
         },
         Component {
-            PlaceholderComp {}
+            StackPage {
+                Component {
+                    PluginsPage {}
+                }
+            }
         },
 
         // Shell
