@@ -108,7 +108,7 @@ PageBase {
 
                     StyledText {
                         Layout.fillWidth: true
-                        text: Hypr.activeToplevel?.lastIpcObject.class ?? qsTr("Focus a window to use these actions")
+                        text: Strings.friendlyAppName(Hypr.activeToplevel?.lastIpcObject.class) || qsTr("Focus a window to use these actions")
                         color: Colours.palette.m3outline
                         font: Tokens.font.label.small
                         elide: Text.ElideRight
