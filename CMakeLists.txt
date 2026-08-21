@@ -99,4 +99,5 @@ if("m3shapes" IN_LIST ENABLE_MODULES)
 endif()
 
 enable_testing()
+add_test(NAME pam_lock_tests COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/test_pam_lock.py")
 add_test(NAME test_pre_sleep_lock COMMAND bash "${CMAKE_SOURCE_DIR}/tests/test_pre_sleep_lock.sh")
