@@ -14,10 +14,22 @@ Scope {
 
         signal unlock
 
+        // Preserve lock intent across a shell crash. Do not clear a recovery
+        // marker merely because a newly started lock is initially unlocked.
+        onLockedChanged: {
+            if (locked)
+                lockStateProc.running = true;
+        }
+
         LockSurface {
             lock: lock
             pam: pam
         }
+    }
+
+    Process {
+        id: lockStateProc
+        command: [Quickshell.env("HOME") + "/.local/bin/caelestia-lock-state", "locked"]
     }
 
     Pam {
@@ -59,7 +71,7 @@ Scope {
         }
 
         function isLocked(): bool {
-            return lock.locked;
+            return lock.secure;
         }
 
         target: "lock"

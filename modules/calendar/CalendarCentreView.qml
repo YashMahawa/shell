@@ -494,7 +494,7 @@ StyledClippingRect {
                             spacing: Tokens.spacing.medium
                             ActionButton { icon: "refresh"; text: qsTr("Reload calendars"); onTriggered: CalendarEvents.reload() }
                             ActionButton { icon: "event_repeat"; text: qsTr("Reload timetable"); onTriggered: Timetable.reload() }
-                            ActionButton { icon: "folder_open"; text: qsTr("Open timetable file"); onTriggered: Quickshell.execDetached(["xdg-open", Timetable.configPath]) }
+                            ActionButton { icon: "folder_open"; text: qsTr("Open timetable file"); onTriggered: Quickshell.execDetached(["app2unit", "--", "xdg-open", Timetable.configPath]) }
                         }
                     }
                 }

@@ -20,7 +20,8 @@ Item {
         if (modelData.kind === "app")
             Apps.launch(modelData.app);
         else
-            Quickshell.execDetached(["xdg-open", modelData.path]);
+            // Keep viewers outside the shell service's crash/restart cgroup.
+            Quickshell.execDetached(["app2unit", "--", "xdg-open", modelData.path]);
         visibilities.launcher = false;
     }
 
