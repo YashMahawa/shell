@@ -48,7 +48,7 @@ Item {
                 ButtonGroup.group: sinks
                 checked: Audio.sink?.id === modelData.id
                 onClicked: Audio.setAudioSink(modelData)
-                text: modelData.description
+                text: Audio.outputDisplayName(modelData)
             }
         }
 

@@ -40,6 +40,26 @@ Singleton {
     readonly property alias cava: cava
     readonly property alias beatTracker: beatTracker
 
+    function outputDisplayName(node: PwNode): string {
+        if (!node)
+            return "";
+
+        const props = node.properties ?? {};
+        const name = node.name ?? props["node.name"] ?? "";
+        const nick = props["node.nick"] || props["alsa.name"] || "";
+        const description = node.description || props["device.description"] || name;
+        const path = String(props["api.alsa.path"] || "").toLowerCase();
+        const bus = String(props["device.bus"] || "").toLowerCase();
+
+        if (path.startsWith("hdmi:") || name.includes(".hdmi-") || description.toLowerCase().includes("hdmi"))
+            return `${nick || description} · HDMI`;
+        if (bus === "usb" || name.includes(".usb-"))
+            return `${nick || description} · USB`;
+        if (isBluetoothSink(node))
+            return description;
+        return description;
+    }
+
     function isBluetoothSink(node: PwNode): bool {
         if (!node)
             return false;
@@ -618,7 +638,8 @@ Singleton {
                             continue;
 
                         const profiles = card.profiles ?? {};
-                        const active = card.active_profile ?? "";
+                        const active = String(card.active_profile ?? "");
+                        const activeOutput = active.split("+").find(part => part.startsWith("output:")) || "";
                         const available = name => {
                             const value = profiles[name];
                             return value && value.available !== false && value.available !== "no";
@@ -647,7 +668,8 @@ Singleton {
                             const outputOnly = (port.profiles ?? []).find(name =>
                                 name.startsWith("output:hdmi-stereo") && !name.includes("+input:") && available(name));
                             const profileName = duplex || outputOnly || "";
-                            if (!profileName || active === profileName || active.startsWith(profileName.split("+")[0]))
+                            const profileOutput = profileName.split("+").find(part => part.startsWith("output:")) || "";
+                            if (!profileName || (profileOutput && profileOutput === activeOutput))
                                 continue;
                             choices.push({
                                 isProfile: true,
