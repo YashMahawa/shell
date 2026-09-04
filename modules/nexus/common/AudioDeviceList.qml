@@ -25,7 +25,7 @@ ItemList {
     showList: true
 
     model: ScriptModel {
-        values: [...root.nodes, ...root.profiles].sort((a, b) => (a.description || a.name || "").localeCompare(b.description || b.name || ""))
+        values: [...root.nodes, ...root.profiles].filter(node => !!node).sort((a, b) => (a.description || a.name || "").localeCompare(b.description || b.name || ""))
     }
 
     delegate: ColumnLayout {
@@ -97,7 +97,8 @@ ItemList {
 
                     StyledText {
                         Layout.fillWidth: true
-                        text: device.modelData?.description || device.modelData?.name || qsTr("Unknown")
+                        text: device.node?.isSink ? Audio.outputDisplayName(device.node)
+                            : (device.modelData?.description || device.modelData?.name || qsTr("Unknown"))
                         font: Tokens.font.body.small
                         elide: Text.ElideRight
                     }

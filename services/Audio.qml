@@ -20,6 +20,8 @@ Singleton {
     property var profileSinks: []
     property var bluetoothCards: ({})
     property string pendingProfileSink: ""
+    property var queuedProfile: null
+    property int profileSinkRetries: 0
 
     property alias safeBluetoothVolumeEnabled: audioPreferences.safeBluetoothVolumeEnabled
     property alias safeBluetoothVolume: audioPreferences.safeBluetoothVolume
@@ -338,10 +340,14 @@ Singleton {
     }
 
     function setAudioSink(newSink: PwNode): void {
+        if (!newSink)
+            return;
         Pipewire.preferredDefaultAudioSink = newSink;
     }
 
     function setAudioSource(newSource: PwNode): void {
+        if (!newSource)
+            return;
         Pipewire.preferredDefaultAudioSource = newSource;
     }
 
@@ -349,13 +355,22 @@ Singleton {
         if (!profile?.cardName || !profile?.profileName)
             return;
 
-        root.pendingProfileSink = profile.matchName ?? profile.description ?? "";
+        const output = profile.profileName.split("+").find(part => part.startsWith("output:"));
+        if (!output || !profile.cardName.startsWith("alsa_card."))
+            return;
+        root.pendingProfileSink = profile.cardName.replace("alsa_card.", "alsa_output.")
+            + "." + output.substring("output:".length);
+        root.profileSinkRetries = 20;
         root.setCardProfile(profile.cardName, profile.profileName);
     }
 
     function setCardProfile(cardName: string, profileKey: string): void {
-        if (!cardName || !profileKey || profileSwitchProc.running)
+        if (!cardName || !profileKey)
             return;
+        if (profileSwitchProc.running) {
+            root.queuedProfile = { cardName, profileKey };
+            return;
+        }
 
         profileSwitchProc.command = [
             "pactl", "set-card-profile", cardName, profileKey
@@ -435,6 +450,8 @@ Singleton {
         const newStreams = [];
 
         for (const node of Pipewire.nodes.values) {
+            if (!node)
+                continue;
             if (!node.isStream) {
                 if (node.isSink)
                     newSinks.push(node);
@@ -451,11 +468,7 @@ Singleton {
         root.syncBluetoothSafety(newSinks);
 
         if (root.pendingProfileSink) {
-            const wanted = root.pendingProfileSink.toLowerCase();
-            const activated = newSinks.find(node => {
-                const description = (node.description || node.name || "").toLowerCase();
-                return description.includes(wanted);
-            });
+            const activated = newSinks.find(node => node && node.ready && node.name === root.pendingProfileSink);
             if (activated) {
                 root.setAudioSink(activated);
                 root.pendingProfileSink = "";
@@ -695,6 +708,12 @@ Singleton {
         id: profileSwitchProc
 
         onExited: (exitCode, exitStatus) => {
+            if (root.queuedProfile) {
+                const next = root.queuedProfile;
+                root.queuedProfile = null;
+                Qt.callLater(() => root.setCardProfile(next.cardName, next.profileKey));
+                return;
+            }
             if (exitCode !== 0) {
                 root.pendingProfileSink = "";
                 if (GlobalConfig.utilities.toasts.audioOutputChanged)
@@ -712,6 +731,12 @@ Singleton {
         onTriggered: {
             root.refreshNodes();
             root.refreshCardProfiles();
+            if (root.pendingProfileSink && --root.profileSinkRetries > 0)
+                restart();
+            else if (root.pendingProfileSink) {
+                root.pendingProfileSink = "";
+                Toaster.toast(qsTr("Audio output unavailable"), qsTr("The selected output did not become ready."), "error");
+            }
         }
     }
 

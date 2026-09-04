@@ -46,7 +46,8 @@ Item {
                 required property PwNode modelData
 
                 ButtonGroup.group: sinks
-                checked: Audio.sink?.id === modelData.id
+                enabled: !!modelData
+                checked: !!modelData && Audio.sink?.id === modelData.id
                 onClicked: Audio.setAudioSink(modelData)
                 text: Audio.outputDisplayName(modelData)
             }
@@ -78,9 +79,10 @@ Item {
                 required property PwNode modelData
 
                 ButtonGroup.group: sources
-                checked: Audio.source?.id === modelData.id
+                enabled: !!modelData
+                checked: !!modelData && Audio.source?.id === modelData.id
                 onClicked: Audio.setAudioSource(modelData)
-                text: modelData.description
+                text: modelData?.description ?? ""
             }
         }
 
