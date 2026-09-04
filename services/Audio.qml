@@ -46,20 +46,9 @@ Singleton {
         if (!node)
             return "";
 
-        const props = node.properties ?? {};
-        const name = node.name ?? props["node.name"] ?? "";
-        const nick = props["node.nick"] || props["alsa.name"] || "";
-        const description = node.description || props["device.description"] || name;
-        const path = String(props["api.alsa.path"] || "").toLowerCase();
-        const bus = String(props["device.bus"] || "").toLowerCase();
-
-        if (path.startsWith("hdmi:") || name.includes(".hdmi-") || description.toLowerCase().includes("hdmi"))
-            return `${nick || description} · HDMI`;
-        if (bus === "usb" || name.includes(".usb-"))
-            return `${nick || description} · USB`;
-        if (isBluetoothSink(node))
-            return description;
-        return description;
+        // Use PipeWire's original user-facing description, never the ALSA
+        // hardware nickname (HDMI 0) or the monitor's EDID model name.
+        return node.description || node.name || "";
     }
 
     function isBluetoothSink(node: PwNode): bool {
@@ -675,7 +664,6 @@ Singleton {
                         for (const [portName, port] of Object.entries(card.ports ?? {})) {
                             if (!portName.startsWith("hdmi-output-") || port.availability !== "available")
                                 continue;
-                            const product = port.properties?.["device.product.name"] || port.description || qsTr("HDMI display");
                             const duplex = (port.profiles ?? []).find(name =>
                                 name.startsWith("output:hdmi-stereo") && name.includes("+input:") && available(name));
                             const outputOnly = (port.profiles ?? []).find(name =>
@@ -684,13 +672,15 @@ Singleton {
                             const profileOutput = profileName.split("+").find(part => part.startsWith("output:")) || "";
                             if (!profileName || (profileOutput && profileOutput === activeOutput))
                                 continue;
+                            const cardLabel = card.properties?.["device.description"] || card.description || card.name;
+                            const profileLabel = (profiles[outputOnly || profileName]?.description || port.description || "")
+                                .replace(/ Output(?: \+.*)?$/, "");
                             choices.push({
                                 isProfile: true,
                                 id: `profile:${card.name}:${profileName}`,
                                 cardName: card.name,
                                 profileName,
-                                description: `${product} · HDMI`,
-                                matchName: product
+                                description: `${cardLabel} ${profileLabel}`
                             });
                         }
                     }
