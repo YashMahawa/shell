@@ -1,37 +1,139 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Caelestia.Config
-import qs.components
+import QtQuick.Shapes
 
-Rectangle {
+// Apple Music style transport glyph: rounded vector triangles and bars drawn
+// with the curve renderer, a soft circular hover and a springy press.
+Item {
     id: root
 
-    required property string icon
+    // "play", "pause", "next" or "previous".
+    required property string kind
     property bool primary: false
     property bool disabled: false
     signal clicked
 
-    implicitWidth: primary ? 58 : 50
-    implicitHeight: implicitWidth
-    radius: implicitWidth / 2
-    opacity: disabled ? 0.32 : 1
-    scale: mouse.pressed ? 0.84 : mouse.containsMouse ? 1.045 : 1
-    color: {
-        if (primary)
-            return mouse.pressed ? "#d7dbe0" : "#f3f5f7";
-        return mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.055);
-    }
-    border.width: primary ? 0 : 1
-    border.color: Qt.rgba(1, 1, 1, 0.13)
+    readonly property real glyph: primary ? 46 : 34
+    readonly property real stroke: glyph * 0.11
 
-    MaterialIcon {
+    implicitWidth: primary ? 84 : 66
+    implicitHeight: implicitWidth
+    opacity: disabled ? 0.3 : 1
+
+    Rectangle {
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: 1
-        text: root.icon
-        color: root.primary ? "#12151a" : "#d6dce4"
-        fontStyle: root.primary ? Tokens.font.icon.large : Tokens.font.icon.medium
-        fill: 1
+        width: parent.width
+        height: width
+        radius: width / 2
+        color: "white"
+        opacity: mouse.containsMouse && !root.disabled ? (mouse.pressed ? 0.16 : 0.1) : 0
+        scale: mouse.containsMouse ? 1 : 0.8
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 160
+            }
+        }
+
+        Behavior on scale {
+            NumberAnimation {
+                duration: 260
+                easing.type: Easing.OutCubic
+            }
+        }
+    }
+
+    component Triangle: Shape {
+        id: triangle
+
+        property real size
+        property real stroke
+
+        width: size
+        height: size
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+            fillColor: "white"
+            strokeColor: "white"
+            strokeWidth: triangle.stroke
+            joinStyle: ShapePath.RoundJoin
+            capStyle: ShapePath.RoundCap
+            startX: triangle.stroke / 2
+            startY: triangle.stroke / 2 + triangle.size * 0.04
+
+            PathLine {
+                x: triangle.size - triangle.stroke / 2
+                y: triangle.size / 2
+            }
+            PathLine {
+                x: triangle.stroke / 2
+                y: triangle.size - triangle.stroke / 2 - triangle.size * 0.04
+            }
+            PathLine {
+                x: triangle.stroke / 2
+                y: triangle.stroke / 2 + triangle.size * 0.04
+            }
+        }
+    }
+
+    Item {
+        id: icon
+
+        anchors.centerIn: parent
+        width: root.glyph
+        height: root.glyph
+        scale: mouse.pressed ? 0.84 : 1
+
+        Behavior on scale {
+            NumberAnimation {
+                duration: 320
+                easing.type: Easing.OutBack
+                easing.overshoot: 2.2
+            }
+        }
+
+        Triangle {
+            visible: root.kind === "play"
+            anchors.centerIn: parent
+            anchors.horizontalCenterOffset: root.glyph * 0.06
+            size: root.glyph * 0.86
+            stroke: root.stroke
+        }
+
+        Row {
+            visible: root.kind === "pause"
+            anchors.centerIn: parent
+            spacing: root.glyph * 0.2
+
+            Repeater {
+                model: 2
+
+                Rectangle {
+                    width: root.glyph * 0.24
+                    height: root.glyph * 0.82
+                    radius: width * 0.32
+                    color: "white"
+                }
+            }
+        }
+
+        Row {
+            visible: root.kind === "next" || root.kind === "previous"
+            anchors.centerIn: parent
+            spacing: -root.stroke * 0.6
+            rotation: root.kind === "previous" ? 180 : 0
+
+            Repeater {
+                model: 2
+
+                Triangle {
+                    size: root.glyph * 0.56
+                    stroke: root.stroke * 0.8
+                }
+            }
+        }
     }
 
     MouseArea {
@@ -42,27 +144,5 @@ Rectangle {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
-    }
-
-    Behavior on scale {
-        SpringAnimation {
-            spring: 5.4
-            damping: 0.31
-            epsilon: 0.002
-        }
-    }
-
-    Behavior on color {
-        ColorAnimation {
-            duration: 150
-            easing.type: Easing.OutCubic
-        }
-    }
-
-    Behavior on opacity {
-        NumberAnimation {
-            duration: 220
-            easing.type: Easing.OutCubic
-        }
     }
 }

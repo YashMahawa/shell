@@ -1,6 +1,7 @@
 pragma Singleton
 
 import "../utils/scripts/lrcparser.js" as Lrc
+import "../utils/scripts/lyricproviders.js" as Providers
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -9,6 +10,16 @@ import Caelestia.Config
 import Caelestia.Services
 import qs.utils
 
+// Timed lyrics for the active player.
+//
+// Sources follow BitChord's LyricsRepository: every provider is started in
+// parallel and the highest-ranked word-synced result wins, falling back to the
+// highest-ranked line-synced one. To keep the first paint fast, a result is
+// shown as soon as nothing ranked above it is still pending, or after a short
+// grace period; a better result may still replace it while the song is young.
+//
+// Lyrics are also prefetched for the playing track, so opening the immersive
+// view or the dashboard shows them immediately.
 Singleton {
     id: root
 
@@ -24,15 +35,9 @@ Singleton {
     property bool cacheLoaded: false
     property bool ownsTiming: false
     property bool networkSettled: false
-    property bool paxFinished: false
-    property bool muxFinished: false
-    property var muxLyrics: []
-    property string muxSource: ""
-    property bool youtubePending: false
     property bool youtubeStarted: false
     property bool youtubeFinished: false
     property bool youtubeEligible: false
-    property var youtubeResult: null
     property string youtubeFailure: ""
     property var sourceCandidates: []
     property var sourceRecords: ({})
@@ -41,9 +46,15 @@ Singleton {
     property string pendingNativeSourceId: ""
     property bool userSelectedSource: false
     property bool restoringSources: false
+    property var pending: ({})
+    property real fetchStartedAt: 0
+    property real shownAt: 0
+    property string appleToken: ""
     property bool romanizeLyrics: GlobalConfig.services.romanizeLyrics ?? true
     property int consumerCount: 0
-    readonly property bool active: consumerCount > 0
+    readonly property bool prefetch: !!Players.active
+    readonly property bool active: consumerCount > 0 || prefetch
+    readonly property bool visibleConsumers: consumerCount > 0
     readonly property string preferredBackend: GlobalConfig.services.lyricsBackend ?? "Auto"
 
     readonly property alias model: lyricsModel
@@ -74,6 +85,18 @@ Singleton {
             root.load();
     }
 
+    onActiveChanged: {
+        if (active)
+            load();
+        else
+            _cancel();
+    }
+
+    onVisibleConsumersChanged: {
+        if (visibleConsumers)
+            updatePosition();
+    }
+
     function retain(): void {
         consumerCount++;
         if (consumerCount === 1)
@@ -82,19 +105,17 @@ Singleton {
 
     function release(): void {
         consumerCount = Math.max(0, consumerCount - 1);
-        if (consumerCount === 0) {
-            loadDebounce.stop();
-            cacheDelay.stop();
-            paxPreferenceTimeout.stop();
-            onlineTimeout.stop();
-            youtubeStartDelay.stop();
-            youtubeFallbackDelay.stop();
-            youtubeTimeout.stop();
-            root.requestId++;
-            if (youtubeProcess.running)
-                youtubeProcess.running = false;
-            root.loading = false;
-        }
+    }
+
+    function _cancel(): void {
+        loadDebounce.stop();
+        cacheDelay.stop();
+        graceTimer.stop();
+        root.requestId++;
+        root.pending = ({});
+        if (youtubeProcess.running)
+            youtubeProcess.running = false;
+        root.loading = false;
     }
 
     function _keyForPlayer(): string {
@@ -114,12 +135,26 @@ Singleton {
         return len ? Math.floor(len / 1000000) : 0;
     }
 
+    function _track(): var {
+        return {
+            title: Providers.searchTitle(_queryTitle()),
+            artist: Providers.searchArtist(_queryArtist()),
+            album: Players.active?.trackAlbum || "",
+            duration: _trackDuration() * 1000
+        };
+    }
+
+    function _youtubeId(): string {
+        const url = String(Players.active?.metadata?.["xesam:url"] || "");
+        return url.match(/[?&]v=([\w-]{11})/)?.[1] || url.match(/youtu\.be\/([\w-]{11})/)?.[1] || "";
+    }
+
     function _cleanText(text: string): string {
-        const clean = (text || "").replace(/\u00a0/g, " ");
+        const clean = (text || "").replace(/ /g, " ");
         return root.romanizeLyrics ? Lrc.transliterate(clean) : clean;
     }
 
-    function _usePaxsenix(): bool {
+    function _useOnline(): bool {
         const backend = String(root.preferredBackend || "Auto").toLowerCase();
         return backend === "auto" || backend === "paxsenix" || backend === "parsenix";
     }
@@ -136,24 +171,16 @@ Singleton {
         root.cachePath = `${root.cacheDir}/${_safeCacheName(`${root.preferredBackend}-${key}`)}.json`;
     }
 
-    function _sourcePriority(source: string): int {
-        const value = String(source || "").toLowerCase();
-        if (value.includes("lrcmux"))
-            return 0;
-        if (value.includes("paxsenix") || value === "local")
-            return 1;
-        if (value.includes("lrclib") || value.includes("netease"))
-            return 2;
-        if (value.includes("youtube"))
-            return 4;
-        return 3;
+    // Lower is better: word-synced results always beat line-synced ones, then
+    // BitChord's provider order decides.
+    function _effectiveRank(record: var): int {
+        return (record.wordSynced ? 0 : 100) + Number(record.priority ?? 99);
     }
 
-    function _sourceId(source: string, meta: var): string {
-        const provider = String(source || "timed").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const rawId = String(meta?.id || meta?.videoId || meta?.sourceTitle || provider || "timed");
-        const id = rawId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-        return `${provider}:${id || provider}`;
+    function _providerRank(providerId: string): int {
+        if (providerId === "native")
+            return Providers.rankOf("lrclib");
+        return Providers.rankOf(providerId);
     }
 
     function _resetSources(): void {
@@ -165,22 +192,25 @@ Singleton {
         root.pendingNativeSourceId = "";
         root.userSelectedSource = false;
         root.restoringSources = false;
+        root.shownAt = 0;
     }
 
-    function _addSource(lines: var, source: string, message: string, meta: var): string {
-        if (!_hasTimedLines(lines))
+    function _addSource(lines: var, providerId: string, label: string, message: string, meta: var): string {
+        if (!Providers.hasLineTiming(lines))
             return "";
 
         const details = meta || {};
-        const id = details.sourceId || _sourceId(source, details);
+        const id = details.sourceId || `${providerId}:${_safeCacheName(details.id || providerId)}`;
         const record = {
             id,
-            provider: source || "Timed",
-            title: details.title || details.sourceTitle || _queryTitle(),
+            providerId,
+            provider: label,
+            title: details.title || _queryTitle(),
             artist: details.artist || _queryArtist(),
-            detail: message || qsTr("%1 timed lyrics").arg(source || "Timed"),
+            detail: message,
             language: details.language || "",
-            priority: _sourcePriority(source),
+            priority: _providerRank(providerId),
+            wordSynced: Providers.hasWordTiming(lines),
             lyrics: lines
         };
 
@@ -197,7 +227,7 @@ Singleton {
             artist: record.artist,
             detail: record.detail,
             language: record.language,
-            priority: record.priority
+            priority: _effectiveRank(record)
         });
         candidates.sort((a, b) => a.priority - b.priority || String(a.provider).localeCompare(String(b.provider)));
         root.sourceCandidates = candidates;
@@ -216,20 +246,99 @@ Singleton {
         nativeSelectionTimeout.stop();
         if (byUser)
             root.userSelectedSource = true;
-        root.networkSettled = true;
+        // Japanese, Chinese and Korean are shown only once romanised.
+        if (root.romanizeLyrics && _needsRomanizer(record.lyrics)) {
+            if (!record.romanized) {
+                _romanize(record);
+                return true;
+            }
+            if (!root.shownAt)
+                root.shownAt = Date.now();
+            _loadLines(record.romanized, record.provider, record.detail);
+            _scheduleCacheSave();
+            return true;
+        }
+        if (!root.shownAt)
+            root.shownAt = Date.now();
         _loadLines(record.lyrics, record.provider, record.detail);
         _scheduleCacheSave();
         return true;
     }
 
-    function _autoSelectSource(id: string): bool {
-        if (!id || root.userSelectedSource)
-            return false;
-        const candidate = root.sourceRecords[id];
-        const selected = root.sourceRecords[root.selectedSourceId];
-        if (!selected || candidate.priority < selected.priority)
-            return _selectSource(id, false);
+    function _needsRomanizer(lines: var): bool {
+        const cjk = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7a3]/;
+        for (let i = 0; i < Math.min(lines.length, 80); i++) {
+            if (cjk.test(lines[i].text || "") || cjk.test(lines[i].bg?.text || ""))
+                return true;
+        }
         return false;
+    }
+
+    function _romanize(record: var): void {
+        if (romanizer.running)
+            romanizer.running = false;
+        root.loading = true;
+        root.status = qsTr("Romanising lyrics...");
+        romanizer.recordId = record.id;
+        romanizer.requestId = root.requestId;
+        romanizer.payload = JSON.stringify({ lines: record.lyrics });
+        romanizer.running = true;
+    }
+
+    // BitChord's race: walk providers in rank order and take the best result
+    // once nothing ranked above it can still arrive.
+    function _reconsider(req: int, graceExpired: bool): void {
+        if (req !== root.requestId || root.userSelectedSource)
+            return;
+
+        let best = null;
+        for (const id in root.sourceRecords) {
+            const record = root.sourceRecords[id];
+            if (!best || _effectiveRank(record) < _effectiveRank(best))
+                best = record;
+        }
+
+        const pendingIds = Object.keys(root.pending);
+        root.networkSettled = pendingIds.length === 0;
+        if (!best) {
+            if (root.networkSettled)
+                _onNothingFound(req);
+            return;
+        }
+
+        const current = root.sourceRecords[root.selectedSourceId];
+        if (current && current.id === best.id) {
+            root.loading = false;
+            return;
+        }
+
+        // Anything still running that could outrank the best result blocks it.
+        const bestRank = _effectiveRank(best);
+        const blocked = pendingIds.some(id => _providerRank(id) < bestRank);
+
+        if (!current) {
+            if (!blocked || graceExpired || root.networkSettled)
+                _selectSource(best.id, false);
+            return;
+        }
+
+        // Replacing lyrics the listener is already reading is jarring; only do
+        // it early in the song, or to upgrade line timing to word timing.
+        if (_effectiveRank(best) < _effectiveRank(current)
+                && ((best.wordSynced && !current.wordSynced) || Date.now() - root.shownAt < 4500))
+            _selectSource(best.id, false);
+    }
+
+    function _onNothingFound(req: int): void {
+        if (req !== root.requestId)
+            return;
+        if (!root.youtubeStarted && !root.youtubeFinished && _startYoutube(req))
+            return;
+        if (!root.selectedSourceId && !root.youtubeStarted) {
+            root.loading = Lyrics.loading;
+            if (!Lyrics.loading)
+                _setNativeFallback();
+        }
     }
 
     function selectSource(id: string): void {
@@ -267,11 +376,13 @@ Singleton {
                 time: Math.max(0, Lyrics.timeForIndex(i) - Lyrics.offset) * 1000,
                 duration: 0,
                 text: Lyrics.lyrics[i],
-                syllabus: []
+                syllabus: [],
+                agent: "start",
+                bg: null
             });
         }
         const selectedId = selected?.id ? nativeSourceId(selected) : `native:${Number(Lyrics.backend)}:${_safeCacheName(root.loadedKey)}`;
-        const id = _addSource(lines, backend, qsTr("%1 synced lyrics").arg(backend), {
+        const id = _addSource(Providers.parseLegacy(lines), "native", backend, qsTr("%1 synced lyrics").arg(backend), {
             sourceId: selectedId,
             id: selected?.id || selectedId,
             title: selected?.title || _queryTitle(),
@@ -282,7 +393,7 @@ Singleton {
         if (root.pendingNativeSourceId && root.pendingNativeSourceId === id)
             _selectSource(id, true);
         else
-            _autoSelectSource(id);
+            _reconsider(root.requestId, false);
         return id;
     }
 
@@ -305,50 +416,6 @@ Singleton {
         return !value || value === "a site is playing media" || value === "playing media" || value === "unknown title";
     }
 
-    function _paxsenixUrl(): string {
-        const artist = _queryArtist();
-        const query = `${_queryTitle()} ${artist}`.trim();
-        let url = `https://lyrics.paxsenix.org/musixmatch/lyrics?type=word&q=${encodeURIComponent(query)}&t=${encodeURIComponent(_queryTitle())}&a=${encodeURIComponent(artist)}&enchanted=true&alt=true&parse=true&v=2`;
-        const duration = _trackDuration();
-        if (duration > 0)
-            url += `&d=${duration}`;
-        return url;
-    }
-
-    function _lrcMuxUrl(): string {
-        let url = `https://api.lrcmux.dev/compat/kpoe/v2/lyrics/get?title=${encodeURIComponent(_queryTitle())}&artist=${encodeURIComponent(_queryArtist())}`;
-        const duration = _trackDuration();
-        if (duration > 0)
-            url += `&duration=${duration}`;
-        return url;
-    }
-
-    function _metadataMatches(meta: var): bool {
-        const p = Players.active;
-        if (!p || !meta)
-            return true;
-
-        function clean(value) {
-            return String(value || "").toLowerCase().replace(/\s*\(.*?\)/g, "").replace(/\s*\[.*?\]/g, "").trim();
-        }
-
-        const targetTitle = clean(p.trackTitle);
-        const targetArtist = clean(_queryArtist()).split(/[&,xX]/)[0].trim();
-        const returnedTitle = clean(meta.title);
-        const returnedArtist = clean(meta.artist).split(/[&,xX]/)[0].trim();
-
-        if (returnedTitle && targetTitle && returnedTitle !== targetTitle && !returnedTitle.includes(targetTitle) && !targetTitle.includes(returnedTitle))
-            return false;
-        if (returnedArtist && targetArtist && returnedArtist !== targetArtist && !returnedArtist.includes(targetArtist) && !targetArtist.includes(returnedArtist))
-            return false;
-
-        const duration = _trackDuration();
-        if (duration > 0 && meta.duration && Math.abs(Number(meta.duration) - duration) > 15)
-            return false;
-
-        return true;
-    }
-
     function _normaliseTrackText(value: string): string {
         return String(value || "").toLowerCase().replace(/\s*\(.*?\)/g, "").replace(/\s*\[.*?\]/g, "").trim();
     }
@@ -368,6 +435,25 @@ Singleton {
         return !activeArtist || !nativeArtist || activeArtist === nativeArtist || activeArtist.includes(nativeArtist) || nativeArtist.includes(activeArtist);
     }
 
+    // Rejects a provider answer that is clearly a different recording.
+    function _matchesTrack(title: string, artist: string, durationSeconds: real): bool {
+        const p = Players.active;
+        if (!p)
+            return false;
+        const wantTitle = _normaliseTrackText(_queryTitle());
+        const gotTitle = _normaliseTrackText(title);
+        if (gotTitle && wantTitle && gotTitle !== wantTitle && !gotTitle.includes(wantTitle) && !wantTitle.includes(gotTitle))
+            return false;
+        const wantArtist = _normaliseTrackText(_queryArtist()).split(/[&,]/)[0].trim();
+        const gotArtist = _normaliseTrackText(artist);
+        if (gotArtist && wantArtist && !gotArtist.includes(wantArtist) && !wantArtist.includes(gotArtist.split(/[&,]/)[0].trim()))
+            return false;
+        const duration = _trackDuration();
+        if (duration > 0 && durationSeconds > 0 && Math.abs(durationSeconds - duration) > 15)
+            return false;
+        return true;
+    }
+
     function _clearDisplayedLyrics(status: string): void {
         lyricsModel.clear();
         root.hasSyllables = false;
@@ -378,19 +464,16 @@ Singleton {
         root.revision++;
     }
 
-    function _resetYoutubeFallback(): void {
-        youtubeStartDelay.stop();
-        youtubeFallbackDelay.stop();
-        youtubeTimeout.stop();
-        root.youtubePending = false;
-        root.youtubeStarted = false;
-        root.youtubeFinished = false;
-        root.youtubeEligible = false;
-        root.youtubeResult = null;
-        root.youtubeFailure = "";
-        youtubeProcess.requestId = -1;
-        if (youtubeProcess.running)
-            youtubeProcess.running = false;
+    function _appendLine(text: string, time: real, duration: real, syllables: var, agent: string, bg: var): void {
+        lyricsModel.append({
+            lyricLine: text,
+            time,
+            duration,
+            syllabus: JSON.stringify(syllables),
+            agent: agent || "start",
+            bgText: bg?.text || "",
+            bgSyllabus: JSON.stringify(bg?.syllabus || [])
+        });
     }
 
     function _setNativeFallback(): void {
@@ -401,11 +484,9 @@ Singleton {
         const nativeReady = Lyrics.hasLyrics && _nativeTrackMatches();
         const lines = nativeReady ? Lyrics.lyrics : [];
         for (let i = 0; i < lines.length; i++) {
-            lyricsModel.append({
-                lyricLine: _cleanText(lines[i]) || ". . .",
-                time: Lyrics.timeForIndex(i),
-                syllabus: "[]"
-            });
+            const start = Lyrics.timeForIndex(i);
+            const next = i + 1 < lines.length ? Lyrics.timeForIndex(i + 1) : start + 4;
+            _appendLine(_cleanText(lines[i]) || ". . .", start, Math.max(0, next - start), [], "start", null);
         }
         root.loading = nativeReady ? Lyrics.loading : false;
         root.ownsTiming = nativeReady;
@@ -413,28 +494,6 @@ Singleton {
         root.provider = nativeReady ? LyricsBackend.toString(Lyrics.backend) : "";
         root.status = nativeReady ? qsTr("Fallback: %1").arg(root.provider) : qsTr("No lyrics found");
         root.revision++;
-    }
-
-    function _hasTimedSyllables(lines: var): bool {
-        if (!lines || lines.length === 0)
-            return false;
-
-        for (const line of lines) {
-            const syllables = line.syllabus || [];
-            if (!syllables.length)
-                continue;
-            for (const syl of syllables) {
-                if (Number(syl.duration || 0) > 0 || Number(syl.time || 0) > 0)
-                    return true;
-            }
-        }
-        return false;
-    }
-
-    function _hasTimedLines(lines: var): bool {
-        if (!lines || lines.length === 0)
-            return false;
-        return lines.some(line => Number(line.time ?? line.start ?? line.startTimeMs ?? 0) > 0 && String(line.text ?? line.words ?? line.x ?? "").trim().length > 0);
     }
 
     function load(): void {
@@ -446,59 +505,45 @@ Singleton {
     function _doLoad(): void {
         const p = Players.active;
         if (!p || _isPlaceholderTitle(p.trackTitle)) {
-            root.requestId++;
-            _resetYoutubeFallback();
+            _cancel();
             _resetSources();
             root.loadedKey = "";
             root.cachePath = "";
             root.cacheLoaded = false;
             root.networkSettled = true;
-            root.paxFinished = true;
-            root.muxFinished = true;
-            root.muxLyrics = [];
-            root.muxSource = "";
-            cacheDelay.stop();
-            paxPreferenceTimeout.stop();
-            onlineTimeout.stop();
-            root.loading = false;
             _clearDisplayedLyrics(p ? qsTr("Waiting for track metadata...") : qsTr("No active track"));
             return;
         }
 
         const key = _keyForPlayer();
-        if (key && key === root.loadedKey && lyricsModel.count > 0)
+        if (key && key === root.loadedKey && (lyricsModel.count > 0 || Object.keys(root.pending).length > 0))
             return;
 
         const changedTrack = key !== root.loadedKey;
         root.loadedKey = key;
-        root.hasSyllables = false;
         root.loading = true;
         root.currentIndex = -1;
-        root.requestId++;
-        _resetYoutubeFallback();
-        if (changedTrack)
+        _cancel();
+        root.loading = true;
+        root.youtubeStarted = false;
+        root.youtubeFinished = false;
+        root.youtubeEligible = false;
+        root.youtubeFailure = "";
+        if (changedTrack) {
             _resetSources();
+            _clearDisplayedLyrics(qsTr("Loading lyrics..."));
+        }
         const req = root.requestId;
         root.networkSettled = false;
-        root.paxFinished = false;
-        root.muxFinished = false;
-        root.muxLyrics = [];
-        root.muxSource = "";
-        paxPreferenceTimeout.stop();
-        onlineTimeout.stop();
 
-        if (changedTrack)
-            _clearDisplayedLyrics(qsTr("Loading lyrics..."));
-
-        if (!_usePaxsenix()) {
+        if (!_useOnline()) {
             root.loading = Lyrics.loading;
             root.status = qsTr("Loading fallback lyrics...");
             _setNativeFallback();
             return;
         }
 
-        root.provider = "Paxsenix";
-        root.status = qsTr("Fetching Paxsenix lyrics...");
+        root.status = qsTr("Finding lyrics...");
         root.cacheLoaded = false;
         _setCachePath(key);
         cacheFile.reload();
@@ -506,270 +551,229 @@ Singleton {
         cacheDelay.restart();
     }
 
+    // ---- providers ----------------------------------------------------------
+
+    function _begin(req: int, id: string): void {
+        if (req !== root.requestId)
+            return;
+        const next = Object.assign({}, root.pending);
+        next[id] = true;
+        root.pending = next;
+    }
+
+    function _settle(req: int, id: string, lines: var, meta: var): void {
+        if (req !== root.requestId)
+            return;
+        const next = Object.assign({}, root.pending);
+        delete next[id];
+        root.pending = next;
+        if (lines && Providers.hasLineTiming(lines)) {
+            const info = Providers.providerFor(id);
+            const word = Providers.hasWordTiming(lines);
+            _addSource(lines, id, info?.name ?? id,
+                word ? qsTr("%1 · word-synced").arg(info?.name ?? id) : qsTr("%1 · line-synced").arg(info?.name ?? id),
+                meta || {});
+        }
+        _reconsider(req, false);
+    }
+
+    function _get(req: int, id: string, url: string, timeout: int, onText: var): void {
+        Requests.get(url, text => {
+            if (req !== root.requestId)
+                return;
+            let lines = null;
+            try {
+                lines = onText(text);
+            } catch (e) {
+                lines = null;
+            }
+            // `undefined` means the handler chained another request.
+            if (lines !== undefined)
+                _settle(req, id, lines, null);
+        }, () => _settle(req, id, null, null), { "User-Agent": "BitChord (https://github.com/bitchord)", "Accept": "application/json" }, timeout);
+    }
+
     function _fetchOnline(req: int): void {
         const p = Players.active;
         if (!p || !p.trackTitle || req !== root.requestId)
             return;
 
-        root.networkSettled = false;
-        root.paxFinished = false;
-        root.muxFinished = false;
-        root.muxLyrics = [];
-        root.muxSource = "";
+        const t = _track();
+        root.fetchStartedAt = Date.now();
         if (!root.selectedSourceId)
-            root.status = root.cacheLoaded ? qsTr("Refreshing Paxsenix lyrics...") : qsTr("Fetching Paxsenix lyrics...");
-        _prepareYoutubeFallback(req);
+            root.status = qsTr("Finding lyrics...");
+        graceTimer.requestId = req;
+        graceTimer.restart();
 
-        paxPreferenceTimeout.requestId = req;
-        paxPreferenceTimeout.restart();
-        onlineTimeout.requestId = req;
-        onlineTimeout.restart();
+        // Register every provider first so none can settle the race early.
+        const videoId = _youtubeId();
+        const ids = ["bini", "betterlyrics", "portato", "lyricsplus", "lrcmux", "unison", "kugou", "lrclib", "musixmatch"];
+        if (root.appleToken)
+            ids.push("paxsenix-apple");
+        if (videoId)
+            ids.push("simpmusic");
+        for (const id of ids)
+            _begin(req, id);
 
-        Requests.get(_paxsenixUrl(), text => {
-            if (req !== root.requestId)
-                return;
-            try {
+        _get(req, "bini", Providers.biniSearchUrl(t), 5000, text => {
+            const res = JSON.parse(text);
+            const hit = res.results?.[0];
+            if (!hit?.lyricsUrl)
+                return null;
+            _get(req, "bini", hit.lyricsUrl, 6000, ttml => Providers.parseTtml(ttml));
+            return undefined;
+        });
+
+        _get(req, "betterlyrics", Providers.betterLyricsUrl(t), 6000, text => Providers.parseTtml(JSON.parse(text).ttml || ""));
+        _get(req, "portato", Providers.portatoUrl(t), 5000, text => Providers.parseTtml(JSON.parse(text).ttml || ""));
+        _fetchLyricsPlus(req, t, 0);
+        _get(req, "lrcmux", Providers.lrcMuxUrl(t), 8000, text => Providers.parseKpoe(JSON.parse(text)));
+        _get(req, "unison", Providers.unisonUrl(t), 6000, text => {
+            const res = JSON.parse(text);
+            const data = res.success ? res.data : null;
+            if (!data?.lyrics)
+                return null;
+            if (String(data.format).toLowerCase() === "ttml")
+                return Providers.parseTtml(data.lyrics);
+            return String(data.syncType).toLowerCase() === "plain" ? null : Providers.parseLrc(data.lyrics);
+        });
+        _get(req, "kugou", Providers.kugouSearchUrl(t), 8000, text => {
+            const candidate = Providers.bestKugouCandidate(JSON.parse(text), t);
+            if (!candidate)
+                return null;
+            _get(req, "kugou", Providers.kugouDownloadUrl(candidate.id, candidate.accesskey), 6000,
+                body => Providers.parseLrc(Providers.decodeBase64Utf8(JSON.parse(body).content)));
+            return undefined;
+        });
+        _get(req, "lrclib", Providers.lrclibUrl(t), 7000, text => {
+            const res = JSON.parse(text);
+            return res.syncedLyrics ? Providers.parseLrc(res.syncedLyrics) : null;
+        });
+        _get(req, "musixmatch", Providers.musixmatchUrl(t), 8000, text => {
+            const res = JSON.parse(text);
+            const meta = res.cachedMeta || res.metadata || res.track || res.data?.track || {};
+            if (!_matchesTrack(meta.title || "", meta.artist || "", Number(meta.duration || 0)))
+                return null;
+            return Providers.parseMusixmatch(res);
+        });
+        if (videoId) {
+            _get(req, "simpmusic", Providers.simpMusicUrl(videoId), 6000, text => {
                 const res = JSON.parse(text);
-                const meta = res.cachedMeta || res.metadata || res.track || res.data?.track || {};
-                const lines = _extractPaxsenixLines(res);
-                if (!_metadataMatches(meta) || !_hasTimedSyllables(lines))
-                    throw new Error("Paxsenix did not return word-timed lyrics");
-                root.paxFinished = true;
-                _settleOnline(req, lines, "Paxsenix", qsTr("Paxsenix word-synced lyrics"));
-                _maybeSettleOnline(req);
-            } catch (e) {
-                root.paxFinished = true;
-                _maybeSettleOnline(req);
-            }
-        }, () => {
-            if (req !== root.requestId)
-                return;
-            root.paxFinished = true;
-            _maybeSettleOnline(req);
-        }, {}, 7000);
-
-        Requests.get(_lrcMuxUrl(), text => {
-            if (req !== root.requestId)
-                return;
-            try {
-                const res = JSON.parse(text);
-                const lines = res.lyrics || [];
-                if (!_hasTimedLines(lines))
-                    throw new Error("LrcMux did not return timed lyrics");
-                root.muxLyrics = lines;
-                root.muxSource = res.metadata?.source || "LrcMux";
-            } catch (e) {
-                root.muxLyrics = [];
-            }
-            root.muxFinished = true;
-            if (_hasTimedLines(root.muxLyrics))
-                _settleOnline(req, root.muxLyrics, "LrcMux", qsTr("LrcMux synced lyrics"));
-            _maybeSettleOnline(req);
-        }, () => {
-            if (req !== root.requestId)
-                return;
-            root.muxFinished = true;
-            _maybeSettleOnline(req);
-        }, {}, 12000);
-    }
-
-    function _extractPaxsenixLines(res: var): var {
-        let rich = res?.richsync ?? res?.data?.richsync ?? res?.lyrics?.richsync ?? res?.data?.lyrics?.richsync;
-        if (typeof rich === "string") {
-            try {
-                rich = JSON.parse(rich);
-            } catch (e) {
-                rich = undefined;
-            }
-        }
-
-        let lines = Array.isArray(rich) ? rich : res?.lyrics;
-        if (!Array.isArray(lines))
-            lines = res?.data?.lyrics?.lines ?? res?.data?.lines ?? res?.lyrics?.lines ?? res?.lines ?? [];
-        if (!Array.isArray(lines))
-            return [];
-        if (_hasTimedSyllables(lines))
-            return lines;
-
-        const normalised = [];
-        for (const line of lines) {
-            const richLine = line?.ts !== undefined;
-            const start = richLine ? Number(line.ts || 0) * 1000 : Number(line.time ?? line.startTimeMs ?? line.start ?? 0);
-            const end = richLine ? Number(line.te || line.ts || 0) * 1000 : Number(line.endTimeMs ?? line.end ?? 0);
-            const rawWords = Array.isArray(line.syllabus) ? line.syllabus : Array.isArray(line.syllables) ? line.syllables : Array.isArray(line.words) ? line.words : Array.isArray(line.l) ? line.l : [];
-            const syllables = [];
-            for (let i = 0; i < rawWords.length; i++) {
-                const word = rawWords[i];
-                let wordStart = Number(word.time ?? word.startTimeMs ?? word.start ?? 0);
-                let wordEnd = Number(word.endTimeMs ?? word.end ?? 0);
-                if (richLine && word.o !== undefined) {
-                    wordStart = start + Number(word.o || 0) * 1000;
-                    const next = rawWords[i + 1];
-                    wordEnd = next?.o !== undefined ? start + Number(next.o) * 1000 : end;
-                }
-                const duration = Number(word.duration ?? Math.max(0, wordEnd - wordStart));
-                syllables.push({
-                    time: wordStart,
-                    duration,
-                    text: String(word.text ?? word.words ?? word.c ?? "")
-                });
-            }
-            normalised.push({
-                time: start,
-                duration: Math.max(0, end - start),
-                text: String(line.text ?? line.x ?? (typeof line.words === "string" ? line.words : "")),
-                syllabus: syllables
+                const duration = _trackDuration();
+                const tracks = (res.data || []).filter(track => duration <= 0 || Math.abs((track.duration || 0) - duration) <= 10);
+                tracks.sort((a, b) => Math.abs((a.duration || 0) - duration) - Math.abs((b.duration || 0) - duration));
+                const track = tracks[0];
+                if (!track)
+                    return null;
+                const rich = track.richSyncLyrics ? Providers.parseLrc(track.richSyncLyrics) : [];
+                return rich.length ? rich : (track.syncedLyrics ? Providers.parseLrc(track.syncedLyrics) : null);
             });
         }
-        return normalised;
-    }
-
-    function _maybeSettleOnline(req: int): void {
-        if (req !== root.requestId)
-            return;
-        if (root.paxFinished && root.muxFinished)
-            _finishOnlineWithNative(req);
-    }
-
-    function _settleOnline(req: int, lines: var, source: string, message: string): void {
-        if (req !== root.requestId)
-            return;
-        const id = _addSource(lines, source, message, {
-            title: _queryTitle(),
-            artist: _queryArtist()
-        });
-        if (source === "Paxsenix")
-            paxPreferenceTimeout.stop();
-        _autoSelectSource(id);
-    }
-
-    function _finishOnlineWithNative(req: int): void {
-        if (req !== root.requestId)
-            return;
-        paxPreferenceTimeout.stop();
-        onlineTimeout.stop();
-        const nativeId = _captureNativeSource();
-        if (!nativeId && !Lyrics.loading)
-            Lyrics.refresh();
-        if (root.youtubeEligible && root.youtubeFinished)
-            _useYoutubeResult(req);
-        else if (!root.selectedSourceId) {
-            root.loading = true;
-            if (root.youtubeStarted || root.youtubePending)
-                root.status = qsTr("Waiting for YouTube captions...");
+        if (root.appleToken) {
+            Requests.get(Providers.appleSearchUrl(t), text => {
+                if (req !== root.requestId)
+                    return;
+                let hit = null;
+                try {
+                    hit = Providers.bestAppleSong(JSON.parse(text), t);
+                } catch (e) {
+                    hit = null;
+                }
+                if (!hit) {
+                    _settle(req, "paxsenix-apple", null, null);
+                    return;
+                }
+                _get(req, "paxsenix-apple", Providers.paxsenixAppleUrl(hit.id), 6000, body => {
+                    const res = JSON.parse(body);
+                    return Providers.parseTtml(res.ttml || res.content || "");
+                });
+            }, () => _settle(req, "paxsenix-apple", null, null), {
+                "Authorization": `Bearer ${root.appleToken}`,
+                "Origin": "https://music.apple.com",
+                "Referer": "https://music.apple.com/"
+            }, 5000);
         }
     }
 
-    function _prepareYoutubeFallback(req: int): void {
+    // LyricsPlus runs on volunteer mirrors; walk them until one answers.
+    function _fetchLyricsPlus(req: int, t: var, hostIndex: int): void {
+        if (req !== root.requestId)
+            return;
+        if (hostIndex >= Providers.lyricsPlusHosts.length) {
+            _settle(req, "lyricsplus", null, null);
+            return;
+        }
+        Requests.get(Providers.lyricsPlusUrl(Providers.lyricsPlusHosts[hostIndex], t), text => {
+            if (req !== root.requestId)
+                return;
+            let lines = null;
+            try {
+                lines = Providers.parseKpoe(JSON.parse(text));
+            } catch (e) {
+                lines = null;
+            }
+            if (lines && lines.length)
+                _settle(req, "lyricsplus", lines, null);
+            else
+                _fetchLyricsPlus(req, t, hostIndex + 1);
+        }, () => _fetchLyricsPlus(req, t, hostIndex + 1), {}, 4500);
+    }
+
+    // YouTube captions need a Python helper, so they only run when no
+    // network provider produced word-synced lyrics.
+    function _startYoutube(req: int): bool {
         const p = Players.active;
         const duration = _trackDuration();
-        if (req !== root.requestId || !p || !_queryArtist() || duration > 900 || _isPlaceholderTitle(p.trackTitle)) {
-            return;
-        }
-
-        root.youtubePending = true;
-        root.youtubeStarted = true;
-        root.youtubeFinished = false;
-        root.youtubeEligible = false;
-        root.youtubeResult = null;
-        root.youtubeFailure = "";
-        youtubeStartDelay.requestId = req;
-        youtubeStartDelay.restart();
-        youtubeFallbackDelay.requestId = req;
-        youtubeFallbackDelay.restart();
-    }
-
-    function _startYoutubeFallback(req: int): void {
-        const p = Players.active;
-        if (req !== root.requestId || !p)
-            return;
-        if (youtubeProcess.running) {
-            youtubeProcess.requestId = -1;
+        if (req !== root.requestId || !p || !_queryArtist() || duration > 900 || _isPlaceholderTitle(p.trackTitle))
+            return false;
+        if (youtubeProcess.running)
             youtubeProcess.running = false;
-            youtubeStartDelay.requestId = req;
-            youtubeStartDelay.restart();
-            return;
-        }
+        root.youtubeStarted = true;
+        root.youtubeEligible = true;
+        root.loading = !root.selectedSourceId;
+        if (!root.selectedSourceId)
+            root.status = qsTr("Checking YouTube captions...");
         youtubeProcess.requestId = req;
-        youtubeProcess.command = [
-            "python3",
-            `${Quickshell.shellDir}/utils/scripts/youtube_lyrics.py`,
-            "--title",
-            _queryTitle(),
-            "--artist",
-            _queryArtist(),
-            "--duration",
-            String(_trackDuration())
-        ];
+        youtubeProcess.command = ["nice", "-n", "10", "python3", `${Quickshell.shellDir}/utils/scripts/youtube_lyrics.py`,
+            "--title", _queryTitle(), "--artist", _queryArtist(), "--duration", String(duration)];
         youtubeProcess.running = true;
         youtubeTimeout.requestId = req;
         youtubeTimeout.restart();
+        return true;
     }
 
-    function _makeYoutubeEligible(req: int): void {
+    function _finishYoutube(req: int, output: string, errorOutput: string): void {
         if (req !== root.requestId)
             return;
-
-        _captureNativeSource();
-        root.youtubeEligible = true;
-        if (root.youtubeFinished)
-            _useYoutubeResult(req);
-        else if (root.youtubeStarted && !root.selectedSourceId) {
-            root.loading = true;
-            root.status = qsTr("Waiting for parallel YouTube captions...");
-        }
-    }
-
-    function _finishYoutubeFallback(req: int, output: string, errorOutput: string): void {
-        if (req !== root.requestId)
-            return;
-
         youtubeTimeout.stop();
         root.youtubeStarted = false;
         root.youtubeFinished = true;
         try {
             const result = JSON.parse(output || "{}");
-            if (!result.success || !_hasTimedLines(result.lyrics || []))
+            if (!result.success || !Providers.hasLineTiming(result.lyrics || []))
                 throw new Error(result.error || errorOutput || "No usable YouTube captions");
-            root.youtubeResult = result;
             root.youtubeFailure = "";
             const language = result.language ? ` (${result.language})` : "";
-            result.sourceId = _addSource(result.lyrics, "YouTube captions", qsTr("YouTube captions%1").arg(language), {
-                videoId: result.videoId || "",
-                sourceTitle: result.sourceTitle || _queryTitle(),
+            _addSource(Providers.parseLegacy(result.lyrics), "youtube", "YouTube captions", qsTr("YouTube captions%1").arg(language), {
+                id: result.videoId || "captions",
                 title: result.sourceTitle || _queryTitle(),
-                artist: _queryArtist(),
                 language: result.language || ""
             });
         } catch (e) {
-            root.youtubeResult = null;
             root.youtubeFailure = String(e);
         }
-
-        if (root.youtubeEligible)
-            _useYoutubeResult(req);
-    }
-
-    function _useYoutubeResult(req: int): void {
-        if (req !== root.requestId)
-            return;
-
-        const result = root.youtubeResult;
-        if (result) {
-            _autoSelectSource(result.sourceId || "");
-            root.youtubePending = false;
-        } else if (root.selectedSourceId) {
-            root.youtubePending = false;
-            root.loading = false;
-        } else {
-            root.youtubePending = false;
+        _reconsider(req, true);
+        if (!root.selectedSourceId) {
             root.loading = Lyrics.loading;
-            root.status = qsTr("No lyrics found; YouTube captions unavailable");
+            if (!Lyrics.loading)
+                _setNativeFallback();
         }
     }
 
+    // ---- model --------------------------------------------------------------
+
     function _loadLines(lines: var, source: string, message: string): void {
-        if (!_hasTimedLines(lines)) {
+        if (!Providers.hasLineTiming(lines)) {
             root.hasSyllables = false;
             root.ownsTiming = false;
             root.loading = false;
@@ -779,23 +783,19 @@ Singleton {
 
         lyricsModel.clear();
         let timedSyllableCount = 0;
+        const convert = syllables => (syllables || []).map(syl => {
+            if (Number(syl.duration || 0) > 0)
+                timedSyllableCount++;
+            return {
+                time: Number(syl.time || 0) / 1000,
+                duration: Number(syl.duration || 0) / 1000,
+                text: _cleanText(syl.text || "")
+            };
+        });
         for (const line of lines) {
-            const syllables = [];
-            for (const syl of line.syllabus || []) {
-                if (Number(syl.duration || 0) > 0 || Number(syl.time || 0) > 0)
-                    timedSyllableCount++;
-                syllables.push({
-                    time: Number(syl.time || 0) / 1000,
-                    duration: Number(syl.duration || 0) / 1000,
-                    text: _cleanText(syl.text || "")
-                });
-            }
-
-            lyricsModel.append({
-                lyricLine: _cleanText(line.text || ""),
-                time: Number(line.time || 0) / 1000,
-                syllabus: JSON.stringify(syllables)
-            });
+            const bg = line.bg ? { text: _cleanText(line.bg.text || ""), syllabus: convert(line.bg.syllabus) } : null;
+            _appendLine(_cleanText(line.text || ""), Number(line.time || 0) / 1000, Number(line.duration || 0) / 1000,
+                convert(line.syllabus), line.agent, bg);
         }
 
         root.hasSyllables = lyricsModel.count > 0 && timedSyllableCount > 0;
@@ -828,14 +828,13 @@ Singleton {
                 sources.push(record);
         }
         const payload = JSON.stringify({
-            formatVersion: 3,
+            formatVersion: 4,
             key: root.loadedKey,
-            romanized: root.romanizeLyrics,
             selectedSourceId: root.selectedSourceId,
             userSelected: root.userSelectedSource,
             sources
         });
-        saveCache.command = ["sh", "-c", `mkdir -p ${_shellQuote(root.cacheDir)} && printf %s ${_shellQuote(payload)} > ${_shellQuote(root.cachePath)}`];
+        saveCache.command = ["sh", "-c", `mkdir -p ${_shellQuote(root.cacheDir)} && printf %s ${_shellQuote(payload)} > ${_shellQuote(root.cachePath)}.tmp && mv -f ${_shellQuote(root.cachePath)}.tmp ${_shellQuote(root.cachePath)}`];
         saveCache.running = true;
     }
 
@@ -844,11 +843,20 @@ Singleton {
             return Lyrics.indexForTime(time);
 
         const target = time - Lyrics.offset + 0.1;
-        for (let i = lyricsModel.count - 1; i >= 0; i--) {
-            if (target >= lyricsModel.get(i).time)
-                return i;
+        // Binary search: called every frame by the immersive view.
+        let lo = 0;
+        let hi = lyricsModel.count - 1;
+        let found = -1;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (lyricsModel.get(mid).time <= target) {
+                found = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
         }
-        return -1;
+        return found;
     }
 
     function timeForIndex(index: int): real {
@@ -877,7 +885,7 @@ Singleton {
 
     Timer {
         interval: 500
-        running: root.active && root.hasLyrics && !!Players.active
+        running: root.visibleConsumers && root.hasLyrics && !!Players.active
         repeat: true
         onTriggered: root.updatePosition()
     }
@@ -895,65 +903,31 @@ Singleton {
 
         property int requestId: -1
 
+        // Leaves the cache read a moment to land before going online; a
+        // trusted cached Apple result skips the network entirely.
         interval: 120
         repeat: false
         onTriggered: {
-            if (requestId === root.requestId)
-                root._fetchOnline(requestId);
-        }
-    }
-
-    Timer {
-        id: paxPreferenceTimeout
-
-        property int requestId: -1
-
-        interval: 7000
-        repeat: false
-        onTriggered: {
             if (requestId !== root.requestId)
                 return;
-            root.paxFinished = true;
-            if (!root.selectedSourceId)
-                root.status = qsTr("Paxsenix timed out; using word-sync fallback");
-            root._maybeSettleOnline(requestId);
-        }
-    }
-
-    Timer {
-        id: onlineTimeout
-
-        property int requestId: -1
-
-        interval: 15000
-        repeat: false
-        onTriggered: {
-            if (requestId !== root.requestId)
+            const selected = root.sourceRecords[root.selectedSourceId];
+            if (root.cacheLoaded && selected && selected.wordSynced && selected.priority <= Providers.rankOf("lyricsplus")) {
+                root.networkSettled = true;
+                root.loading = false;
                 return;
-            root.paxFinished = true;
-            root.muxFinished = true;
-            root._maybeSettleOnline(requestId);
+            }
+            root._fetchOnline(requestId);
         }
     }
 
     Timer {
-        id: youtubeStartDelay
+        id: graceTimer
 
         property int requestId: -1
 
-        interval: 180
+        interval: 1400
         repeat: false
-        onTriggered: root._startYoutubeFallback(requestId)
-    }
-
-    Timer {
-        id: youtubeFallbackDelay
-
-        property int requestId: -1
-
-        interval: 7000
-        repeat: false
-        onTriggered: root._makeYoutubeEligible(requestId)
+        onTriggered: root._reconsider(requestId, true)
     }
 
     Timer {
@@ -969,12 +943,7 @@ Singleton {
             youtubeProcess.requestId = -1;
             if (youtubeProcess.running)
                 youtubeProcess.running = false;
-            root.youtubeStarted = false;
-            root.youtubeFinished = true;
-            root.youtubeResult = null;
-            root.youtubeFailure = "YouTube captions timed out";
-            if (root.youtubeEligible)
-                root._useYoutubeResult(requestId);
+            root._finishYoutube(requestId, "", "YouTube captions timed out");
         }
     }
 
@@ -993,34 +962,47 @@ Singleton {
 
                 root.restoringSources = true;
                 let selectedId = "";
-                if (cached.formatVersion === 3 && Array.isArray(cached.sources)) {
-                    for (const source of cached.sources || []) {
-                        const id = root._addSource(source.lyrics || [], source.provider || "Cached", source.detail || qsTr("Cached timed lyrics"), {
-                            sourceId: source.id || "",
-                            title: source.title || root._queryTitle(),
-                            artist: source.artist || root._queryArtist(),
-                            language: source.language || ""
-                        });
+                if ((cached.formatVersion === 3 || cached.formatVersion === 4) && Array.isArray(cached.sources)) {
+                    for (const source of cached.sources) {
+                        const providerId = source.providerId || String(source.provider || "cached").toLowerCase().replace(/[^a-z0-9]+/g, "");
+                        const id = root._addSource(Providers.parseLegacy(source.lyrics || []), providerId,
+                            source.provider || "Cached", source.detail || qsTr("Cached lyrics"), {
+                                sourceId: source.id || "",
+                                title: source.title,
+                                artist: source.artist,
+                                language: source.language || ""
+                            });
                         if (!selectedId)
                             selectedId = id;
                     }
                     if (cached.selectedSourceId && root.sourceRecords[cached.selectedSourceId])
                         selectedId = cached.selectedSourceId;
                     root.userSelectedSource = !!cached.userSelected;
-                } else if (root._hasTimedLines(cached.lyrics)) {
-                    selectedId = root._addSource(cached.lyrics, cached.provider || "Cached", qsTr("Cached %1 lyrics; refreshing...").arg(cached.provider || "timed"), {
-                        title: root._queryTitle(),
-                        artist: root._queryArtist()
-                    });
                 }
                 root.restoringSources = false;
                 if (selectedId) {
                     root.cacheLoaded = true;
-                    root._selectSource(selectedId, false);
+                    root._selectSource(selectedId, root.userSelectedSource);
                 }
             } catch (e) {
                 root.restoringSources = false;
                 root.cacheLoaded = false;
+            }
+        }
+    }
+
+    // The Apple Music web token is maintained by caelestia-motion-art.
+    FileView {
+        path: `${Paths.cache}/motion-art/token.json`
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const state = JSON.parse(text());
+                root.appleToken = state.token && state.exp * 1000 > Date.now() ? state.token : "";
+            } catch (e) {
+                root.appleToken = "";
             }
         }
     }
@@ -1054,13 +1036,51 @@ Singleton {
     Timer {
         id: cacheSaveDelay
 
-        interval: 180
+        interval: 400
         repeat: false
         onTriggered: root._writeSourcesCache()
     }
 
     Process {
         id: saveCache
+    }
+
+    Process {
+        id: romanizer
+
+        property string recordId: ""
+        property int requestId: -1
+        property string payload: ""
+
+        command: ["nice", "-n", "5", "caelestia-romaji"]
+        stdinEnabled: true
+        stdout: StdioCollector {
+            id: romanizerOutput
+        }
+        onStarted: {
+            write(payload);
+            stdinEnabled = false;
+        }
+        onExited: code => {
+            stdinEnabled = true;
+            if (requestId !== root.requestId)
+                return;
+            const record = root.sourceRecords[recordId];
+            if (!record)
+                return;
+            try {
+                const result = JSON.parse(romanizerOutput.text || "{}");
+                record.romanized = Providers.parseLegacy(result.lines || []);
+            } catch (e) {
+                record.romanized = null;
+            }
+            if (!record.romanized || !record.romanized.length) {
+                // Never leave the view empty: fall back to the original script.
+                record.romanized = record.lyrics;
+            }
+            if (root.selectedSourceId === recordId)
+                root._selectSource(recordId, root.userSelectedSource);
+        }
     }
 
     Process {
@@ -1074,7 +1094,7 @@ Singleton {
         stderr: StdioCollector {
             id: youtubeError
         }
-        onExited: _code => root._finishYoutubeFallback(requestId, youtubeOutput.text, youtubeError.text) // qmllint disable signal-handler-parameters
+        onExited: _code => root._finishYoutube(requestId, youtubeOutput.text, youtubeError.text) // qmllint disable signal-handler-parameters
     }
 
     Connections {
@@ -1108,9 +1128,8 @@ Singleton {
             root._captureNativeSource();
         }
         function onLoadingChanged(): void {
-            if (!root.selectedSourceId)
-                root.loading = Lyrics.loading || root.youtubePending || root.youtubeStarted;
+            if (!root.selectedSourceId && root.networkSettled && !root.youtubeStarted)
+                root.loading = Lyrics.loading;
         }
     }
-
 }

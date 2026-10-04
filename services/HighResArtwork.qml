@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Caelestia
 import qs.utils
 
@@ -18,7 +19,15 @@ Singleton {
     property bool loading: false
     property bool transitioning: false
     property int revision: 0
-    readonly property bool active: ImmersiveLyricsState.active || consumerCount > 0
+    // Prefetch for whatever is playing, so the immersive view opens with the
+    // artwork (and its local copy for the backdrop) already resolved.
+    readonly property bool active: ImmersiveLyricsState.active || consumerCount > 0 || !!Players.active
+    property string localSource: ""
+    // Track length from the iTunes catalogue match, in seconds (0 if unknown).
+    property real catalogLength: 0
+    property string localFor: ""
+    // A local file once it is cached, otherwise the remote URL.
+    readonly property string displaySource: localFor === source && localSource ? localSource : source
 
     readonly property string dashboardFallbackUrl: Players.getArtUrl(Players.active)
     readonly property string youtubeId: {
@@ -43,6 +52,7 @@ Singleton {
     }
 
     onTrackKeyChanged: {
+        catalogLength = 0;
         requestedSize = 1200;
         dashboardRequestedSize = 300;
         artworkBaseUrl = "";
@@ -176,6 +186,8 @@ Singleton {
                         bestScore = score;
                     }
                 }
+                if (best && bestScore >= 12)
+                    root.catalogLength = Number(best.trackTimeMillis || 0) / 1000;
                 if (best && bestScore >= 8) {
                     root.artworkBaseUrl = best.artworkUrl100 || "";
                     root._acceptArtwork(root._sizedArtwork(root.artworkBaseUrl, root.requestedSize), key);
@@ -246,6 +258,55 @@ Singleton {
             if (root.transitioning)
                 fallbackDelay.restart();
         }
+    }
+
+    onSourceChanged: localDelay.restart()
+
+    Timer {
+        id: localDelay
+
+        interval: 60
+        repeat: false
+        onTriggered: {
+            const url = root.source;
+            if (!url || url === root.localFor)
+                return;
+            if (/^(file:\/\/|\/)/.test(url)) {
+                root.localSource = url.startsWith("/") ? `file://${url}` : url;
+                root.localFor = url;
+                return;
+            }
+            if (localFetch.running) {
+                restart();
+                return;
+            }
+            localFetch.url = url;
+            localFetch.command = ["nice", "-n", "10", "caelestia-immersive-art-cache", url, "1920", "1080", root.trackKey];
+            localFetch.running = true;
+        }
+    }
+
+    Process {
+        id: localFetch
+
+        property string url: ""
+
+        stdout: StdioCollector {
+            id: localOutput
+        }
+        onExited: code => {
+            const fields = localOutput.text.trim().split("\t");
+            if (code === 0 && fields.length >= 3 && fields[2]) {
+                root.localSource = `file://${fields[2]}`;
+                root.localFor = url;
+                cacheUse.command = ["caelestia-media-cache", "hit", fields[2]];
+                cacheUse.running = true;
+            }
+        }
+    }
+
+    Process {
+        id: cacheUse
     }
 
     Component.onCompleted: {

@@ -6,6 +6,7 @@ import Quickshell.Io
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.utils
 
 Column {
     id: root

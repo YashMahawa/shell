@@ -1,6 +1,9 @@
 //@ pragma Env QS_CRASHREPORT_URL=https://github.com/caelestia-dots/shell/issues/new?template=crash.yml
 //@ pragma DefaultEnv QS_NO_RELOAD_POPUP=1
 //@ pragma DefaultEnv QS_DROP_EXPENSIVE_FONTS=1
+// Qt 6.8+ incremental JS GC has crashed the shell in GCStateMachine::transition
+// after long uptimes; the classic non-incremental collector is stable.
+//@ pragma DefaultEnv QV4_GC_TIMELIMIT=0
 //@ pragma DefaultEnv QSG_RENDER_LOOP=threaded
 //@ pragma DefaultEnv QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
 

@@ -4,19 +4,44 @@ import QtQuick
 import Caelestia.Config
 import Caelestia.Services
 import qs.components
-import qs.components.containers
 import qs.components.controls
-import qs.components.effects
 import qs.services
 
+// Apple Music style lyric column.
+//
+// The active line sits near the top. When it changes, the column jumps to its
+// new position and every visible line is given an equal and opposite offset
+// that then springs back with a small per-line delay, which produces the
+// cascading scroll. Scrolling with the wheel browses freely (and unblurs);
+// after a short pause the view returns to the song.
 Item {
     id: root
 
     required property bool active
     property bool retained: false
-    readonly property real fadeAmount: 0.15
-    property int lyricRevision: SyllableLyrics.revision
-    property real smoothPosition: Players.active?.position ?? 0
+    property bool reduceMotion: false
+    readonly property real anchorRatio: 0.18
+    readonly property real fadeTop: 0.16
+    readonly property real fadeBottom: 0.42
+
+    property real position: 0
+    property real focusY: 0
+    readonly property real columnY: column.y
+    property int currentIndex: -1
+    property int interludeIndex: -1
+    property real interludeProgress: -1
+    property real manualOffset: 0
+    property bool userScrolling: false
+    property bool animateScroll: false
+    property var starts: []
+    property var ends: []
+
+    readonly property font lyricFont: Qt.font({
+        family: Tokens.font.headline.large.family,
+        pixelSize: Math.round(Math.max(32, Math.min(58, width * 0.07))),
+        weight: Font.Bold,
+        variableAxes: { "wght": 500, "ROND": 30, "opsz": 40 }
+    })
 
     function syncRetention(): void {
         if (active && !retained) {
@@ -28,7 +53,87 @@ Item {
         }
     }
 
-    Component.onCompleted: syncRetention()
+    function rebuildTimes(): void {
+        const model = SyllableLyrics.model;
+        const s = [];
+        const e = [];
+        for (let i = 0; i < model.count; i++) {
+            const row = model.get(i);
+            s.push(row.time);
+            e.push(row.time + Math.max(0, row.duration || 0));
+        }
+        starts = s;
+        ends = e;
+    }
+
+    // Instrumental breaks of at least four seconds (including the intro) show
+    // the breathing dots in place of the next line.
+    function updateInterlude(time: real): void {
+        let index = -1;
+        let progress = -1;
+        const next = currentIndex + 1;
+        if (next < starts.length) {
+            const gapStart = currentIndex >= 0 ? ends[currentIndex] : 0;
+            const gapEnd = starts[next];
+            if (gapEnd - gapStart >= 4 && time >= gapStart && time < gapEnd - 0.12) {
+                index = next;
+                progress = (time - gapStart) / (gapEnd - gapStart);
+            }
+        }
+        if (index !== interludeIndex)
+            interludeIndex = index;
+        interludeProgress = progress;
+    }
+
+    function focusIndex(): int {
+        return interludeIndex >= 0 ? interludeIndex : Math.max(0, currentIndex);
+    }
+
+    // The column is bound to the focused line's live y, so relayouts above it
+    // (karaoke words building, interlude dots collapsing) never move it.
+    function updateFocusY(): void {
+        const item = repeater.itemAt(focusIndex());
+        if (item)
+            focusY = item.y;
+    }
+
+    function lineMoved(index: int, y: real): void {
+        if (index === focusIndex())
+            focusY = y;
+    }
+
+    // Called when the focused line changes: the column jumps to the new line
+    // and visible lines spring back from where they were, staggered.
+    function refocus(animated: bool): void {
+        const before = column.y;
+        updateFocusY();
+        const delta = column.y - before;
+        if (!animated || Math.abs(delta) < 0.5 || reduceMotion)
+            return;
+        const focus = focusIndex();
+        for (let i = Math.max(0, focus - 3); i < Math.min(repeater.count, focus + 12); i++) {
+            const item = repeater.itemAt(i);
+            if (item)
+                item.shift(-delta, i < focus ? 0 : 24 + (i - focus) * 38);
+        }
+    }
+
+    function tick(): void {
+        const player = Players.active;
+        if (!player)
+            return;
+        const time = player.position - Lyrics.offset + 0.1;
+        position = time;
+        const index = SyllableLyrics.indexForTime(player.position);
+        if (index !== currentIndex)
+            currentIndex = index;
+        updateInterlude(time);
+    }
+
+    Component.onCompleted: {
+        syncRetention();
+        rebuildTimes();
+    }
     Component.onDestruction: {
         if (retained)
             SyllableLyrics.release();
@@ -36,58 +141,39 @@ Item {
 
     onActiveChanged: {
         syncRetention();
-        trackingDelay.stop();
-        lyrics.animateTracking = false;
         if (!active)
             return;
-        root.smoothPosition = Players.active?.position ?? 0;
+        animateScroll = false;
+        manualOffset = 0;
+        userScrolling = false;
+        tick();
         Qt.callLater(() => {
-            const index = lyrics.currentIndex;
-            if (index >= 0)
-                lyrics.positionViewAtIndex(index, ListView.Center);
-            trackingDelay.restart();
+            refocus(false);
+            animateScroll = true;
         });
     }
+    onCurrentIndexChanged: refocus(animateScroll)
+    onInterludeIndexChanged: refocus(animateScroll)
 
-    onLyricRevisionChanged: {
-        lyrics.animateTracking = false;
-        if (root.active)
-            trackingDelay.restart();
+    Connections {
+        target: SyllableLyrics
+
+        function onRevisionChanged(): void {
+            root.animateScroll = false;
+            root.rebuildTimes();
+            root.tick();
+            Qt.callLater(() => {
+                root.refocus(false);
+                root.animateScroll = true;
+            });
+        }
     }
 
-    layer.enabled: true
-    layer.effect: Mask {
-        maskSource: fadeMask
-
-        Rectangle {
-            id: fadeMask
-
-            layer.enabled: true
-            visible: false
-            implicitWidth: root.width
-            implicitHeight: root.height
-
-            gradient: Gradient {
-                orientation: Gradient.Vertical
-
-                GradientStop {
-                    color: Qt.alpha("black", 0)
-                    position: 0
-                }
-                GradientStop {
-                    color: "black"
-                    position: root.fadeAmount
-                }
-                GradientStop {
-                    color: "black"
-                    position: 1 - root.fadeAmount
-                }
-                GradientStop {
-                    color: Qt.alpha("black", 0)
-                    position: 1
-                }
-            }
-        }
+    // Reading the MPRIS position is an interpolated clock in Quickshell, so
+    // one cheap read per displayed frame keeps word timing exact.
+    FrameAnimation {
+        running: root.active && root.visible && SyllableLyrics.hasLyrics && (Players.active?.isPlaying ?? false)
+        onTriggered: root.tick()
     }
 
     Connections {
@@ -95,209 +181,114 @@ Item {
         ignoreUnknownSignals: true
 
         function onPositionChanged(): void {
-            root.smoothPosition = Players.active?.position ?? 0;
-            if (smoothTicker.running)
-                smoothTicker.lastRealTime = Date.now() / 1000;
+            root.tick();
         }
-    }
-
-    Timer {
-        id: smoothTicker
-
-        interval: 16
-        // Some MPRIS players publish position sparsely. Keep a local clock for
-        // line-timed lyrics too, otherwise non-syllable tracks appear frozen.
-        running: root.active && SyllableLyrics.hasLyrics && !!Players.active && Players.active.isPlaying
-        repeat: true
-        property real lastRealTime: 0
-
-        onTriggered: {
-            const now = Date.now() / 1000;
-            if (lastRealTime > 0)
-                root.smoothPosition += now - lastRealTime;
-            lastRealTime = now;
-        }
-
-        onRunningChanged: {
-            if (running) {
-                root.smoothPosition = Players.active?.position ?? 0;
-                lastRealTime = Date.now() / 1000;
-            } else {
-                lastRealTime = 0;
-            }
-        }
-    }
-
-    Timer {
-        id: trackingDelay
-
-        interval: 120
-        repeat: false
-        onTriggered: lyrics.animateTracking = root.active
     }
 
     Column {
         anchors.centerIn: parent
         visible: !SyllableLyrics.hasLyrics
-        spacing: 12
+        spacing: 14
+        opacity: visible ? 1 : 0
 
         LoadingIndicator {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: SyllableLyrics.loading || Lyrics.loading
             implicitSize: 40
             containsIcon: true
-            color: "#edf0f4"
+            color: "#f2f4f7"
         }
 
         MaterialIcon {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !(SyllableLyrics.loading || Lyrics.loading)
             text: "lyrics"
-            color: "#858e99"
+            color: Qt.rgba(1, 1, 1, 0.55)
             fontStyle: Tokens.font.icon.builders.large.scale(1.5).build()
         }
 
         StyledText {
             anchors.horizontalCenter: parent.horizontalCenter
             text: SyllableLyrics.loading || Lyrics.loading ? qsTr("Finding the words...") : qsTr("No synced lyrics for this track")
-            color: "#c9cfd6"
+            color: Qt.rgba(1, 1, 1, 0.78)
             font: Tokens.font.title.large
         }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 300
+            }
+        }
     }
 
-    StyledListView {
-        id: lyrics
+    Item {
+        id: viewport
 
         anchors.fill: parent
-        anchors.topMargin: parent.height * root.fadeAmount / 2
-        anchors.bottomMargin: parent.height * root.fadeAmount / 2
         visible: SyllableLyrics.hasLyrics
+        clip: false
 
-        displayMarginBeginning: anchors.topMargin
-        displayMarginEnd: anchors.bottomMargin
-        model: SyllableLyrics.model
-        spacing: Math.max(18, height * 0.022)
-        pixelAligned: false
-        property bool animateTracking: false
-        readonly property real focusLineHeight: Math.max(72, Math.min(96, width * 0.11))
+        Column {
+            id: column
 
-        Component.onCompleted: {
-            currentIndex = Qt.binding(() => {
-                model;
-                return SyllableLyrics.indexForTime(root.smoothPosition);
-            });
-            positionViewAtIndex(currentIndex, ListView.Center);
-        }
-        onModelChanged: Qt.callLater(() => positionViewAtIndex(currentIndex, ListView.Center))
+            y: Math.round(root.height * root.anchorRatio - root.focusY + root.manualOffset)
+            x: root.lyricFont.pixelSize * 0.4
+            width: parent.width - root.lyricFont.pixelSize * 0.8
+            spacing: Math.round(root.lyricFont.pixelSize * 0.56)
 
-        highlightRangeMode: ListView.StrictlyEnforceRange
-        highlightMoveDuration: animateTracking ? 720 : 0
-        highlightMoveVelocity: -1
-        preferredHighlightBegin: (height - focusLineHeight) / 2
-        preferredHighlightEnd: (height + focusLineHeight) / 2
+            Repeater {
+                id: repeater
 
-        delegate: Item {
-            id: line
+                model: SyllableLyrics.model
 
-            required property string lyricLine
-            required property string syllabus
-            required property int index
-
-            readonly property bool current: ListView.isCurrentItem
-            readonly property int distanceFromCurrent: Math.abs(index - lyrics.currentIndex)
-            readonly property font lineFont: Qt.font({
-                family: Tokens.font.headline.large.family,
-                pixelSize: Math.max(30, Math.min(45, lyrics.width * 0.056)),
-                weight: Font.DemiBold
-            })
-
-            width: lyrics.width - 18
-            implicitHeight: Math.max(plainLine.implicitHeight, karaokeLoader.implicitHeight) + 16
-            height: implicitHeight
-            x: current ? 14 : 0
-            scale: current ? 1 : 0.965
-            opacity: current ? 0.82 : Math.max(0.17, 0.54 - distanceFromCurrent * 0.11)
-            transformOrigin: Item.Left
-
-            Text {
-                id: plainLine
-
-                width: parent.width
-                visible: !line.current || !SyllableLyrics.hasSyllables
-                text: line.lyricLine || ". . ."
-                color: line.current ? "#b7c0cc" : line.index < lyrics.currentIndex ? "#9fa8b4" : "#7f8996"
-                font: line.lineFont
-                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                renderType: Text.QtRendering
-                renderTypeQuality: Text.VeryHighRenderTypeQuality
-            }
-
-            Loader {
-                id: karaokeLoader
-
-                width: parent.width
-                active: line.current && SyllableLyrics.hasSyllables
-                visible: active
-
-                sourceComponent: KaraokeLine {
-                    width: karaokeLoader.width
-                    lineText: line.lyricLine
-                    syllabus: line.syllabus
-                    position: root.smoothPosition - Lyrics.offset + 0.1
-                    lyricFont: line.lineFont
-                    waitingColor: "#68727e"
-                    activeColor: "#b7c0cc"
+                LyricLine {
+                    list: root
+                    currentIndex: root.currentIndex
+                    userScrolling: root.userScrolling
+                    reduceMotion: root.reduceMotion
+                    lyricFont: root.lyricFont
+                    maxWidth: column.width
+                    interludeIndex: root.interludeIndex
+                    onYChanged: root.lineMoved(index, y)
+                    onSeekRequested: index => {
+                        SyllableLyrics.jumpTo(index);
+                        root.manualOffset = 0;
+                        root.userScrolling = false;
+                        returnTimer.stop();
+                    }
                 }
-            }
-
-            Behavior on x {
-                SpringAnimation {
-                    spring: 4.6
-                    damping: 0.48
-                    epsilon: 0.15
-                }
-            }
-
-            Behavior on scale {
-                SpringAnimation {
-                    spring: 5.1
-                    damping: 0.43
-                    epsilon: 0.001
-                }
-            }
-
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: 360
-                    easing.type: Easing.OutCubic
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: SyllableLyrics.jumpTo(line.index)
             }
         }
     }
 
-    Behavior on lyricRevision {
-        SequentialAnimation {
-            NumberAnimation {
-                target: lyrics
-                property: "opacity"
-                to: 0
-                duration: 130
-                easing.type: Easing.OutCubic
-            }
-            PropertyAction {}
-            NumberAnimation {
-                target: lyrics
-                property: "opacity"
-                to: 1
-                duration: 380
-                easing.type: Easing.OutCubic
-            }
+    Behavior on manualOffset {
+        enabled: !root.userScrolling
+
+        NumberAnimation {
+            duration: 700
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    WheelHandler {
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: event => {
+            root.userScrolling = true;
+            const step = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y / 120 * root.lyricFont.pixelSize * 2;
+            const limit = Math.max(root.height, column.height);
+            root.manualOffset = Math.max(-limit, Math.min(limit, root.manualOffset + step));
+            returnTimer.restart();
+        }
+    }
+
+    Timer {
+        id: returnTimer
+
+        interval: 2800
+        repeat: false
+        onTriggered: {
+            root.userScrolling = false;
+            root.manualOffset = 0;
         }
     }
 }

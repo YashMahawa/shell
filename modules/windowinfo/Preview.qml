@@ -89,8 +89,8 @@ Item {
             if (!client)
                 return qsTr("No active client");
 
-            const mon = client.monitor;
-            return qsTr("%1 on monitor %2 at %3, %4").arg(client.title).arg(mon.name).arg(client.lastIpcObject.at[0]).arg(client.lastIpcObject.at[1]);
+            const at = client.lastIpcObject?.at ?? [0, 0];
+            return qsTr("%1 on monitor %2 at %3, %4").arg(client.title).arg(client.monitor?.name ?? qsTr("unknown")).arg(at[0]).arg(at[1]);
         }
     }
 }

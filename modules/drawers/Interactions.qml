@@ -68,12 +68,12 @@ CustomMouseArea {
             && p.y <= Math.max(panel.height, panel.implicitHeight) + pad;
     }
 
-    function overDetachedContent(x: real, y: real): bool {
+    function overDetachedContent(x: real, y: real, padding = 0): bool {
         if (!popouts.isDetached)
             return false;
         const point = popouts.mapFromItem(root, x, y);
-        return point.x >= 0 && point.y >= 0
-            && point.x <= popouts.width && point.y <= popouts.height;
+        return point.x >= -padding && point.y >= -padding
+            && point.x <= popouts.width + padding && point.y <= popouts.height + padding;
     }
 
     function overPanel(panel: Item, x: real, y: real, padding = 16): bool {
@@ -262,9 +262,12 @@ CustomMouseArea {
             // The detached window-info surface sits above applications, so
             // Hyprland cannot focus the underlying client directly.  Resolve
             // it from the pointer and client rectangles instead.  Do not
-            // change selection while the pointer is over the controls.
+            // change selection while the pointer is over the panel itself
+            // (or its rounded border), only once it has left the panel.
+            // overPopoutsPanel() cannot be used here: detaching clears
+            // hasCurrent, so it always reports false for this surface.
             if (popouts.detachedMode === "winfo"
-                && !overPopoutsPanel(event.x, event.y))
+                && !overDetachedContent(event.x, event.y, Config.border.rounding + 8))
                 popouts.selectWindowInfoClientAt(screen.x + event.x, screen.y + event.y);
             return;
         }

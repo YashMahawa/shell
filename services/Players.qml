@@ -13,6 +13,18 @@ Singleton {
 
     readonly property list<MprisPlayer> list: Mpris.players.values
     readonly property MprisPlayer active: props.manualActive ?? list.find(p => getIdentity(p) === GlobalConfig.services.defaultPlayer) ?? list[0] ?? null
+    // Browsers report a placeholder (INT64_MAX µs) or a stale/video length while
+    // a track loads. Reject absurd values and prefer the Apple catalogue length
+    // when the two disagree, unless playback has already run past it.
+    readonly property real activeLength: {
+        const player = active;
+        const reported = player?.length ?? 0;
+        const sane = reported > 0 && reported < 6 * 3600 ? reported : 0;
+        const catalog = HighResArtwork.catalogLength;
+        if (catalog > 0 && (sane <= 0 || Math.abs(sane - catalog) > 4) && (player?.position ?? 0) < catalog + 2)
+            return catalog;
+        return sane;
+    }
     property alias manualActive: props.manualActive
     // Dedup key for progressive metadata (e.g. mpv-mpris/yt-dlp player fills title then artist later).
     property string lastNowPlayingKey: ""

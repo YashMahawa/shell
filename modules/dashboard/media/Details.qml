@@ -70,7 +70,7 @@ ColumnLayout {
         TextMetrics {
             id: timeMetrics
 
-            text: Players.active ? root.lengthStr(Math.max(Players.active.position, Players.active.length)).replace(/[1-9]/g, "0") : "00:00"
+            text: Players.active ? root.lengthStr(Math.max(Players.active.position, Players.activeLength)).replace(/[1-9]/g, "0") : "00:00"
             font: Tokens.font.label.medium
         }
 
@@ -88,7 +88,7 @@ ColumnLayout {
             id: positionSlider
 
             Layout.fillWidth: true
-            value: Players.active ? Players.active.position / (Players.active.length || 1) : 0
+            value: Players.active ? Players.active.position / (Players.activeLength || 1) : 0
             enabled: Players.active?.canSeek ?? false
             wavy: true
             animateWave: Players.active?.isPlaying ?? false
@@ -98,20 +98,20 @@ ColumnLayout {
             onInteraction: value => {
                 const active = Players.active;
                 if (active?.canSeek && active?.positionSupported)
-                    active.position = value * active.length;
+                    active.position = value * Players.activeLength;
             }
 
             Binding {
                 target: positionLabel
                 property: "text"
-                value: root.lengthStr(positionSlider.pos * (Players.active?.length ?? 0))
+                value: root.lengthStr(positionSlider.pos * Players.activeLength)
                 when: positionSlider.dragging
             }
         }
 
         StyledText {
             Layout.preferredWidth: timeMetrics.width
-            text: root.lengthStr(Players.active?.length ?? -1)
+            text: root.lengthStr(Players.active ? Players.activeLength : -1)
             color: Colours.palette.m3onSurfaceVariant
             font: timeMetrics.font
             horizontalAlignment: Text.AlignHCenter

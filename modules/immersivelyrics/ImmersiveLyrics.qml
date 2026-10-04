@@ -42,14 +42,16 @@ Scope {
                 id: surface
 
                 anchors.fill: parent
-                active: window.visible
+                // Built ahead of time so opening is instant; only the target
+                // screen's surface is ever active.
+                active: window.isTarget || window.visible
                 asynchronous: true
                 onLoaded: {
                     if (window.visible)
                         item?.forceActiveFocus();
                 }
                 sourceComponent: ImmersiveSurface {
-                    active: ImmersiveLyricsState.presented
+                    active: ImmersiveLyricsState.presented && window.visible
                     onExitRequested: ImmersiveLyricsState.close()
                 }
             }

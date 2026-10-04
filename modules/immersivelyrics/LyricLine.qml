@@ -1,0 +1,379 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Effects
+
+// One lyric line in the immersive view.
+//
+// Inactive lines are a single Text item. The active line and its neighbours
+// are built from timed words so the hand-over between lines never has to
+// instantiate anything on the frame it happens.
+Item {
+    id: line
+
+    required property int index
+    required property string lyricLine
+    required property real time
+    required property real duration
+    required property string syllabus
+    required property string agent
+    required property string bgText
+    required property string bgSyllabus
+
+    // The list owns the hot per-frame state (position, interlude progress);
+    // only the active line reads it, so other lines do no work per frame.
+    required property Item list
+    required property int currentIndex
+    required property bool userScrolling
+    required property bool reduceMotion
+    required property font lyricFont
+    required property real maxWidth
+    // Index of the line whose preceding instrumental break is playing, and
+    // how far through that break we are.
+    required property int interludeIndex
+
+    signal seekRequested(int index)
+
+    readonly property int distance: index - currentIndex
+    readonly property bool current: distance === 0 && interludeIndex !== index
+    readonly property bool near: distance >= -1 && distance <= 2
+    readonly property real livePosition: current ? list.position : -1
+    readonly property bool alignEnd: agent === "end"
+    readonly property var words: parseWords(syllabus)
+    readonly property var bgWords: parseWords(bgSyllabus)
+    readonly property bool timed: words.length > 0
+    readonly property font bgFont: Qt.font({
+        family: lyricFont.family,
+        pixelSize: Math.round(lyricFont.pixelSize * 0.68),
+        weight: Font.DemiBold,
+        variableAxes: { "wght": 460, "ROND": 30 }
+    })
+
+    // Apple Music: the line being sung is bright, the one just sung blurs as
+    // it leaves the top, upcoming lines stay sharp and fade with distance.
+    readonly property real targetOpacity: {
+        if (userScrolling)
+            return current ? 1 : 0.46;
+        if (current)
+            return 1;
+        if (distance < 0)
+            return Math.max(0.12, 0.3 + distance * 0.06);
+        return Math.max(0.14, 0.44 - (distance - 1) * 0.075);
+    }
+    readonly property real targetBlur: userScrolling || reduceMotion || distance >= 0 ? 0 : Math.min(1, 0.5 + (-distance - 1) * 0.2)
+
+    property real lag: 0
+
+    // Fade towards the viewport edges: short at the top, where the line just
+    // sung slides away, long at the bottom. Only changes while lines move.
+    readonly property real viewY: list.columnY + y + lag
+    readonly property real edgeOpacity: {
+        const h = list.height;
+        if (h <= 0)
+            return 1;
+        const top = Math.max(0, Math.min(1, (viewY + height * 0.5) / (h * list.fadeTop)));
+        const fromBottom = (h - viewY) / (h * list.fadeBottom);
+        const bottom = Math.max(0, Math.min(1, fromBottom));
+        return top * top * (bottom * bottom * (3 - 2 * bottom));
+    }
+
+    function parseWords(encoded: string): var {
+        let syllables = [];
+        try {
+            syllables = JSON.parse(encoded || "[]");
+        } catch (error) {
+            syllables = [];
+        }
+        // Group syllables into words so wrapping never splits a word.
+        const groups = [];
+        let currentGroup = [];
+        for (const syllable of syllables) {
+            if (!String(syllable.text || "").length)
+                continue;
+            currentGroup.push(syllable);
+            if (/\s$/.test(syllable.text)) {
+                groups.push(currentGroup);
+                currentGroup = [];
+            }
+        }
+        if (currentGroup.length)
+            groups.push(currentGroup);
+        return groups;
+    }
+
+    function shift(delta: real, delay: int): void {
+        settle.stop();
+        lag += delta;
+        pause.duration = delay;
+        settle.start();
+    }
+
+    width: maxWidth
+    implicitHeight: dots.height + body.implicitHeight + (bgLoader.active ? bgLoader.implicitHeight + lyricFont.pixelSize * 0.12 : 0) + lyricFont.pixelSize * 0.32
+    height: implicitHeight
+    opacity: shownOpacity * edgeOpacity
+    scale: current || userScrolling ? 1 : 0.965
+    transformOrigin: alignEnd ? Item.Right : Item.Left
+    transform: Translate {
+        y: line.lag
+    }
+
+    layer.enabled: blurAmount > 0.01
+    layer.effect: MultiEffect {
+        blurEnabled: true
+        blur: line.blurAmount
+        blurMax: 22
+        autoPaddingEnabled: true
+    }
+
+    property real blurAmount: targetBlur
+    property real shownOpacity: targetOpacity
+
+    Behavior on shownOpacity {
+        NumberAnimation {
+            duration: 380
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on blurAmount {
+        NumberAnimation {
+            duration: 420
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on scale {
+        NumberAnimation {
+            duration: 560
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: [0.25, 1, 0.5, 1, 1, 1]
+        }
+    }
+
+    SequentialAnimation {
+        id: settle
+
+        PauseAnimation {
+            id: pause
+
+            duration: 0
+        }
+        NumberAnimation {
+            target: line
+            property: "lag"
+            to: 0
+            duration: line.reduceMotion ? 1 : 680
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: [0.22, 1, 0.36, 1, 1, 1]
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.leftMargin: -line.lyricFont.pixelSize * 0.4
+        anchors.rightMargin: -line.lyricFont.pixelSize * 0.4
+        radius: line.lyricFont.pixelSize * 0.35
+        color: "white"
+        opacity: hover.hovered ? 0.07 : 0
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 180
+            }
+        }
+    }
+
+    Item {
+        id: dots
+
+        readonly property bool shown: line.interludeIndex === line.index
+        // Latched so the dots finish their exit at full fill instead of
+        // emptying the moment the break ends.
+        property real latchedProgress: -1
+
+        width: parent.width
+        height: shown ? interlude.implicitHeight + line.lyricFont.pixelSize * 0.45 : 0
+        opacity: shown ? 1 : 0
+
+        Behavior on height {
+            SequentialAnimation {
+                PauseAnimation {
+                    duration: dots.shown ? 0 : 180
+                }
+                NumberAnimation {
+                    duration: 480
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: [0.25, 1, 0.5, 1, 1, 1]
+                }
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: dots.shown ? 420 : 240
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        Connections {
+            target: line.list
+            enabled: dots.shown
+
+            function onInterludeProgressChanged(): void {
+                if (line.list.interludeProgress >= 0)
+                    dots.latchedProgress = line.list.interludeProgress;
+            }
+        }
+
+        InterludeDots {
+            id: interlude
+
+            x: line.alignEnd ? parent.width - implicitWidth : 0
+            y: line.lyricFont.pixelSize * 0.1
+            dotSize: Math.round(line.lyricFont.pixelSize * 0.3)
+            progress: dots.latchedProgress
+            reduceMotion: line.reduceMotion
+            visible: dots.opacity > 0.01
+        }
+    }
+
+    TextMetrics {
+        id: fullWidth
+
+        font: line.lyricFont
+        text: line.lyricLine
+    }
+
+    Item {
+        id: body
+
+        // Duet lines sung from the other side hug the right edge; leading
+        // lines keep the full width so word-by-word layout never wraps early.
+        readonly property real blockWidth: line.alignEnd
+            ? Math.min(line.maxWidth, Math.ceil(fullWidth.advanceWidth * 1.03) + 6) : line.maxWidth
+
+        y: dots.height
+        x: line.alignEnd ? line.maxWidth - blockWidth : 0
+        width: blockWidth
+        implicitHeight: karaoke.visible ? karaoke.implicitHeight : plain.implicitHeight
+        height: implicitHeight
+
+        Text {
+            id: plain
+
+            width: parent.width
+            visible: !karaoke.visible
+            text: line.lyricLine || ". . ."
+            font: line.lyricFont
+            color: "white"
+            wrapMode: Text.WordWrap
+            renderType: Text.QtRendering
+        }
+
+        Loader {
+            id: karaoke
+
+            width: parent.width
+            active: line.timed && line.near
+            // Built two lines ahead, so incubate off the frame budget.
+            asynchronous: true
+            visible: active && line.current && status === Loader.Ready
+            sourceComponent: Flow {
+                width: body.width
+                spacing: 0
+
+                Repeater {
+                    model: line.words
+
+                    Row {
+                        required property var modelData
+
+                        Repeater {
+                            model: parent.modelData
+
+                            KaraokeWord {
+                                required property var modelData
+
+                                text: modelData.text
+                                start: Number(modelData.time || 0)
+                                duration: Number(modelData.duration || 0)
+                                position: line.livePosition
+                                font: line.lyricFont
+                                reduceMotion: line.reduceMotion
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Loader {
+        id: bgLoader
+
+        anchors.top: body.bottom
+        anchors.topMargin: line.lyricFont.pixelSize * 0.12
+        x: line.alignEnd ? line.maxWidth - width : 0
+        width: Math.min(line.maxWidth, implicitWidth)
+        active: !!line.bgText
+        opacity: 0.82
+        sourceComponent: line.bgWords.length && line.current ? bgTimed : bgPlain
+    }
+
+    Component {
+        id: bgPlain
+
+        Text {
+            width: Math.min(line.maxWidth, implicitWidth)
+            text: line.bgText
+            font: line.bgFont
+            color: "white"
+            opacity: line.current ? 0.6 : 1
+            wrapMode: Text.WordWrap
+            renderType: Text.QtRendering
+        }
+    }
+
+    Component {
+        id: bgTimed
+
+        Flow {
+            width: line.maxWidth
+
+            Repeater {
+                model: line.bgWords
+
+                Row {
+                    required property var modelData
+
+                    Repeater {
+                        model: parent.modelData
+
+                        KaraokeWord {
+                            required property var modelData
+
+                            text: modelData.text
+                            start: Number(modelData.time || 0)
+                            duration: Number(modelData.duration || 0)
+                            position: line.livePosition
+                            font: line.bgFont
+                            dim: 0.3
+                            reduceMotion: line.reduceMotion
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    HoverHandler {
+        id: hover
+
+        cursorShape: Qt.PointingHandCursor
+    }
+
+    TapHandler {
+        onTapped: line.seekRequested(line.index)
+    }
+}
