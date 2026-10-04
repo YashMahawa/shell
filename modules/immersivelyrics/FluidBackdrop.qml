@@ -2,14 +2,13 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
-import Quickshell.Services.UPower
 
 // Apple Music style flowing backdrop built from the album artwork.
 //
 // The artwork is decoded at 72px, blurred once on the GPU and cached as a
 // texture. A fragment shader then blends rotating, drifting copies of it into
-// a texture a fraction of the screen size, which is only re-rendered when the
-// animation clock ticks (30 fps, 20 fps on battery). A full-resolution present
+// a texture a fraction of the screen size, re-rendered once per display
+// frame. A full-resolution present
 // pass adds vignette and dither. Per-frame CPU work is a single timer tick.
 Item {
     id: root
@@ -48,17 +47,10 @@ Item {
         }
     }
 
-    // Driven by the display's frame clock for perfectly even motion; on
-    // battery every other frame is skipped.
-    property int frameSkip: 0
-
+    // Driven by the display's frame clock for perfectly even motion.
     FrameAnimation {
         running: root.running && root.visible
-        onTriggered: {
-            if (UPower.onBattery && (++root.frameSkip & 1))
-                return;
-            root.time += (UPower.onBattery ? 2 : 1) * frameTime * root.speed;
-        }
+        onTriggered: root.time += frameTime * root.speed
     }
 
     // Two artwork slots crossfade when the track changes.

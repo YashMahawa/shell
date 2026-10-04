@@ -26,7 +26,7 @@ Item {
     property int fontPixelSize: Math.round(Math.max(32, Math.min(58, width * 0.07)))
     property real anchorRatio: 0.18
     property real fadeTop: 0.16
-    property real fadeBottom: 0.42
+    property real fadeBottom: 0.5
 
     property real position: 0
     property real focusY: 0

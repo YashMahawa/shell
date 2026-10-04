@@ -60,7 +60,7 @@ Item {
             return 1;
         if (distance < 0)
             return Math.max(0.12, 0.3 + distance * 0.06);
-        return Math.max(0.14, 0.44 - (distance - 1) * 0.075);
+        return Math.max(0.1, 0.44 - (distance - 1) * 0.085);
     }
     readonly property real targetBlur: userScrolling || reduceMotion || distance >= 0 ? 0 : Math.min(1, 0.5 + (-distance - 1) * 0.2)
 

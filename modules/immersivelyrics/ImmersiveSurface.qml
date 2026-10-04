@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import QtQuick.Layouts
 import Quickshell
 import Caelestia.Config
 import qs.components
@@ -197,7 +198,7 @@ FocusScope {
 
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.top
-            width: Math.min(parent.width * (root.landscape ? 0.86 : 0.6), parent.height * (root.landscape ? 0.66 : 0.72))
+            width: Math.min(parent.width * (root.landscape ? 0.86 : 0.6), parent.height * (root.landscape ? 0.6 : 0.66))
             height: width
             // A playing cover breathes slightly larger, as in Apple Music.
             scale: Players.active?.isPlaying ?? false ? 1 : 0.9
@@ -299,101 +300,75 @@ FocusScope {
 
             readonly property real length: Math.max(1, Players.activeLength)
             readonly property real shownPosition: root.seeking ? root.seekPreview : root.displayPosition
-            readonly property bool engaged: progressHover.hovered || root.seeking
 
             anchors.top: metadata.bottom
-            anchors.topMargin: 20
+            anchors.topMargin: Math.max(18, parent.height * 0.03)
             anchors.left: coverFrame.left
             anchors.right: coverFrame.right
-            height: 26
+            height: slider.implicitHeight + times.implicitHeight
 
-            Rectangle {
-                id: track
+            GlassSlider {
+                id: slider
 
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: progress.engaged ? 10 : 6
-                radius: height / 2
-                color: Qt.rgba(1, 1, 1, 0.22)
-
-                Behavior on height {
-                    NumberAnimation {
-                        duration: 220
-                        easing.type: Easing.OutCubic
-                    }
-                }
-
-                Rectangle {
-                    width: parent.width * Math.max(0, Math.min(1, progress.shownPosition / progress.length))
-                    height: parent.height
-                    radius: parent.radius
-                    color: Qt.rgba(1, 1, 1, progress.engaged ? 0.95 : 0.78)
-                }
-            }
-
-            HoverHandler {
-                id: progressHover
-
-                cursorShape: (Players.active?.canSeek ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                anchors.topMargin: -8
-                anchors.bottomMargin: -8
-                enabled: Players.active?.canSeek ?? false
-                onPressed: mouse => {
+                interactive: Players.active?.canSeek ?? false
+                value: Math.max(0, Math.min(1, root.displayPosition / progress.length))
+                onMoved: v => {
                     root.seeking = true;
-                    root.seekPreview = Math.max(0, Math.min(1, mouse.x / width)) * progress.length;
+                    root.seekPreview = v * progress.length;
                 }
-                onPositionChanged: mouse => {
-                    if (pressed)
-                        root.seekPreview = Math.max(0, Math.min(1, mouse.x / width)) * progress.length;
-                }
-                onReleased: {
+                onReleased: v => {
                     if (Players.active)
-                        Players.active.position = root.seekPreview;
-                    root.displayPosition = root.seekPreview;
+                        Players.active.position = v * progress.length;
+                    root.displayPosition = v * progress.length;
                     root.seeking = false;
                 }
             }
-        }
 
-        Item {
-            id: times
+            Item {
+                id: times
 
-            anchors.top: progress.bottom
-            anchors.left: coverFrame.left
-            anchors.right: coverFrame.right
-            height: elapsed.implicitHeight
-
-            Text {
-                id: elapsed
-
-                text: root.formatTime(progress.shownPosition)
-                color: Qt.rgba(1, 1, 1, 0.55)
-                font.family: Tokens.font.label.small.family
-                font.pixelSize: 13
-                font.weight: Font.DemiBold
-                font.features: { "tnum": 1 }
-                renderType: Text.QtRendering
-            }
-
-            Text {
+                anchors.top: slider.bottom
+                anchors.left: parent.left
                 anchors.right: parent.right
-                text: `-${root.formatTime(progress.length - progress.shownPosition)}`
-                color: Qt.rgba(1, 1, 1, 0.55)
-                font: elapsed.font
-                renderType: Text.QtRendering
+                implicitHeight: elapsed.implicitHeight
+
+                Text {
+                    id: elapsed
+
+                    text: root.formatTime(progress.shownPosition)
+                    color: Qt.rgba(1, 1, 1, slider.engaged ? 0.85 : 0.6)
+                    font.family: Tokens.font.label.small.family
+                    font.pixelSize: Math.round(Math.max(13, Math.min(16, root.width * 0.0068)))
+                    font.variableAxes: { "wght": 560, "ROND": 30 }
+                    font.features: { "tnum": 1 }
+                    renderType: Text.QtRendering
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 200
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    text: Players.activeLength > 0 ? `-${root.formatTime(progress.length - progress.shownPosition)}` : "--:--"
+                    color: elapsed.color
+                    font: elapsed.font
+                    renderType: Text.QtRendering
+                }
             }
         }
 
         Row {
-            anchors.top: times.bottom
-            anchors.topMargin: Math.max(12, parent.height * 0.025)
+            id: transport
+
+            anchors.top: progress.bottom
+            anchors.topMargin: Math.max(14, parent.height * 0.028)
             anchors.horizontalCenter: coverFrame.horizontalCenter
-            spacing: coverFrame.width * 0.12
+            spacing: Math.max(28, coverFrame.width * 0.13)
 
             TransportButton {
                 anchors.verticalCenter: parent.verticalCenter
@@ -415,6 +390,49 @@ FocusScope {
                 kind: "next"
                 disabled: !Players.active?.canGoNext
                 onClicked: Players.active?.next()
+            }
+        }
+
+        RowLayout {
+            anchors.top: transport.bottom
+            anchors.topMargin: Math.max(12, parent.height * 0.022)
+            anchors.left: coverFrame.left
+            anchors.right: coverFrame.right
+            spacing: Tokens.spacing.medium
+
+            MaterialIcon {
+                text: "volume_mute"
+                color: Qt.rgba(1, 1, 1, 0.6)
+                fill: 1
+                fontStyle: Tokens.font.icon.medium
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Audio.setVolume(Math.max(0, Audio.volume - 0.1))
+                }
+            }
+
+            GlassSlider {
+                Layout.fillWidth: true
+                thickness: 5
+                hoverThickness: 9
+                wheelEnabled: true
+                value: Audio.muted ? 0 : Math.min(1, Audio.volume)
+                onMoved: v => Audio.setVolume(v)
+            }
+
+            MaterialIcon {
+                text: "volume_up"
+                color: Qt.rgba(1, 1, 1, 0.6)
+                fill: 1
+                fontStyle: Tokens.font.icon.medium
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Audio.setVolume(Math.min(1, Audio.volume + 0.1))
+                }
             }
         }
     }

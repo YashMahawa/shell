@@ -14,12 +14,14 @@ Item {
     property bool disabled: false
     signal clicked
 
-    readonly property real glyph: primary ? 46 : 34
-    readonly property real stroke: glyph * 0.11
+    readonly property real glyph: primary ? 58 : 44
+    readonly property real stroke: glyph * 0.13
 
-    implicitWidth: primary ? 84 : 66
+    implicitWidth: primary ? 96 : 76
     implicitHeight: implicitWidth
     opacity: disabled ? 0.3 : 1
+    // Group opacity, so the glyph's overlapping fill and stroke stay solid.
+    layer.enabled: opacity < 1
 
     Rectangle {
         anchors.centerIn: parent
