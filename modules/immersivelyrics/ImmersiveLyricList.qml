@@ -128,7 +128,21 @@ Item {
             return;
         const time = player.position - Lyrics.offset + 0.1;
         position = time;
-        const index = SyllableLyrics.indexForTime(player.position);
+        // Binary search over plain arrays: no allocations per frame, so the
+        // garbage collector has nothing to do while lyrics animate.
+        const target = time;
+        let lo = 0;
+        let hi = starts.length - 1;
+        let index = -1;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (starts[mid] <= target) {
+                index = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
         if (index !== currentIndex)
             currentIndex = index;
         updateInterlude(time);
