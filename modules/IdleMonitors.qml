@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import "lock"
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Services.UPower
 import Caelestia.Config
 import Caelestia.Internal
 import qs.services
@@ -42,6 +43,18 @@ Scope {
         // Hyprland reports a real connector change. Do not reconfigure outputs
         // from the sleep transition itself; the GPU may still be resuming.
         onLockRequested: root.lock.lock.locked = true
+    }
+
+    // On battery, turn displays off after five minutes unless a configured
+    // timeout already does so sooner. AC behaviour is unchanged.
+    IdleMonitor {
+        readonly property bool configuredSooner: (GlobalConfig.general.idle.timeouts ?? []).some(t =>
+            t.idleAction === "dpms off" && (t.enabled ?? true) && t.timeout <= 300)
+
+        enabled: UPower.onBattery && !configuredSooner
+        timeout: 300
+        respectInhibitors: true
+        onIsIdleChanged: root.handleIdleAction(isIdle ? "dpms off" : "dpms on")
     }
 
     Variants {
