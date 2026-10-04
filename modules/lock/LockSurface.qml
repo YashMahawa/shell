@@ -206,7 +206,7 @@ WlSessionLockSurface {
         implicitWidth: size
         implicitHeight: size
 
-        visible: Config.lock.enabled
+        visible: Config.lock?.enabled ?? true
         rotation: 180
         scale: 0
 

@@ -12,7 +12,7 @@ import qs.utils
 Item {
     id: root
 
-    required property Brightness.Monitor monitor
+    required property var monitor
     required property DrawerVisibilities visibilities
 
     required property real volume

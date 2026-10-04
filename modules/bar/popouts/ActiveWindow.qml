@@ -62,7 +62,7 @@ Item {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: Hypr.activeToplevel?.lastIpcObject.class ?? ""
+                    text: Strings.friendlyAppName(Hypr.activeToplevel?.lastIpcObject.class)
                     color: Colours.palette.m3onSurfaceVariant
                     elide: Text.ElideRight
                 }

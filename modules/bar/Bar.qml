@@ -125,7 +125,7 @@ GridLayout {
         const primary = isVertical ? y : x;
         const cross = isVertical ? width / 2 : height / 2;
         const ch = childAt(isVertical ? cross : primary, isVertical ? primary : cross) as WrappedLoader;
-        const mainSize = isVertical ? screen.height : screen.width;
+        const mainSize = screen ? (isVertical ? screen.height : screen.width) : 0;
 
         if (ch?.id === "workspaces" && Config.bar.scrollActions.workspaces) {
             // Workspace scroll
@@ -144,6 +144,8 @@ GridLayout {
         } else if (Config.bar.scrollActions.brightness) {
             // Brightness scroll on bottom half
             const monitor = Brightness.getMonitorForScreen(screen);
+            if (!monitor)
+                return;
             if (angleDelta.y > 0)
                 monitor.setBrightness(monitor.brightness + GlobalConfig.services.brightnessIncrement);
             else if (angleDelta.y < 0)

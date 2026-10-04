@@ -11,7 +11,7 @@ Item {
     readonly property bool isVertical: Config.bar.edge === "left" || Config.bar.edge === "right"
 
     required property var bar
-    required property Brightness.Monitor monitor
+    required property var monitor
     property color colour: Colours.palette.m3primary
 
     readonly property string windowTitle: {

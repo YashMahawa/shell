@@ -69,9 +69,11 @@ Item {
                     spacing: Tokens.spacing.extraSmall * Config.background.visualiser.spacing
                     animationDuration: Tokens.anim.durations.normal
 
-                    Behavior on anchors.leftMargin {
-                        Anim {}
-                    }
+                    // A screen can disappear and be recreated while resuming or
+                    // hot-plugging a monitor. Animating a margin sourced from that
+                    // screen during teardown races Qt Quick item destruction.
+                    // The visual difference is negligible, while assigning the
+                    // resolved margin directly keeps output rebinds crash-safe.
                 }
 
                 FrameAnimation {

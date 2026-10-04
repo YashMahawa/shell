@@ -4,6 +4,7 @@ import Quickshell.Hyprland
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.utils
 
 ColumnLayout {
     id: root
@@ -23,7 +24,7 @@ ColumnLayout {
     }
 
     Label {
-        text: root.client?.lastIpcObject.class ?? qsTr("No active client")
+        text: Strings.friendlyAppName(root.client?.lastIpcObject.class) || qsTr("No active client")
         color: Colours.palette.m3tertiary
 
         font: Tokens.font.body.large
@@ -81,7 +82,7 @@ ColumnLayout {
 
     Detail {
         icon: "category"
-        text: qsTr("Initial class: %1").arg(root.client?.lastIpcObject.initialClass ?? "unknown")
+        text: qsTr("Initial class: %1").arg(Strings.friendlyAppName(root.client?.lastIpcObject.initialClass) || "unknown")
     }
 
     Detail {
