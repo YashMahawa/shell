@@ -19,6 +19,7 @@ Item {
     property real position: -1
     property font font
     property real dim: 0.36
+    property color color: "white"
     property bool reduceMotion: false
 
     readonly property real progress: position < 0 ? 0
@@ -54,7 +55,7 @@ Item {
 
                 text: root.text
                 font: root.font
-                color: "white"
+                color: root.color
                 renderType: Text.QtRendering
             }
 
@@ -93,7 +94,7 @@ Item {
                 layer.enabled: stretch.glow > 0.01
                 layer.effect: MultiEffect {
                     shadowEnabled: true
-                    shadowColor: "white"
+                    shadowColor: root.color
                     shadowBlur: 1
                     shadowOpacity: 0.7 * stretch.glow
                     shadowHorizontalOffset: 0
@@ -116,7 +117,7 @@ Item {
 
                         text: root.glyphs.charAt(index)
                         font: root.font
-                        color: "white"
+                        color: root.color
                         opacity: root.dim + (1 - root.dim) * lit
                         renderType: Text.QtRendering
                         transformOrigin: Item.Bottom

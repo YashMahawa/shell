@@ -11,8 +11,6 @@ import qs.services
 StyledRect {
     id: root
 
-    signal closeRequested()
-
     property int nativeRevision: 0
     readonly property var candidates: {
         SyllableLyrics.sourceRevision;
@@ -51,7 +49,7 @@ StyledRect {
         const backend = candidate.provider || LyricsBackend.toString(candidate.native?.backend);
         const artist = candidate.artist || Players.active?.trackArtist || qsTr("Unknown artist");
         const language = candidate.language ? ` (${candidate.language})` : "";
-        return `${artist}  -  ${backend}${language}`;
+        return `${backend}${language}  ·  ${artist}`;
     }
 
     function selectedCandidateMatches(candidate: var): bool {
@@ -84,14 +82,6 @@ StyledRect {
             Layout.fillWidth: true
             spacing: Tokens.spacing.small
 
-            MaterialIcon {
-                Layout.topMargin: Math.round(fontInfo.pointSize * 0.12)
-                text: "lyrics"
-                fill: 1
-                color: Colours.palette.m3primary
-                fontStyle: Tokens.font.icon.medium
-            }
-
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
@@ -99,7 +89,7 @@ StyledRect {
                 StyledText {
                     Layout.fillWidth: true
                     text: SyllableLyrics.provider || LyricsBackend.toString(Lyrics.backend)
-                    color: Colours.palette.m3secondary
+                    color: Colours.palette.m3onSurface
                     font: Tokens.font.label.large
                     elide: Text.ElideRight
                     animate: true
@@ -125,17 +115,11 @@ StyledRect {
                     SyllableLyrics.load();
                 }
             }
-
-            IconButton {
-                icon: "close"
-                type: IconButton.Text
-                onClicked: root.closeRequested()
-            }
         }
 
         StyledText {
             Layout.fillWidth: true
-            text: qsTr("Fetched candidates")
+            text: qsTr("Sources")
             visible: GlobalConfig.services.showLyricsCandidatePicker
             color: Colours.palette.m3outline
             font: Tokens.font.label.medium
@@ -193,6 +177,10 @@ StyledRect {
                     anchors.rightMargin: Tokens.padding.medium
                     spacing: Tokens.spacing.extraSmall
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Tokens.spacing.small
+
                     StyledText {
                         Layout.fillWidth: true
                         text: root.candidateLabel(delegateRoot.candidate)
@@ -200,6 +188,25 @@ StyledRect {
                         font: Tokens.font.label.large
                         elide: Text.ElideRight
                         animate: true
+                    }
+
+                    StyledRect {
+                        readonly property bool word: (delegateRoot.candidate?.priority ?? 100) < 100 && delegateRoot.candidate?.kind === "external"
+
+                        implicitWidth: badge.implicitWidth + Tokens.padding.small * 2
+                        implicitHeight: badge.implicitHeight + 2
+                        radius: Tokens.rounding.full
+                        color: word ? Colours.tPalette.m3primaryContainer : Colours.tPalette.m3surfaceContainerHighest
+
+                        StyledText {
+                            id: badge
+
+                            anchors.centerIn: parent
+                            text: parent.word ? qsTr("Word") : qsTr("Line")
+                            color: parent.word ? Colours.palette.m3onPrimaryContainer : Colours.palette.m3onSurfaceVariant
+                            font: Tokens.font.label.small
+                        }
+                    }
                     }
 
                     StyledText {
@@ -244,14 +251,8 @@ StyledRect {
             visible: GlobalConfig.services.showLyricsOffsetControls
             spacing: Tokens.spacing.small
 
-            MaterialIcon {
-                text: "contrast_square"
-                color: Colours.palette.m3secondary
-                fontStyle: Tokens.font.icon.small
-            }
-
             StyledText {
-                text: qsTr("Offset")
+                text: qsTr("Timing offset")
                 color: Colours.palette.m3outline
                 font: Tokens.font.label.large
             }

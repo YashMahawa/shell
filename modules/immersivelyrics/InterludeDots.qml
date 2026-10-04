@@ -10,6 +10,7 @@ Item {
     property real progress: -1
     property real dotSize: 14
     property bool reduceMotion: false
+    property color color: "white"
     readonly property bool active: progress >= 0
     readonly property real exit: progress > 0.88 ? (progress - 0.88) / 0.12 : 0
 
@@ -43,7 +44,7 @@ Item {
                 width: root.dotSize
                 height: root.dotSize
                 radius: root.dotSize / 2
-                color: "white"
+                color: root.color
                 opacity: 0.28 + 0.72 * fill
             }
         }

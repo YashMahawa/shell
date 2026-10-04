@@ -20,9 +20,13 @@ Item {
     required property bool active
     property bool retained: false
     property bool reduceMotion: false
-    readonly property real anchorRatio: 0.18
-    readonly property real fadeTop: 0.16
-    readonly property real fadeBottom: 0.42
+    // Theming, so the dashboard can reuse this renderer.
+    property color textColor: "white"
+    property color activeColor: textColor
+    property int fontPixelSize: Math.round(Math.max(32, Math.min(58, width * 0.07)))
+    property real anchorRatio: 0.18
+    property real fadeTop: 0.16
+    property real fadeBottom: 0.42
 
     property real position: 0
     property real focusY: 0
@@ -38,7 +42,7 @@ Item {
 
     readonly property font lyricFont: Qt.font({
         family: Tokens.font.headline.large.family,
-        pixelSize: Math.round(Math.max(32, Math.min(58, width * 0.07))),
+        pixelSize: root.fontPixelSize,
         weight: Font.Bold,
         variableAxes: { "wght": 500, "ROND": 30, "opsz": 40 }
     })
@@ -196,22 +200,22 @@ Item {
             visible: SyllableLyrics.loading || Lyrics.loading
             implicitSize: 40
             containsIcon: true
-            color: "#f2f4f7"
+            color: root.textColor
         }
 
         MaterialIcon {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !(SyllableLyrics.loading || Lyrics.loading)
             text: "lyrics"
-            color: Qt.rgba(1, 1, 1, 0.55)
+            color: Qt.alpha(root.textColor, 0.55)
             fontStyle: Tokens.font.icon.builders.large.scale(1.5).build()
         }
 
         StyledText {
             anchors.horizontalCenter: parent.horizontalCenter
             text: SyllableLyrics.loading || Lyrics.loading ? qsTr("Finding the words...") : qsTr("No synced lyrics for this track")
-            color: Qt.rgba(1, 1, 1, 0.78)
-            font: Tokens.font.title.large
+            color: Qt.alpha(root.textColor, 0.78)
+            font: root.fontPixelSize < 30 ? Tokens.font.title.medium : Tokens.font.title.large
         }
 
         Behavior on opacity {
@@ -243,6 +247,8 @@ Item {
 
                 LyricLine {
                     list: root
+                    textColor: root.textColor
+                    activeColor: root.activeColor
                     currentIndex: root.currentIndex
                     userScrolling: root.userScrolling
                     reduceMotion: root.reduceMotion

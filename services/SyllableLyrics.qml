@@ -571,7 +571,7 @@ Singleton {
             const info = Providers.providerFor(id);
             const word = Providers.hasWordTiming(lines);
             _addSource(lines, id, info?.name ?? id,
-                word ? qsTr("%1 · word-synced").arg(info?.name ?? id) : qsTr("%1 · line-synced").arg(info?.name ?? id),
+                word ? qsTr("Word-synced lyrics") : qsTr("Line-synced lyrics"),
                 meta || {});
         }
         _reconsider(req, false);

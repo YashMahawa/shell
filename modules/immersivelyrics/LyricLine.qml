@@ -23,6 +23,8 @@ Item {
     // The list owns the hot per-frame state (position, interlude progress);
     // only the active line reads it, so other lines do no work per frame.
     required property Item list
+    required property color textColor
+    required property color activeColor
     required property int currentIndex
     required property bool userScrolling
     required property bool reduceMotion
@@ -174,7 +176,7 @@ Item {
         anchors.leftMargin: -line.lyricFont.pixelSize * 0.4
         anchors.rightMargin: -line.lyricFont.pixelSize * 0.4
         radius: line.lyricFont.pixelSize * 0.35
-        color: "white"
+        color: line.textColor
         opacity: hover.hovered ? 0.07 : 0
 
         Behavior on opacity {
@@ -233,6 +235,7 @@ Item {
             y: line.lyricFont.pixelSize * 0.1
             dotSize: Math.round(line.lyricFont.pixelSize * 0.3)
             progress: dots.latchedProgress
+            color: line.activeColor
             reduceMotion: line.reduceMotion
             visible: dots.opacity > 0.01
         }
@@ -266,7 +269,7 @@ Item {
             visible: !karaoke.visible
             text: line.lyricLine || ". . ."
             font: line.lyricFont
-            color: "white"
+            color: line.current ? line.activeColor : line.textColor
             wrapMode: Text.WordWrap
             renderType: Text.QtRendering
         }
@@ -300,6 +303,7 @@ Item {
                                 duration: Number(modelData.duration || 0)
                                 position: line.livePosition
                                 font: line.lyricFont
+                                color: line.activeColor
                                 reduceMotion: line.reduceMotion
                             }
                         }
@@ -328,7 +332,7 @@ Item {
             width: Math.min(line.maxWidth, implicitWidth)
             text: line.bgText
             font: line.bgFont
-            color: "white"
+            color: line.current ? line.activeColor : line.textColor
             opacity: line.current ? 0.6 : 1
             wrapMode: Text.WordWrap
             renderType: Text.QtRendering
@@ -358,6 +362,7 @@ Item {
                             duration: Number(modelData.duration || 0)
                             position: line.livePosition
                             font: line.bgFont
+                            color: line.activeColor
                             dim: 0.3
                             reduceMotion: line.reduceMotion
                         }
