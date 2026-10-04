@@ -36,11 +36,19 @@ PageBase {
 
         ToggleRow {
             Layout.fillWidth: true
-            last: true
             text: qsTr("Show on hover")
             subtext: qsTr("Reveal when the cursor reaches the screen edge")
             checked: GlobalConfig.dashboard.showOnHover
             onToggled: GlobalConfig.dashboard.showOnHover = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            last: true
+            text: qsTr("Show clock seconds")
+            subtext: qsTr("Display seconds in the dashboard clock")
+            checked: GlobalConfig.dashboard.showClockSeconds
+            onToggled: GlobalConfig.dashboard.showClockSeconds = checked
         }
 
         // Tabs

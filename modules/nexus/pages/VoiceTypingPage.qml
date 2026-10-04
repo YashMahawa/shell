@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Io
 import Caelestia.Config
 import qs.components
@@ -34,6 +35,10 @@ PageBase {
     }
 
     Component.onCompleted: refresh()
+    onVisibleChanged: {
+        if (visible)
+            refresh();
+    }
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -51,6 +56,8 @@ PageBase {
                         root.storedKeys = state.keys ?? [false, false, false];
                         if (!promptField.activeFocus)
                             promptField.text = state.prompt ?? "";
+                        const keyCount = root.storedKeys.reduce((count, configured) => count + (configured ? 1 : 0), 0);
+                        root.statusMessage = qsTr("%1 of 3 API keys configured; prompt loaded").arg(keyCount);
                         root.statusError = false;
                     } catch (error) {
                         root.statusMessage = qsTr("Could not read voice settings");

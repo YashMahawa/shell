@@ -33,10 +33,17 @@ PageBase {
 
         ToggleRow {
             Layout.fillWidth: true
-            last: true
             text: qsTr("Show icon")
             checked: GlobalConfig.bar.clock.showIcon
             onToggled: GlobalConfig.bar.clock.showIcon = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            last: true
+            text: qsTr("Show seconds")
+            checked: GlobalConfig.bar.clock.showSeconds
+            onToggled: GlobalConfig.bar.clock.showSeconds = checked
         }
     }
 }

@@ -14,6 +14,11 @@ StyledRect {
     readonly property int padding: Config.bar.clock.background ? Tokens.padding.medium : Tokens.padding.extraSmall
     readonly property var font: Tokens.font.body.builders.small.scale(1.1)
 
+    function fontFor(text: string, metricWidth: int): font {
+        const scale = text === "11" ? 1.15 : Math.min(1.05, Math.max(hourMetrics.width, minMetrics.width) / metricWidth);
+        return root.font.width(scale * 100).letterSpacing(scale).build();
+    }
+
     implicitWidth: isVertical ? Tokens.sizes.bar.innerWidth : layout.implicitWidth + root.padding * 2
     implicitHeight: isVertical ? layout.implicitHeight + root.padding * 2 : Tokens.sizes.bar.innerWidth
 
@@ -67,10 +72,7 @@ StyledRect {
         StyledText {
             Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             text: Time.hourStr
-            font: {
-                const scale = text === "11" ? 1.15 : Math.min(1.05, Math.max(hourMetrics.width, minMetrics.width) / hourMetrics.width);
-                return root.font.width(scale * 100).letterSpacing(scale).build();
-            }
+            font: root.fontFor(text, hourMetrics.width)
             color: root.colour
 
             TextMetrics {
@@ -86,10 +88,7 @@ StyledRect {
             Layout.leftMargin: !root.isVertical ? -parent.columnSpacing - 4 : 0
             Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
             text: Time.minuteStr
-            font: {
-                const scale = text === "11" ? 1.15 : Math.min(1.05, Math.max(hourMetrics.width, minMetrics.width) / minMetrics.width);
-                return root.font.width(scale * 100).letterSpacing(scale).build();
-            }
+            font: root.fontFor(text, minMetrics.width)
             color: root.colour
 
             TextMetrics {
@@ -97,6 +96,27 @@ StyledRect {
 
                 font: root.font.build()
                 text: Time.minuteStr
+            }
+        }
+
+        Loader {
+            Layout.topMargin: root.isVertical ? -parent.rowSpacing - 4 : 0
+            Layout.leftMargin: !root.isVertical ? -parent.columnSpacing - 4 : 0
+            Layout.alignment: root.isVertical ? Qt.AlignHCenter : Qt.AlignVCenter
+            asynchronous: true
+            active: Config.bar.clock.showSeconds
+            visible: active
+
+            sourceComponent: StyledText {
+                text: Time.format("ss")
+                font: root.fontFor(text, secMetrics.width)
+                color: root.colour
+
+                TextMetrics {
+                    id: secMetrics
+                    font: root.font.build()
+                    text: Time.format("ss")
+                }
             }
         }
 

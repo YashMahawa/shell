@@ -60,6 +60,14 @@ Singleton {
         writeDebounce.restart();
     }
 
+    function adjustExternalContrast(delta: int): void {
+        if (!root.available)
+            return;
+        const target = Math.max(0, Math.min(100, root.contrast + delta));
+        root.contrast = target;
+        root.setControl("contrast", target);
+    }
+
     function startQueuedWrite(): void {
         if (!root.queuedWrite || writeProc.running)
             return;

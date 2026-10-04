@@ -62,7 +62,12 @@ Variants {
             active: Config.background.desktopClock.enabled
 
             anchors.margins: Tokens.padding.extraLargeIncreased
-            anchors.leftMargin: Tokens.padding.extraLargeIncreased + Tokens.sizes.bar.innerWidth + Math.max(Tokens.padding.small, Config.border.thickness)
+            anchors.topMargin: Tokens.padding.extraLargeIncreased + Config.background.desktopClock.yOffset
+            anchors.bottomMargin: Tokens.padding.extraLargeIncreased - Config.background.desktopClock.yOffset
+            anchors.leftMargin: Tokens.padding.extraLargeIncreased + Tokens.sizes.bar.innerWidth + Math.max(Tokens.padding.small, Config.border.thickness) + Config.background.desktopClock.xOffset
+            anchors.rightMargin: Tokens.padding.extraLargeIncreased - Config.background.desktopClock.xOffset
+            anchors.horizontalCenterOffset: Config.background.desktopClock.xOffset
+            anchors.verticalCenterOffset: Config.background.desktopClock.yOffset
 
             state: Config.background.desktopClock.position
             states: [

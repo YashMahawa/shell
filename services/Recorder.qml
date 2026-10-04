@@ -10,6 +10,7 @@ Singleton {
     readonly property alias running: props.running
     readonly property alias paused: props.paused
     readonly property alias elapsed: props.elapsed
+    property int refCount: 0
     property bool needsStart
     property list<string> startArgs
     property bool needsStop
@@ -47,20 +48,22 @@ Singleton {
         running: true
         command: ["pidof", "gpu-screen-recorder"]
         onExited: code => { // qmllint disable signal-handler-parameters
-            props.running = code === 0;
+            const running = code === 0;
 
-            if (code === 0) {
-                if (root.needsStop) {
-                    Quickshell.execDetached(["caelestia", "record"]);
-                    props.running = false;
-                    props.paused = false;
-                } else if (root.needsPause) {
-                    Quickshell.execDetached(["caelestia", "record", "-p"]);
-                    props.paused = !props.paused;
-                }
-            } else if (root.needsStart) {
-                Quickshell.execDetached(["caelestia", "record", ...root.startArgs]);
+            if (running && root.needsStop) {
+                commandProc.exec(["caelestia", "record"]);
+                props.running = false;
+                props.paused = false;
+            } else if (running && root.needsPause) {
+                commandProc.exec(["caelestia", "record", "-p"]);
+                props.paused = !props.paused;
+            } else if (!running && root.needsStart) {
+                commandProc.exec(["caelestia", "record", ...root.startArgs]);
                 props.running = true;
+                props.paused = false;
+                props.elapsed = 0;
+            } else if (running !== props.running && !commandProc.running) {
+                props.running = running;
                 props.paused = false;
                 props.elapsed = 0;
             }
@@ -71,8 +74,21 @@ Singleton {
         }
     }
 
+    Process {
+        id: commandProc
+        onExited: checkProc.running = true // qmllint disable signal-handler-parameters
+    }
+
+    Timer {
+        interval: 1000
+        running: root.refCount > 0
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: checkProc.running = true
+    }
+
     Connections {
-        // enabled: props.running && !props.paused
+        enabled: props.running && !props.paused
         function onSecondsChanged(): void {
             props.elapsed++;
         }

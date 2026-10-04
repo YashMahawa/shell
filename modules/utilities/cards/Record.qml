@@ -6,6 +6,7 @@ import Caelestia.Components
 import Caelestia.Config
 import qs.components
 import qs.components.controls
+import qs.components.misc
 import qs.services
 
 StyledRect {
@@ -21,6 +22,10 @@ StyledRect {
 
     radius: Tokens.rounding.large
     color: Colours.tPalette.m3surfaceContainer
+
+    Ref {
+        service: Recorder
+    }
 
     ColumnLayout {
         id: layout

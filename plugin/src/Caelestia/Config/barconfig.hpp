@@ -117,6 +117,7 @@ class BarClock : public ConfigObject {
     CONFIG_PROPERTY(bool, background, false)
     CONFIG_PROPERTY(bool, showDate, false)
     CONFIG_PROPERTY(bool, showIcon, true)
+    CONFIG_PROPERTY(bool, showSeconds, false)
 
 public:
     explicit BarClock(QObject* parent = nullptr)

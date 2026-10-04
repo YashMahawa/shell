@@ -57,6 +57,13 @@ void CUtils::saveItem(QQuickItem* target, const QUrl& path, const QRect& rect, Q
     }
 
     const QSharedPointer<const QQuickItemGrabResult> grabResult = target->grabToImage();
+    if (!grabResult) {
+        qCWarning(lcCUtils) << "saveItem: failed to grab" << target;
+        if (onFailed.isCallable()) {
+            onFailed.call();
+        }
+        return;
+    }
 
     QObject::connect(grabResult.data(), &QQuickItemGrabResult::ready, this,
         [grabResult, scaledRect, path, onSaved, onFailed, this]() {

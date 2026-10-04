@@ -18,6 +18,10 @@ Item {
     readonly property bool bgEnabled: Config.background.desktopClock.background.enabled
     readonly property bool blurEnabled: bgEnabled && Config.background.desktopClock.background.blur && !GameMode.enabled && TrueLite.effectsEnabled
     readonly property bool invertColors: Config.background.desktopClock.invertColors
+    readonly property string layoutStyle: Config.background.desktopClock.style
+    readonly property bool stackedSections: layoutStyle === "stacked-sections"
+    readonly property bool verticalTime: layoutStyle === "vertical-time"
+    readonly property bool showDate: Config.background.desktopClock.showDate
     readonly property bool useLightSet: Colours.light ? !invertColors : invertColors
     readonly property color safePrimary: useLightSet ? Colours.palette.m3primaryContainer : Colours.palette.m3primary
     readonly property color safeSecondary: useLightSet ? Colours.palette.m3secondaryContainer : Colours.palette.m3secondary
@@ -70,22 +74,30 @@ Item {
             layer.enabled: root.blurEnabled
         }
 
-        RowLayout {
+        GridLayout {
             id: layout
 
             anchors.centerIn: parent
-            spacing: Tokens.spacing.large * root.clockScale
+            rowSpacing: Tokens.spacing.large * root.clockScale
+            columnSpacing: Tokens.spacing.large * root.clockScale
+            columns: root.stackedSections ? 1 : 3
+            rows: root.stackedSections ? 3 : 1
 
-            RowLayout {
-                spacing: Tokens.spacing.small
+            GridLayout {
+                rowSpacing: 0
+                columnSpacing: Tokens.spacing.small
+                columns: root.verticalTime ? 1 : 4
+                rows: root.verticalTime ? 3 : 1
 
                 StyledText {
                     text: Time.hourStr
                     font: Tokens.font.clock.size(Tokens.font.headline.medium.pointSize * 3 * root.clockScale).weight(Font.Bold).build()
                     color: root.safePrimary
+                    Layout.alignment: root.verticalTime ? Qt.AlignHCenter : Qt.AlignVCenter
                 }
 
                 StyledText {
+                    visible: !root.verticalTime
                     text: ":"
                     font: Tokens.font.clock.size(Tokens.font.headline.medium.pointSize * 3 * root.clockScale).build()
                     color: root.safeTertiary
@@ -97,12 +109,13 @@ Item {
                     text: Time.minuteStr
                     font: Tokens.font.clock.size(Tokens.font.headline.medium.pointSize * 3 * root.clockScale).weight(Font.Bold).build()
                     color: root.safeSecondary
+                    Layout.alignment: root.verticalTime ? Qt.AlignHCenter : Qt.AlignVCenter
                 }
 
                 Loader {
                     asynchronous: true
-                    Layout.alignment: Qt.AlignTop
-                    Layout.topMargin: Tokens.padding.large * 1.4 * root.clockScale
+                    Layout.alignment: root.verticalTime ? Qt.AlignHCenter : Qt.AlignTop
+                    Layout.topMargin: root.verticalTime ? 0 : Tokens.padding.large * 1.4 * root.clockScale
 
                     active: GlobalConfig.services.useTwelveHourClock
                     visible: active
@@ -116,16 +129,22 @@ Item {
             }
 
             StyledRect {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 4 * root.clockScale
-                Layout.topMargin: Tokens.spacing.large * root.clockScale
-                Layout.bottomMargin: Tokens.spacing.large * root.clockScale
+                visible: root.showDate
+                Layout.fillHeight: !root.stackedSections
+                Layout.fillWidth: root.stackedSections
+                Layout.preferredWidth: root.stackedSections ? -1 : 4 * root.clockScale
+                Layout.preferredHeight: root.stackedSections ? 4 * root.clockScale : -1
+                Layout.topMargin: root.stackedSections ? 0 : Tokens.spacing.large * root.clockScale
+                Layout.bottomMargin: root.stackedSections ? 0 : Tokens.spacing.large * root.clockScale
+                Layout.leftMargin: root.stackedSections ? Tokens.spacing.large * root.clockScale : 0
+                Layout.rightMargin: root.stackedSections ? Tokens.spacing.large * root.clockScale : 0
                 radius: Tokens.rounding.full
                 color: root.safePrimary
                 opacity: 0.8
             }
 
             ColumnLayout {
+                visible: root.showDate
                 spacing: 0
 
                 StyledText {

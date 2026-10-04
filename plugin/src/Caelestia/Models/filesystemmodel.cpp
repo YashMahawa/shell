@@ -35,7 +35,7 @@ QString FileSystemEntry::parentDir() const {
 };
 
 QString FileSystemEntry::suffix() const {
-    return m_fileInfo.completeSuffix();
+    return m_fileInfo.suffix();
 };
 
 qint64 FileSystemEntry::size() const {

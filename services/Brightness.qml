@@ -68,6 +68,12 @@ Singleton {
         adjustBrightnessAtPointer(-GlobalConfig.services.brightnessIncrement);
     }
 
+    function adjustActiveBrightness(delta: real): void {
+        const monitor = getMonitor("active");
+        if (monitor)
+            monitor.setBrightness(monitor.brightness + delta);
+    }
+
     onMonitorsChanged: {
         ddcMonitors = [];
         ddcProc.running = true;
@@ -166,6 +172,42 @@ Singleton {
         name: "brightnessDown"
         description: "Decrease brightness"
         onPressed: root.decreaseBrightness()
+    }
+
+    // Dedicated 5% actions leave the laptop's hardware brightness keys at the
+    // user's configured increment.
+    // qmllint disable unresolved-type
+    CustomShortcut {
+        // qmllint enable unresolved-type
+        name: "brightnessSmallUp"
+        description: "Increase current display brightness by 5%"
+        onPressed: root.adjustActiveBrightness(0.05)
+    }
+
+    // qmllint disable unresolved-type
+    CustomShortcut {
+        // qmllint enable unresolved-type
+        name: "brightnessSmallDown"
+        description: "Decrease current display brightness by 5%"
+        onPressed: root.adjustActiveBrightness(-0.05)
+    }
+
+    // Keep these beside the always-loaded brightness shortcuts so their
+    // compositor global shortcuts exist before the display page is opened.
+    // qmllint disable unresolved-type
+    CustomShortcut {
+        // qmllint enable unresolved-type
+        name: "contrastUp"
+        description: "Increase monitor contrast"
+        onPressed: MonitorControl.adjustExternalContrast(5)
+    }
+
+    // qmllint disable unresolved-type
+    CustomShortcut {
+        // qmllint enable unresolved-type
+        name: "contrastDown"
+        description: "Decrease monitor contrast"
+        onPressed: MonitorControl.adjustExternalContrast(-5)
     }
 
     IpcHandler {

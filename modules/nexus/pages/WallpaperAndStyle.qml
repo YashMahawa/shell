@@ -200,6 +200,216 @@ PageBase {
         }
 
         SectionHeader {
+            text: qsTr("Desktop clock")
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("Show desktop clock")
+            checked: GlobalConfig.background.desktopClock.enabled
+            onToggled: GlobalConfig.background.desktopClock.enabled = checked
+        }
+
+        SelectRow {
+            Layout.fillWidth: true
+            label: qsTr("Clock placement")
+            subtext: qsTr("Position on the desktop")
+            active: {
+                switch (GlobalConfig.background.desktopClock.position) {
+                case "top-left": return clockTopLeft;
+                case "top-center": return clockTopCenter;
+                case "top-right": return clockTopRight;
+                case "middle-left": return clockMiddleLeft;
+                case "middle-center": return clockMiddleCenter;
+                case "middle-right": return clockMiddleRight;
+                case "bottom-left": return clockBottomLeft;
+                case "bottom-center": return clockBottomCenter;
+                case "bottom-right":
+                default: return clockBottomRight;
+                }
+            }
+            onSelected: item => GlobalConfig.background.desktopClock.position = item.position
+            menuItems: [
+                MenuItem { id: clockTopLeft; text: qsTr("Top left"); property string position: "top-left" },
+                MenuItem { id: clockTopCenter; text: qsTr("Top center"); property string position: "top-center" },
+                MenuItem { id: clockTopRight; text: qsTr("Top right"); property string position: "top-right" },
+                MenuItem { id: clockMiddleLeft; text: qsTr("Middle left"); property string position: "middle-left" },
+                MenuItem { id: clockMiddleCenter; text: qsTr("Middle center"); property string position: "middle-center" },
+                MenuItem { id: clockMiddleRight; text: qsTr("Middle right"); property string position: "middle-right" },
+                MenuItem { id: clockBottomLeft; text: qsTr("Bottom left"); property string position: "bottom-left" },
+                MenuItem { id: clockBottomCenter; text: qsTr("Bottom center"); property string position: "bottom-center" },
+                MenuItem { id: clockBottomRight; text: qsTr("Bottom right"); property string position: "bottom-right" }
+            ]
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Clock scale")
+            subtext: qsTr("Size multiplier")
+            value: GlobalConfig.background.desktopClock.scale
+            from: 0.5
+            to: 3.0
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.desktopClock.scale = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Horizontal offset")
+            subtext: qsTr("Negative moves left; positive moves right")
+            value: GlobalConfig.background.desktopClock.xOffset
+            from: -800
+            to: 800
+            stepSize: 10
+            onMoved: v => GlobalConfig.background.desktopClock.xOffset = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Vertical offset")
+            subtext: qsTr("Negative moves up; positive moves down")
+            value: GlobalConfig.background.desktopClock.yOffset
+            from: -400
+            to: 400
+            stepSize: 10
+            onMoved: v => GlobalConfig.background.desktopClock.yOffset = v
+        }
+
+        SelectRow {
+            Layout.fillWidth: true
+            label: qsTr("Clock style")
+            subtext: qsTr("Arrange the time and date")
+            active: {
+                switch (GlobalConfig.background.desktopClock.style) {
+                case "stacked-sections": return clockStyleStacked;
+                case "vertical-time": return clockStyleVerticalTime;
+                case "horizontal":
+                default: return clockStyleHorizontal;
+                }
+            }
+            onSelected: item => GlobalConfig.background.desktopClock.style = item.styleName
+            menuItems: [
+                MenuItem { id: clockStyleHorizontal; text: qsTr("Horizontal"); property string styleName: "horizontal" },
+                MenuItem { id: clockStyleStacked; text: qsTr("Stacked sections"); property string styleName: "stacked-sections" },
+                MenuItem { id: clockStyleVerticalTime; text: qsTr("Vertical time"); property string styleName: "vertical-time" }
+            ]
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Show date")
+            checked: GlobalConfig.background.desktopClock.showDate
+            onToggled: GlobalConfig.background.desktopClock.showDate = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Invert clock colours")
+            checked: GlobalConfig.background.desktopClock.invertColors
+            onToggled: GlobalConfig.background.desktopClock.invertColors = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Clock shadow")
+            checked: GlobalConfig.background.desktopClock.shadow.enabled
+            onToggled: GlobalConfig.background.desktopClock.shadow.enabled = checked
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Shadow opacity")
+            value: GlobalConfig.background.desktopClock.shadow.opacity
+            from: 0
+            to: 1
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.desktopClock.shadow.opacity = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Shadow blur")
+            value: GlobalConfig.background.desktopClock.shadow.blur
+            from: 0
+            to: 1
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.desktopClock.shadow.blur = v
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Clock background")
+            checked: GlobalConfig.background.desktopClock.background.enabled
+            onToggled: GlobalConfig.background.desktopClock.background.enabled = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Blur clock background")
+            checked: GlobalConfig.background.desktopClock.background.blur
+            onToggled: GlobalConfig.background.desktopClock.background.blur = checked
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            last: true
+            label: qsTr("Clock background opacity")
+            value: GlobalConfig.background.desktopClock.background.opacity
+            from: 0
+            to: 1
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.desktopClock.background.opacity = v
+        }
+
+        SectionHeader {
+            text: qsTr("Desktop visualiser")
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            first: true
+            text: qsTr("Show audio visualiser")
+            checked: GlobalConfig.background.visualiser.enabled
+            onToggled: GlobalConfig.background.visualiser.enabled = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Auto-hide behind windows")
+            checked: GlobalConfig.background.visualiser.autoHide
+            onToggled: GlobalConfig.background.visualiser.autoHide = checked
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            text: qsTr("Blur visualiser")
+            checked: GlobalConfig.background.visualiser.blur
+            onToggled: GlobalConfig.background.visualiser.blur = checked
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            label: qsTr("Visualiser rounding")
+            value: GlobalConfig.background.visualiser.rounding
+            from: 0
+            to: 10
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.visualiser.rounding = v
+        }
+
+        StepperRow {
+            Layout.fillWidth: true
+            last: true
+            label: qsTr("Visualiser spacing")
+            value: GlobalConfig.background.visualiser.spacing
+            from: 0
+            to: 2
+            stepSize: 0.1
+            onMoved: v => GlobalConfig.background.visualiser.spacing = v
+        }
+
+        SectionHeader {
             text: qsTr("Design system tokens")
         }
 
