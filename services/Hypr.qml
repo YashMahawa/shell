@@ -155,7 +155,10 @@ Singleton {
                 root.reloadDynamicConfs();
             } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(baseName)) {
                 root.scheduleRefresh(true, true, false);
-            } else if (["activewindow", "openwindow", "closewindow", "movewindow"].includes(baseName)) {
+            } else if (["activewindow", "openwindow", "closewindow", "movewindow", "fullscreen"].includes(baseName)) {
+                // Fullscreen changes a workspace's hasfullscreen flag, which
+                // drives the bar and borders; refreshing only toplevels left
+                // it stale after rapid toggles, hiding the bar on that workspace.
                 root.scheduleRefresh(true, false, true);
             } else if (baseName.includes("mon")) {
                 root.scheduleRefresh(false, true, false);

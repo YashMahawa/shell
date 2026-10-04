@@ -58,6 +58,8 @@ StyledWindow {
     }
 
     onHasFullscreenChanged: {
+        if (hasFullscreen)
+            fullscreenRecheck.restart();
         visibilities.launcher = false;
         visibilities.session = false;
         visibilities.dashboard = false;
@@ -95,6 +97,15 @@ StyledWindow {
 
     Behavior on surfaceColour {
         CAnim {}
+    }
+
+    // Self-heal: re-read workspace state shortly after entering fullscreen, so
+    // a missed compositor event can never leave the bar hidden.
+    Timer {
+        id: fullscreenRecheck
+
+        interval: 1500
+        onTriggered: Hyprland.refreshWorkspaces()
     }
 
     Region {
