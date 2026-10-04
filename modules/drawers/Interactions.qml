@@ -138,12 +138,16 @@ CustomMouseArea {
     }
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
-        const panelHeight = (panel.height || panel.implicitHeight) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
+        // Use the settled height too, so a panel animating to a new size never
+        // briefly loses hover and closes itself mid-animation.
+        const panelHeight = Math.max(panel.height || panel.implicitHeight, panel.nonAnimHeight ?? 0) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
         return y < Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) && withinPanelWidth(panel, x, y);
     }
 
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
-        const panelHeight = (panel.height || panel.implicitHeight) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
+        // Use the settled height too, so a panel animating to a new size never
+        // briefly loses hover and closes itself mid-animation.
+        const panelHeight = Math.max(panel.height || panel.implicitHeight, panel.nonAnimHeight ?? 0) * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
         return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
     }
 

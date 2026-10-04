@@ -31,6 +31,8 @@ Item {
     property MenuItem active: items[0] ?? null
     property bool expanded
     property bool dismissReady: false
+    // The visible menu surface, so drawers can include it in their input region.
+    readonly property Item panel: menu
 
     signal itemSelected(item: MenuItem)
 

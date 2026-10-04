@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Caelestia.Components
 import Caelestia.Config
 import qs.components
@@ -15,16 +16,31 @@ StyledRect {
     required property var props
     required property DrawerVisibilities visibilities
     readonly property alias menuExpanded: recorderModeButton.expanded
-    readonly property real nonAnimHeight: btnLayout.implicitHeight + listOrControls.implicitHeight + layout.spacing + layout.anchors.margins * 2
+    readonly property Item menuPanel: recorderModeButton.menu.panel
+    readonly property real nonAnimHeight: btnLayout.implicitHeight + audioRow.implicitHeight + listOrControls.implicitHeight + layout.spacing * 2 + layout.anchors.margins * 2
 
     Layout.fillWidth: true
     implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
 
+    readonly property string audioMode: ["none", "system", "mic", "both"].includes(props.recordingAudio) ? props.recordingAudio : "none"
+
+    function startRecording(region: bool): void {
+        const args = region ? ["-r"] : [];
+        if (audioMode !== "none")
+            args.push("-a", audioMode);
+        Recorder.start(args);
+    }
+
     radius: Tokens.rounding.large
     color: Colours.tPalette.m3surfaceContainer
 
-    Ref {
-        service: Recorder
+    // Poll the recorder only while the drawer is actually showing it.
+    LazyLoader {
+        active: root.visibilities.utilities
+
+        Ref {
+            service: Recorder
+        }
     }
 
     ColumnLayout {
@@ -99,27 +115,79 @@ StyledRect {
                         icon: "fullscreen"
                         text: qsTr("Record fullscreen")
                         activeText: qsTr("Fullscreen")
-                        onClicked: Recorder.start()
+                        onClicked: root.startRecording(false)
                     },
                     MenuItem {
                         icon: "screenshot_region"
                         text: qsTr("Record region")
                         activeText: qsTr("Region")
-                        onClicked: Recorder.start(["-r"])
-                    },
-                    MenuItem {
-                        icon: "select_to_speak"
-                        text: qsTr("Record fullscreen with sound")
-                        activeText: qsTr("Fullscreen")
-                        onClicked: Recorder.start(["-s"])
-                    },
-                    MenuItem {
-                        icon: "volume_up"
-                        text: qsTr("Record region with sound")
-                        activeText: qsTr("Region")
-                        onClicked: Recorder.start(["-sr"])
+                        onClicked: root.startRecording(true)
                     }
                 ]
+            }
+        }
+
+        // Audio source for new recordings: off, system output, microphone or both.
+        Row {
+            id: audioRow
+
+            Layout.fillWidth: true
+            spacing: Tokens.spacing.extraSmall
+            opacity: Recorder.running ? 0.5 : 1
+            enabled: !Recorder.running
+
+            Repeater {
+                model: [
+                    { mode: "none", icon: "volume_off", label: qsTr("No audio") },
+                    { mode: "system", icon: "speaker", label: qsTr("System") },
+                    { mode: "mic", icon: "mic", label: qsTr("Mic") },
+                    { mode: "both", icon: "graphic_eq", label: qsTr("Both") }
+                ]
+
+                StyledRect {
+                    id: chip
+
+                    required property var modelData
+                    readonly property bool selected: root.audioMode === modelData.mode
+
+                    width: (audioRow.width - audioRow.spacing * 3) / 4
+                    implicitHeight: chipContent.implicitHeight + Tokens.padding.small * 2
+                    radius: selected ? Tokens.rounding.full : Tokens.rounding.small
+                    color: selected ? Colours.palette.m3secondaryContainer : Colours.tPalette.m3surfaceContainerHigh
+
+                    Behavior on radius {
+                        Anim {}
+                    }
+
+                    StateLayer {
+                        radius: chip.radius
+                        color: chip.selected ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                        onClicked: root.props.recordingAudio = chip.modelData.mode
+                    }
+
+                    Row {
+                        id: chipContent
+
+                        anchors.centerIn: parent
+                        spacing: Tokens.spacing.extraSmall
+
+                        MaterialIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: chip.modelData.icon
+                            fill: chip.selected ? 1 : 0
+                            color: chip.selected ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
+                            fontStyle: Tokens.font.icon.small
+                        }
+
+                        StyledText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: chip.width > 86
+                            text: chip.modelData.label
+                            color: chip.selected ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurfaceVariant
+                            font: Tokens.font.label.medium
+                        }
+                    }
+                }
             }
         }
 

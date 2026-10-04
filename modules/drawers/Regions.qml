@@ -83,6 +83,11 @@ Region {
         height: Math.max(root.edgeThickness, panel.height * (1 - root.panels.utilities.offsetScale) + root.borderThickness)
     }
 
+    // An open utilities menu can extend past its panel; keep it clickable.
+    Region {
+        item: root.panels.utilities.interactionPinned ? root.panels.utilities.recorderMenuPanel : null
+    }
+
     R {
         panel: root.panels.popoutsWrapper
         width: panel.width * (1 - root.panels.popoutsWrapper.offsetScale)

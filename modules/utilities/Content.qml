@@ -15,6 +15,7 @@ Item {
 
     readonly property real nonAnimHeight: idleInhibit.nonAnimHeight + record.nonAnimHeight + toggles.implicitHeight + layout.spacing * 2
     readonly property alias recorderMenuExpanded: record.menuExpanded
+    readonly property alias recorderMenuPanel: record.menuPanel
 
     implicitWidth: layout.implicitWidth
     implicitHeight: layout.implicitHeight
