@@ -248,26 +248,14 @@ Item {
         }
     }
 
-    TextMetrics {
-        id: fullWidth
-
-        font: line.lyricFont
-        text: line.lyricLine
-    }
-
+    // Lines from the answering singer sit on the right, as in Apple Music:
+    // every wrapped row, the karaoke words and the backing vocal align right.
     Item {
         id: body
 
         opacity: line.shownOpacity
-
-        // Duet lines sung from the other side hug the right edge; leading
-        // lines keep the full width so word-by-word layout never wraps early.
-        readonly property real blockWidth: line.alignEnd
-            ? Math.min(line.maxWidth, Math.ceil(fullWidth.advanceWidth * 1.03) + 6) : line.maxWidth
-
         y: dots.height
-        x: line.alignEnd ? line.maxWidth - blockWidth : 0
-        width: blockWidth
+        width: line.maxWidth
         implicitHeight: karaoke.visible ? karaoke.implicitHeight : plain.implicitHeight
         height: implicitHeight
 
@@ -279,6 +267,7 @@ Item {
             text: line.lyricLine || ". . ."
             font: line.lyricFont
             color: line.current ? line.activeColor : line.textColor
+            horizontalAlignment: line.alignEnd ? Text.AlignRight : Text.AlignLeft
             wrapMode: Text.WordWrap
             renderType: Text.QtRendering
         }
@@ -289,33 +278,14 @@ Item {
             width: parent.width
             active: line.timed && line.near
             visible: active && line.current && status === Loader.Ready
-            sourceComponent: Flow {
-                width: body.width
-                spacing: 0
-
-                Repeater {
-                    model: line.words
-
-                    Row {
-                        required property var modelData
-
-                        Repeater {
-                            model: parent.modelData
-
-                            KaraokeWord {
-                                required property var modelData
-
-                                text: modelData.text
-                                start: Number(modelData.time || 0)
-                                duration: Number(modelData.duration || 0)
-                                position: line.livePosition
-                                font: line.lyricFont
-                                color: line.activeColor
-                                reduceMotion: line.reduceMotion
-                            }
-                        }
-                    }
-                }
+            sourceComponent: KaraokeRows {
+                groups: line.words
+                font: line.lyricFont
+                maxWidth: body.width
+                alignEnd: line.alignEnd
+                position: line.livePosition
+                color: line.activeColor
+                reduceMotion: line.reduceMotion
             }
         }
     }
@@ -325,8 +295,7 @@ Item {
 
         anchors.top: body.bottom
         anchors.topMargin: line.lyricFont.pixelSize * 0.12
-        x: line.alignEnd ? line.maxWidth - width : 0
-        width: Math.min(line.maxWidth, implicitWidth)
+        width: line.maxWidth
         active: !!line.bgText
         opacity: 0.82 * line.shownOpacity
         sourceComponent: line.bgWords.length && line.current ? bgTimed : bgPlain
@@ -336,11 +305,12 @@ Item {
         id: bgPlain
 
         Text {
-            width: Math.min(line.maxWidth, implicitWidth)
+            width: line.maxWidth
             text: line.bgText
             font: line.bgFont
             color: line.current ? line.activeColor : line.textColor
             opacity: line.current ? 0.6 : 1
+            horizontalAlignment: line.alignEnd ? Text.AlignRight : Text.AlignLeft
             wrapMode: Text.WordWrap
             renderType: Text.QtRendering
         }
@@ -349,33 +319,15 @@ Item {
     Component {
         id: bgTimed
 
-        Flow {
-            width: line.maxWidth
-
-            Repeater {
-                model: line.bgWords
-
-                Row {
-                    required property var modelData
-
-                    Repeater {
-                        model: parent.modelData
-
-                        KaraokeWord {
-                            required property var modelData
-
-                            text: modelData.text
-                            start: Number(modelData.time || 0)
-                            duration: Number(modelData.duration || 0)
-                            position: line.livePosition
-                            font: line.bgFont
-                            color: line.activeColor
-                            dim: 0.3
-                            reduceMotion: line.reduceMotion
-                        }
-                    }
-                }
-            }
+        KaraokeRows {
+            groups: line.bgWords
+            font: line.bgFont
+            maxWidth: line.maxWidth
+            alignEnd: line.alignEnd
+            position: line.livePosition
+            color: line.activeColor
+            dim: 0.3
+            reduceMotion: line.reduceMotion
         }
     }
 
