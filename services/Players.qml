@@ -39,8 +39,10 @@ Singleton {
     function getArtUrl(player: MprisPlayer): string {
         if (!player)
             return "";
-        if (player.trackArtUrl)
-            return player.trackArtUrl;
+        // Browsers publish their own logo while a page has no artwork.
+        const art = ArtGuard.filter(player.trackArtUrl);
+        if (art)
+            return art;
 
         const url = player.metadata["xesam:url"] ?? "";
         if (url.startsWith("https://www.youtube.com/watch")) {

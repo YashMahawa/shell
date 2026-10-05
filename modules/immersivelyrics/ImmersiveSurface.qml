@@ -26,6 +26,79 @@ FocusScope {
     property bool seeking: false
     property real seekPreview: 0
 
+    // Cover state for the current track: "loading", then "motion" or "static".
+    // A still cover, once shown, stays for that track.
+    property string coverKey: ""
+    property string coverMode: "loading"
+    property real coverSince: 0
+    property real motionSince: 0
+    property bool coverShown: false
+    readonly property bool coverReady: coverShown || (coverMode === "motion" ? motionCover.showing
+        : coverMode === "static" ? stillCover.status === Image.Ready : false)
+
+    onCoverReadyChanged: {
+        if (coverReady)
+            coverShown = true;
+    }
+
+    function decideCover(): void {
+        const key = MotionArtwork.trackKey;
+        const now = Date.now();
+        if (key !== coverKey) {
+            coverKey = key;
+            coverMode = "loading";
+            coverShown = false;
+            coverSince = now;
+        }
+        if (coverMode === "static")
+            return;
+        const waited = now - coverSince;
+        if (coverMode === "motion") {
+            // A clip that never produces frames falls back to the still cover.
+            if (!motionCover.showing && now - motionSince > 3500)
+                coverMode = "static";
+            return;
+        }
+        const phase = MotionArtwork.phase;
+        if (phase === "ready" && MotionArtwork.source) {
+            coverMode = "motion";
+            motionSince = now;
+        } else if (phase === "none" && (HighResArtwork.settled || waited > 3000)) {
+            coverMode = "static";
+        } else if (phase === "looking" && waited > (HighResArtwork.settled ? 3000 : 5000)) {
+            coverMode = "static";
+        } else if (phase === "downloading" && waited > 10000) {
+            coverMode = "static";
+        }
+    }
+
+    Timer {
+        interval: 250
+        running: root.active && !root.coverReady
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.decideCover()
+    }
+
+    Connections {
+        target: MotionArtwork
+
+        function onPhaseChanged(): void {
+            root.decideCover();
+        }
+        function onTrackKeyChanged(): void {
+            root.decideCover();
+        }
+    }
+
+    Connections {
+        target: HighResArtwork
+
+        function onSettledChanged(): void {
+            root.decideCover();
+        }
+    }
+
     function formatTime(value: real): string {
         const seconds = Math.max(0, Math.floor(value || 0));
         return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -137,7 +210,8 @@ FocusScope {
 
     FluidBackdrop {
         anchors.fill: parent
-        source: root.artSource
+        // Keep the previous colours until the final artwork is known.
+        source: HighResArtwork.settled ? root.artSource : ""
         running: root.active
         playing: Players.active?.isPlaying ?? false
         opacity: root.active ? 1 : 0
@@ -235,21 +309,61 @@ FocusScope {
                 radius: Math.max(12, width * 0.035)
                 color: Qt.rgba(1, 1, 1, 0.08)
 
-                MaterialIcon {
-                    anchors.centerIn: parent
-                    text: "album"
-                    color: Qt.rgba(1, 1, 1, 0.4)
-                    fontStyle: Tokens.font.icon.size(Math.max(64, parent.width * 0.25)).build()
+                // Loading shimmer: shown until this track's final cover (motion
+                // clip or settled still artwork) is ready, so interim thumbnails
+                // never flash.
+                Item {
+                    anchors.fill: parent
+                    opacity: root.coverReady ? 0 : 1
+                    visible: opacity > 0
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 420
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    Rectangle {
+                        id: shimmer
+
+                        property real phase: 0
+
+                        width: parent.width * 0.6
+                        height: parent.height * 2
+                        y: -parent.height / 2
+                        x: -width + (parent.width + width) * phase
+                        rotation: 18
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
+                            GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.07) }
+                            GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
+                        }
+
+                        NumberAnimation on phase {
+                            running: !root.coverReady && root.active
+                            from: 0
+                            to: 1
+                            duration: 1500
+                            loops: Animation.Infinite
+                            easing.type: Easing.InOutSine
+                        }
+                    }
                 }
 
                 FadeImage {
+                    id: stillCover
+
                     anchors.fill: parent
-                    source: root.artSource
+                    source: root.coverMode === "static" ? root.artSource : ""
                 }
 
                 MotionCover {
+                    id: motionCover
+
                     anchors.fill: parent
-                    source: MotionArtwork.source
+                    source: root.coverMode === "motion" ? MotionArtwork.source : ""
                     playing: root.active && (Players.active?.isPlaying ?? false)
                 }
             }

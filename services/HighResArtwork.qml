@@ -26,8 +26,13 @@ Singleton {
     // Track length from the iTunes catalogue match, in seconds (0 if unknown).
     property real catalogLength: 0
     property string localFor: ""
+    property string localFailedFor: ""
     // A local file once it is cached, otherwise the remote URL.
     readonly property string displaySource: localFor === source && localSource ? localSource : source
+    // True once the final artwork for this track is known and cached locally,
+    // so covers can wait for it instead of showing interim thumbnails.
+    readonly property bool settled: !!trackKey && !transitioning
+        && (!source || (localFor === source && !!localSource) || localFailedFor === source)
 
     readonly property string dashboardFallbackUrl: Players.getArtUrl(Players.active)
     readonly property string youtubeId: {
@@ -296,7 +301,11 @@ Singleton {
         }
         onExited: code => {
             const fields = localOutput.text.trim().split("\t");
-            if (code === 0 && fields.length >= 3 && fields[2]) {
+            if (code !== 0 || fields.length < 3 || !fields[2]) {
+                root.localFailedFor = url;
+                return;
+            }
+            {
                 root.localSource = `file://${fields[2]}`;
                 root.localFor = url;
                 cacheUse.command = ["caelestia-media-cache", "hit", fields[2]];

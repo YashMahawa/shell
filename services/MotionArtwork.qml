@@ -10,11 +10,18 @@ import Quickshell.Io
 // the lookup and the remuxed clip, so a repeat play resolves in well under a
 // tenth of a second. Lookups start as soon as a track changes, so the clip is
 // usually on disk before the immersive view is opened.
+//
+// `phase` describes the current track: "looking" while the catalogue is
+// searched, "downloading" once a clip is known to exist, then "ready" or
+// "none". Consumers use it to wait for the clip instead of flashing the still
+// cover first.
 Singleton {
     id: root
 
     property string videoPath: ""
     property string resolvedKey: ""
+    property string phaseKey: ""
+    property string phaseValue: "looking"
     property string pendingKey: ""
 
     readonly property string trackKey: {
@@ -24,11 +31,17 @@ Singleton {
         return artist && title ? `${artist}\n${title}\n${player?.trackAlbum || ""}` : "";
     }
     readonly property string source: resolvedKey === trackKey && videoPath ? `file://${videoPath}` : ""
+    readonly property string phase: !trackKey ? "none" : phaseKey === trackKey ? phaseValue : "looking"
 
     function _title(): string {
         return String(Players.active?.trackTitle || "")
             .replace(/\s*[\[(](official\s+)?(music\s+)?(video|audio|lyrics?|visuali[sz]er|mv)[^\])]*[\])]/ig, "")
             .trim();
+    }
+
+    function _setPhase(key: string, value: string): void {
+        phaseKey = key;
+        phaseValue = value;
     }
 
     onTrackKeyChanged: lookupDelay.restart()
@@ -37,19 +50,24 @@ Singleton {
         id: lookupDelay
 
         // Browsers publish title and artist a moment apart on track changes.
-        interval: 450
+        interval: 350
         repeat: false
         onTriggered: {
             const key = root.trackKey;
-            if (!key || key === root.resolvedKey)
+            if (!key)
                 return;
+            if (key === root.resolvedKey) {
+                root._setPhase(key, root.videoPath ? "ready" : "none");
+                return;
+            }
             if (lookup.running) {
                 root.pendingKey = key;
                 return;
             }
             root.pendingKey = "";
+            root._setPhase(key, "looking");
             lookup.key = key;
-            lookup.command = ["nice", "-n", "15", "ionice", "-c", "3", "caelestia-motion-art",
+            lookup.command = ["nice", "-n", "10", "caelestia-motion-art",
                 "--title", root._title(),
                 "--artist", Players.active?.trackArtist || "",
                 "--album", Players.active?.trackAlbum || ""];
@@ -62,22 +80,33 @@ Singleton {
 
         property string key: ""
 
-        stdout: StdioCollector {
-            id: output
-        }
-        onExited: {
-            try {
-                const result = JSON.parse(output.text || "{}");
-                if (result.status === "ok" && result.path) {
+        stdout: SplitParser {
+            onRead: line => {
+                let result = null;
+                try {
+                    result = JSON.parse(line);
+                } catch (e) {
+                    return;
+                }
+                if (result.status === "found") {
+                    root._setPhase(lookup.key, "downloading");
+                } else if (result.status === "ok" && result.path) {
                     root.videoPath = result.path;
-                    root.resolvedKey = key;
+                    root.resolvedKey = lookup.key;
+                    root._setPhase(lookup.key, "ready");
                 } else if (result.status === "none") {
                     root.videoPath = "";
-                    root.resolvedKey = key;
+                    root.resolvedKey = lookup.key;
+                    root._setPhase(lookup.key, "none");
+                } else {
+                    // Transient failure: show the still cover, retry next play.
+                    root._setPhase(lookup.key, "none");
                 }
-            } catch (e) {
-                // Transient failure: leave the key unresolved so it retries.
             }
+        }
+        onExited: {
+            if (root.phaseKey === key && (root.phaseValue === "looking" || root.phaseValue === "downloading"))
+                root._setPhase(key, "none");
             if (root.pendingKey)
                 lookupDelay.restart();
         }
