@@ -22,7 +22,9 @@ Item {
     property color color: "white"
     property bool reduceMotion: false
 
-    readonly property real progress: position < 0 ? 0
+    // Not yet reached (or not the active line): nothing lights or moves.
+    readonly property bool started: position >= 0 && position >= start
+    readonly property real progress: !started ? 0
         : Math.max(0, Math.min(1, (position - start) / Math.max(0.05, duration)))
     readonly property string glyphs: text.replace(/\s+$/, "")
     readonly property string trailing: text.substring(glyphs.length)
@@ -110,10 +112,11 @@ Item {
                         id: letter
 
                         required property int index
+                        // Each letter owns one slice of the word's duration.
                         readonly property real slot: root.progress * root.glyphs.length - index
                         // Local 0..1 progress of this letter's rise.
-                        readonly property real local: Math.max(0, Math.min(1, (slot + 0.7) / 1.7))
-                        readonly property real lit: Math.max(0, Math.min(1, slot + 0.5))
+                        readonly property real local: root.started ? Math.max(0, Math.min(1, (slot + 0.15) / 1.5)) : 0
+                        readonly property real lit: root.started ? Math.max(0, Math.min(1, slot)) : 0
 
                         text: root.glyphs.charAt(index)
                         font: root.font
@@ -121,7 +124,8 @@ Item {
                         opacity: root.dim + (1 - root.dim) * lit
                         renderType: Text.QtRendering
                         transformOrigin: Item.Bottom
-                        y: -root.lift * (0.9 * Math.sin(Math.PI * local) + 0.75 * local)
+                        // Rise with a gentle crest, settling at the same lift as plain words.
+                        y: -root.lift * (0.8 * Math.sin(Math.PI * local) + local)
                         scale: 1 + 0.04 * Math.sin(Math.PI * local)
                     }
                 }
