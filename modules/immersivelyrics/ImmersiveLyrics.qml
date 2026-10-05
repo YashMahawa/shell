@@ -33,11 +33,6 @@ Scope {
             anchors.left: true
             anchors.right: true
 
-            onVisibleChanged: {
-                if (visible)
-                    Qt.callLater(() => surface.item?.forceActiveFocus());
-            }
-
             // Content exists only while the window is shown: items must never
             // outlive the window they draw into (hidden layer surfaces are torn
             // down, and touching their items afterwards crashed the shell).
@@ -45,7 +40,9 @@ Scope {
             property bool entered: false
 
             onVisibleChanged: {
-                if (!visible)
+                if (visible)
+                    Qt.callLater(() => surface.item?.forceActiveFocus());
+                else
                     entered = false;
             }
 
@@ -70,7 +67,6 @@ Scope {
 
                 interval: 16
                 onTriggered: window.entered = window.visible
-            }
             }
         }
     }
