@@ -26,6 +26,8 @@ Item {
 
     onShouldBeActiveChanged: {
         if (shouldBeActive)
+            HybridSearch.warm();
+        if (shouldBeActive)
             implicitHeight = Qt.binding(() => content.implicitHeight);
         else
             implicitHeight = implicitHeight; // Break binding during close anim
