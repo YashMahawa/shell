@@ -25,6 +25,14 @@ FocusScope {
     property string displayedArtist: Players.active?.trackArtist || qsTr("Choose a song to begin")
     property bool seeking: false
     property real seekPreview: 0
+    // Width for font sizing that ignores the zero width reported during
+    // window teardown, so text is never re-laid out on a dying window.
+    property real stableWidth: 1600
+
+    onWidthChanged: {
+        if (width > 0)
+            stableWidth = width;
+    }
 
     // Cover state for the current track: "loading", then "motion" or "static".
     // A still cover, once shown, stays for that track.
@@ -385,7 +393,7 @@ FocusScope {
                 text: root.displayedTitle
                 color: "white"
                 font.family: Tokens.font.headline.small.family
-                font.pixelSize: Math.round(Math.max(22, Math.min(34, root.width * 0.0145)))
+                font.pixelSize: Math.round(Math.max(22, Math.min(34, root.stableWidth * 0.0145)))
                 font.variableAxes: { "wght": 580, "ROND": 30 }
                 font.weight: Font.Bold
                 elide: Text.ElideRight
@@ -454,7 +462,7 @@ FocusScope {
                     text: root.formatTime(progress.shownPosition)
                     color: Qt.rgba(1, 1, 1, slider.engaged ? 0.85 : 0.6)
                     font.family: Tokens.font.label.small.family
-                    font.pixelSize: Math.round(Math.max(13, Math.min(16, root.width * 0.0068)))
+                    font.pixelSize: Math.round(Math.max(13, Math.min(16, root.stableWidth * 0.0068)))
                     font.variableAxes: { "wght": 560, "ROND": 30 }
                     font.features: { "tnum": 1 }
                     renderType: Text.QtRendering

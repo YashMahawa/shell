@@ -279,8 +279,6 @@ Item {
 
             width: parent.width
             active: line.timed && line.near
-            // Built two lines ahead, so incubate off the frame budget.
-            asynchronous: true
             visible: active && line.current && status === Loader.Ready
             sourceComponent: Flow {
                 width: body.width

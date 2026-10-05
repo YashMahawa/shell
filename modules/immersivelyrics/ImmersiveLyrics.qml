@@ -38,22 +38,39 @@ Scope {
                     Qt.callLater(() => surface.item?.forceActiveFocus());
             }
 
+            // Content exists only while the window is shown: items must never
+            // outlive the window they draw into (hidden layer surfaces are torn
+            // down, and touching their items afterwards crashed the shell).
+            // `entered` flips one frame after creation so the entrance animates.
+            property bool entered: false
+
+            onVisibleChanged: {
+                if (!visible)
+                    entered = false;
+            }
+
             Loader {
                 id: surface
 
                 anchors.fill: parent
-                // Built ahead of time so opening is instant; only the target
-                // screen's surface is ever active.
-                active: window.isTarget || window.visible
+                active: window.visible
                 asynchronous: true
                 onLoaded: {
-                    if (window.visible)
-                        item?.forceActiveFocus();
+                    enterDelay.restart();
+                    item?.forceActiveFocus();
                 }
                 sourceComponent: ImmersiveSurface {
-                    active: ImmersiveLyricsState.presented && window.visible
+                    active: ImmersiveLyricsState.presented && window.entered
                     onExitRequested: ImmersiveLyricsState.close()
                 }
+            }
+
+            Timer {
+                id: enterDelay
+
+                interval: 16
+                onTriggered: window.entered = window.visible
+            }
             }
         }
     }

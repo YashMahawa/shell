@@ -23,7 +23,15 @@ Item {
     // Theming, so the dashboard can reuse this renderer.
     property color textColor: "white"
     property color activeColor: textColor
-    property int fontPixelSize: Math.round(Math.max(32, Math.min(58, width * 0.07)))
+    property int fontPixelSize: Math.round(Math.max(32, Math.min(58, stableWidth * 0.07)))
+    // Ignores the zero width items briefly report while their window is torn
+    // down, so fonts are never recomputed on a dying window.
+    property real stableWidth: 0
+
+    onWidthChanged: {
+        if (width > 0)
+            stableWidth = width;
+    }
     property real anchorRatio: 0.18
     property real fadeTop: 0.16
     property real fadeBottom: 0.5

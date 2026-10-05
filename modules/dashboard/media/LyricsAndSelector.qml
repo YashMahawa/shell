@@ -107,7 +107,7 @@ Item {
                 active: root.active && !root.toolsOpen
                 textColor: Colours.palette.m3onSurface
                 activeColor: Colours.palette.m3primary
-                fontPixelSize: Math.round(Math.max(17, Math.min(24, width * 0.06)))
+                fontPixelSize: Math.round(Math.max(17, Math.min(24, stableWidth * 0.06)))
                 anchorRatio: 0.3
                 fadeTop: 0.22
                 fadeBottom: 0.38
