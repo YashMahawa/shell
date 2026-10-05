@@ -383,6 +383,9 @@ FocusScope {
                     id: stillCover
 
                     anchors.fill: parent
+                    // Only ever the committed still cover for this track, never
+                    // a retained image from the previous song.
+                    visible: root.coverMode === "static"
                     source: root.coverMode === "static" ? root.artSource : ""
                 }
 

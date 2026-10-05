@@ -22,10 +22,24 @@ Item {
     property color color: "white"
     property bool reduceMotion: false
 
+    // Flow timing from KaraokeRows: the sweep spans `flowDuration` (the word
+    // plus any short gap after it) and follows a monotone Hermite curve with
+    // entry/exit speeds `m0`/`m1`, so pace changes smoothly between words.
+    property real flowDuration: duration
+    property real m0: 1
+    property real m1: 1
+
     // Not yet reached (or not the active line): nothing lights or moves.
     readonly property bool started: position >= 0 && position >= start
-    readonly property real progress: !started ? 0
-        : Math.max(0, Math.min(1, (position - start) / Math.max(0.05, duration)))
+    readonly property real progress: {
+        if (!started)
+            return 0;
+        const u = Math.max(0, Math.min(1, (position - start) / Math.max(0.05, flowDuration)));
+        const u2 = u * u;
+        const u3 = u2 * u;
+        const p = (u3 - 2 * u2 + u) * m0 + (3 * u2 - 2 * u3) + (u3 - u2) * m1;
+        return Math.max(0, Math.min(1, p));
+    }
     readonly property string glyphs: text.replace(/\s+$/, "")
     readonly property string trailing: text.substring(glyphs.length)
     readonly property bool stretched: !reduceMotion && duration >= 0.95 && glyphs.length > 0 && glyphs.length <= 14

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import qs.services
 
 // Apple Music style flowing backdrop built from the album artwork.
 //
@@ -23,22 +24,44 @@ Item {
     property real brightness: 1.02
 
     property int slot: 0
-    property url sourceA
+    property url sourceA: ImmersiveLyricsState.lastArt
     property url sourceB
+    property url pending
     property real time: Math.random() * 400
-    property real speed: playing ? 1 : 0.35
+    property real speed: playing ? 1.6 : 0.55
 
-    onSourceChanged: {
-        if (!source.toString())
+    // New artwork loads into the hidden slot; the crossfade only starts once
+    // it has decoded, so a track change never fades through black.
+    function request(url: url): void {
+        if (!url.toString())
             return;
-        if (slot === 0) {
-            sourceB = source;
-            slot = 1;
-        } else {
-            sourceA = source;
-            slot = 0;
-        }
+        const current = slot === 0 ? sourceA : sourceB;
+        if (url.toString() === current.toString())
+            return;
+        pending = url;
+        if (slot === 0)
+            sourceB = url;
+        else
+            sourceA = url;
+        Qt.callLater(promote);
     }
+
+    function promote(): void {
+        if (!pending.toString())
+            return;
+        if (slot === 0 && artB.ready && sourceB.toString() === pending.toString()) {
+            slot = 1;
+        } else if (slot === 1 && artA.ready && sourceA.toString() === pending.toString()) {
+            slot = 0;
+        } else {
+            return;
+        }
+        ImmersiveLyricsState.lastArt = pending;
+        pending = "";
+    }
+
+    onSourceChanged: request(source)
+    Component.onCompleted: request(source)
 
     Behavior on speed {
         NumberAnimation {
@@ -112,6 +135,7 @@ Item {
 
         source: root.sourceA
         visible: false
+        onReadyChanged: root.promote()
     }
 
     ArtTexture {
@@ -119,6 +143,7 @@ Item {
 
         source: root.sourceB
         visible: false
+        onReadyChanged: root.promote()
     }
 
     ShaderEffect {

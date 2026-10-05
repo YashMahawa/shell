@@ -9,6 +9,9 @@ Singleton {
     property bool active: false
     property bool closing: false
     property string screenName: ""
+    // Artwork behind the backdrop's current colours, kept across opens and
+    // track changes so the scene never starts from black.
+    property url lastArt
     readonly property bool presented: active && !closing
 
     function open(targetScreen: string): void {

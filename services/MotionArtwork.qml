@@ -23,6 +23,10 @@ Singleton {
     property string phaseKey: ""
     property string phaseValue: "looking"
     property string pendingKey: ""
+    // Apple Music's own high-resolution still artwork for the matched release.
+    property string artPath: ""
+    property string artKey: ""
+    property bool lookupSlow: false
 
     readonly property string trackKey: {
         const player = Players.active;
@@ -32,6 +36,10 @@ Singleton {
     }
     readonly property string source: resolvedKey === trackKey && videoPath ? `file://${videoPath}` : ""
     readonly property string phase: !trackKey ? "none" : phaseKey === trackKey ? phaseValue : "looking"
+    readonly property string artSource: artKey === trackKey && artPath ? `file://${artPath}` : ""
+    // True once the Apple lookup for this track has answered (or is too slow
+    // to wait for), so covers can commit without a later swap.
+    readonly property bool artDecided: !trackKey || artSource !== "" || phase !== "looking" || lookupSlow
 
     function _title(): string {
         return String(Players.active?.trackTitle || "")
@@ -44,7 +52,18 @@ Singleton {
         phaseValue = value;
     }
 
-    onTrackKeyChanged: lookupDelay.restart()
+    onTrackKeyChanged: {
+        lookupSlow = false;
+        slowTimer.restart();
+        lookupDelay.restart();
+    }
+
+    Timer {
+        id: slowTimer
+
+        interval: 4500
+        onTriggered: root.lookupSlow = true
+    }
 
     Timer {
         id: lookupDelay
@@ -56,7 +75,7 @@ Singleton {
             const key = root.trackKey;
             if (!key)
                 return;
-            if (key === root.resolvedKey) {
+            if (key === root.resolvedKey && root.artKey === key) {
                 root._setPhase(key, root.videoPath ? "ready" : "none");
                 return;
             }
@@ -88,7 +107,13 @@ Singleton {
                 } catch (e) {
                     return;
                 }
-                if (result.status === "found") {
+                if (result.art) {
+                    root.artPath = result.art;
+                    root.artKey = lookup.key;
+                }
+                if (result.status === "art") {
+                    return;
+                } else if (result.status === "found") {
                     root._setPhase(lookup.key, "downloading");
                 } else if (result.status === "ok" && result.path) {
                     root.videoPath = result.path;

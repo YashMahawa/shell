@@ -39,7 +39,8 @@ Item {
 
             Rectangle {
                 required property int index
-                readonly property real fill: Math.max(0, Math.min(1, root.progress * 3.3 - index))
+                // Each dot lights at the start of its own third of the break.
+                readonly property real fill: Math.max(0, Math.min(1, (root.progress - index / 3) / 0.06))
 
                 width: root.dotSize
                 height: root.dotSize

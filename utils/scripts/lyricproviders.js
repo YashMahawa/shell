@@ -120,6 +120,67 @@ function finishLine(line) {
     return line;
 }
 
+// Repairs word timestamps so no word can light before it is sung: missing,
+// zero, out-of-range or out-of-order times are interpolated between their
+// valid neighbours (weighted by text length), starts are made monotonic and
+// durations are clamped so a word ends no later than the next one starts.
+function sanitizeSyllables(syllables, lineStart, lineEnd) {
+    var n = syllables.length;
+    if (!n)
+        return syllables;
+    var lo = lineStart - 1000;
+    var hi = lineEnd > lineStart ? lineEnd + 1500 : Infinity;
+    var valid = [];
+    for (var i = 0; i < n; i++) {
+        var t = Number(syllables[i].time);
+        valid.push(isFinite(t) && t > 0 && t >= lo && t <= hi);
+    }
+    // Times must also increase; drop any that jump backwards.
+    var last = -Infinity;
+    for (var j = 0; j < n; j++) {
+        if (!valid[j])
+            continue;
+        if (syllables[j].time + 1 < last)
+            valid[j] = false;
+        else
+            last = syllables[j].time;
+    }
+    var k = 0;
+    while (k < n) {
+        if (valid[k]) {
+            k++;
+            continue;
+        }
+        var startIdx = k;
+        while (k < n && !valid[k])
+            k++;
+        var prev = startIdx > 0 ? syllables[startIdx - 1] : null;
+        var from = prev ? prev.time + Math.max(0, prev.duration || 0) : lineStart;
+        var to = k < n ? syllables[k].time : (lineEnd > from ? lineEnd : from + 400 * (k - startIdx));
+        var weights = 0;
+        for (var a = startIdx; a < k; a++)
+            weights += Math.max(1, String(syllables[a].text || "").trim().length);
+        var cursor = from;
+        for (var b = startIdx; b < k; b++) {
+            var share = Math.max(1, String(syllables[b].text || "").trim().length) / weights * Math.max(0, to - from);
+            syllables[b].time = cursor;
+            syllables[b].duration = share;
+            cursor += share;
+        }
+    }
+    for (var m = 0; m < n; m++) {
+        var s = syllables[m];
+        if (m > 0 && s.time < syllables[m - 1].time)
+            s.time = syllables[m - 1].time;
+        var next = m + 1 < n ? syllables[m + 1].time : (lineEnd > s.time ? lineEnd : s.time + 600);
+        var d = Number(s.duration);
+        if (!isFinite(d) || d <= 0)
+            d = next - s.time;
+        s.duration = Math.max(60, Math.min(d, Math.max(60, next - s.time)));
+    }
+    return syllables;
+}
+
 // Fills in missing line durations from the next stamp (blank LRC stamps mark
 // instrumental breaks, so they count) and then drops empty lines. A line-synced
 // line that would otherwise run across a long break is capped at a plausible
@@ -137,6 +198,14 @@ function settle(lines) {
             }
             all[j].duration = span;
         }
+    }
+    for (var q = 0; q < all.length; q++) {
+        var ln = all[q];
+        var end = ln.time + (ln.duration || 0);
+        if (ln.syllabus && ln.syllabus.length)
+            sanitizeSyllables(ln.syllabus, ln.time, end);
+        if (ln.bg && ln.bg.syllabus && ln.bg.syllabus.length)
+            sanitizeSyllables(ln.bg.syllabus, ln.bg.syllabus[0].time > 0 ? Math.min(ln.time, ln.bg.syllabus[0].time) : ln.time, end + 1500);
     }
     return all.filter(function (line) { return !!(line.text || (line.bg && line.bg.text)); });
 }

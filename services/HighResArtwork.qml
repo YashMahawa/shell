@@ -31,8 +31,8 @@ Singleton {
     readonly property string displaySource: localFor === source && localSource ? localSource : source
     // True once the final artwork for this track is known and cached locally,
     // so covers can wait for it instead of showing interim thumbnails.
-    readonly property bool settled: !!trackKey && !transitioning
-        && (!source || (localFor === source && !!localSource) || localFailedFor === source)
+    readonly property bool settled: !!trackKey && (!!appleArt || (MotionArtwork.artDecided && !transitioning
+        && (!source || (localFor === source && !!localSource) || localFailedFor === source)))
 
     readonly property string dashboardFallbackUrl: Players.getArtUrl(Players.active)
     readonly property string youtubeId: {
@@ -44,7 +44,11 @@ Singleton {
     readonly property string fallbackUrl: youtubeId
         ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg`
         : dashboardFallbackUrl
-    readonly property string source: resolvedKey === trackKey && resolvedUrl
+    // Apple Music's own artwork (cached locally by caelestia-motion-art) is the
+    // preferred cover, as in BitChord; the iTunes search and player artwork are
+    // only fallbacks when Apple has no match.
+    readonly property string appleArt: MotionArtwork.artSource
+    readonly property string source: appleArt ? appleArt : resolvedKey === trackKey && resolvedUrl
         ? resolvedUrl : (_usableArtwork(fallbackUrl) ? fallbackUrl : "")
     readonly property string dashboardSource: resolvedKey === trackKey && artworkBaseUrl
         ? _sizedArtwork(artworkBaseUrl, dashboardRequestedSize)

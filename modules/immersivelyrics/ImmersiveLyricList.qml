@@ -52,7 +52,7 @@ Item {
         family: Tokens.font.headline.large.family,
         pixelSize: root.fontPixelSize,
         weight: Font.Bold,
-        variableAxes: { "wght": 500, "ROND": 30, "opsz": 40 }
+        variableAxes: { "wght": 440, "ROND": 30, "opsz": 40 }
     })
 
     function syncRetention(): void {
