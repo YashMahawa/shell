@@ -36,8 +36,12 @@ Item {
 
     signal seekRequested(int index)
 
-    readonly property int distance: index - currentIndex
-    readonly property bool current: distance === 0 && interludeIndex !== index
+    // During an instrumental break the dots (on the next line) take focus, so
+    // the line before them fades and blurs like any other sung line.
+    readonly property bool hostsInterlude: interludeIndex === index
+    readonly property int focusIndex: interludeIndex >= 0 ? interludeIndex : currentIndex
+    readonly property int distance: index - focusIndex
+    readonly property bool current: distance === 0 && !hostsInterlude
     readonly property bool near: distance >= -1 && distance <= 2
     readonly property real livePosition: current ? list.position : -1
     readonly property bool alignEnd: agent === "end"
@@ -58,6 +62,9 @@ Item {
             return current ? 1 : 0.46;
         if (current)
             return 1;
+        // The line under the dots is still upcoming text.
+        if (hostsInterlude)
+            return 0.44;
         if (distance < 0)
             return Math.max(0.12, 0.3 + distance * 0.06);
         return Math.max(0.1, 0.44 - (distance - 1) * 0.085);
@@ -113,8 +120,8 @@ Item {
     width: maxWidth
     implicitHeight: dots.height + body.implicitHeight + (bgLoader.active ? bgLoader.implicitHeight + lyricFont.pixelSize * 0.12 : 0) + lyricFont.pixelSize * 0.32
     height: implicitHeight
-    opacity: shownOpacity * edgeOpacity
-    scale: current || userScrolling ? 1 : 0.965
+    opacity: edgeOpacity
+    scale: current || hostsInterlude || userScrolling ? 1 : 0.965
     transformOrigin: alignEnd ? Item.Right : Item.Left
     transform: Translate {
         y: line.lag
@@ -233,7 +240,7 @@ Item {
 
             x: line.alignEnd ? parent.width - implicitWidth : 0
             y: line.lyricFont.pixelSize * 0.1
-            dotSize: Math.round(line.lyricFont.pixelSize * 0.3)
+            dotSize: Math.round(line.lyricFont.pixelSize * 0.38)
             progress: dots.latchedProgress
             color: line.activeColor
             reduceMotion: line.reduceMotion
@@ -250,6 +257,8 @@ Item {
 
     Item {
         id: body
+
+        opacity: line.shownOpacity
 
         // Duet lines sung from the other side hug the right edge; leading
         // lines keep the full width so word-by-word layout never wraps early.
@@ -319,7 +328,7 @@ Item {
         x: line.alignEnd ? line.maxWidth - width : 0
         width: Math.min(line.maxWidth, implicitWidth)
         active: !!line.bgText
-        opacity: 0.82
+        opacity: 0.82 * line.shownOpacity
         sourceComponent: line.bgWords.length && line.current ? bgTimed : bgPlain
     }
 

@@ -1,90 +1,110 @@
 import QtQuick
 import QtQuick.Effects
 
-// Apple Music style slider: a soft translucent track that thickens on hover,
-// with a knob that appears while hovering or dragging. `value` is 0..1;
-// `moved` fires while dragging and `released` once the drag ends.
+// Glass capsule slider. The track is a frosted capsule with a faint top
+// highlight; the elapsed part is a bright, softly glowing fill. Hovering or
+// dragging thickens it and shows a small bubble with `bubbleText` above the
+// pointer. `value` is 0..1; `moved` fires while dragging, `released` at the end.
 Item {
     id: root
 
     property real value: 0
     property bool interactive: true
-    property real thickness: 6
-    property real hoverThickness: 11
+    property bool wheelEnabled: false
+    property real thickness: 7
+    property real hoverThickness: 13
+    // Text for the hover/drag bubble; bind it to `previewValue`.
+    property string bubbleText: ""
+
     readonly property bool engaged: hover.hovered || area.pressed
     readonly property real shownValue: area.pressed ? dragValue : value
+    readonly property real previewValue: area.pressed ? dragValue : hoverValue
     property real dragValue: 0
-    property bool wheelEnabled: false
+    property real hoverValue: 0
 
     signal moved(real value)
     signal released(real value)
 
-    implicitHeight: 28
-    opacity: interactive ? 1 : 0.4
+    implicitHeight: 30
+    opacity: interactive ? 1 : 0.45
 
     function valueAt(x: real): real {
         return Math.max(0, Math.min(1, x / Math.max(1, width)));
     }
 
-    Rectangle {
-        id: track
+    Item {
+        id: capsule
 
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         height: root.engaged ? root.hoverThickness : root.thickness
-        radius: height / 2
-        color: Qt.rgba(1, 1, 1, root.engaged ? 0.24 : 0.18)
-        clip: true
 
         Behavior on height {
             NumberAnimation {
-                duration: 240
+                duration: 260
                 easing.type: Easing.OutCubic
             }
         }
 
-        Behavior on color {
-            ColorAnimation {
-                duration: 200
+        // Frosted track with a faint top highlight.
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            gradient: Gradient {
+                GradientStop { position: 0; color: Qt.rgba(1, 1, 1, root.engaged ? 0.26 : 0.2) }
+                GradientStop { position: 1; color: Qt.rgba(1, 1, 1, root.engaged ? 0.14 : 0.1) }
             }
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.12)
         }
 
-        Rectangle {
-            width: Math.max(track.height, parent.width * root.shownValue)
-            height: parent.height
-            radius: parent.radius
-            color: Qt.rgba(1, 1, 1, root.engaged ? 0.97 : 0.82)
+        Item {
+            id: fillClip
+
+            width: Math.max(capsule.height, capsule.width * root.shownValue)
+            height: capsule.height
             visible: root.shownValue > 0
 
-            Behavior on color {
-                ColorAnimation {
-                    duration: 200
+            layer.enabled: root.engaged
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: Qt.rgba(1, 1, 1, 0.55)
+                shadowBlur: 0.7
+                shadowHorizontalOffset: 0
+                shadowVerticalOffset: 0
+                blurMax: 18
+                autoPaddingEnabled: true
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: height / 2
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: Qt.rgba(1, 1, 1, root.engaged ? 0.86 : 0.7) }
+                    GradientStop { position: 1; color: Qt.rgba(1, 1, 1, root.engaged ? 1 : 0.9) }
                 }
             }
         }
     }
 
+    // Time bubble above the pointer.
     Rectangle {
-        id: knob
+        id: bubble
 
-        width: root.hoverThickness + 8
-        height: width
-        radius: width / 2
-        x: Math.max(0, Math.min(root.width - width, root.width * root.shownValue - width / 2))
-        anchors.verticalCenter: parent.verticalCenter
-        color: "white"
+        readonly property real centre: root.width * root.previewValue
+
+        visible: opacity > 0 && root.bubbleText !== ""
         opacity: root.engaged && root.interactive ? 1 : 0
-        scale: area.pressed ? 1.15 : root.engaged ? 1 : 0.4
-
-        layer.enabled: opacity > 0
-        layer.effect: MultiEffect {
-            shadowEnabled: true
-            shadowColor: Qt.rgba(0, 0, 0, 0.45)
-            shadowBlur: 0.6
-            shadowVerticalOffset: 2
-            blurMax: 16
-        }
+        width: bubbleLabel.implicitWidth + 18
+        height: bubbleLabel.implicitHeight + 10
+        radius: height / 2
+        x: Math.max(0, Math.min(root.width - width, centre - width / 2))
+        y: capsule.y - height - 10 + (root.engaged ? 0 : 6)
+        color: Qt.rgba(1, 1, 1, 0.16)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.22)
 
         Behavior on opacity {
             NumberAnimation {
@@ -92,12 +112,23 @@ Item {
             }
         }
 
-        Behavior on scale {
+        Behavior on y {
             NumberAnimation {
-                duration: 260
-                easing.type: Easing.OutBack
-                easing.overshoot: 1.6
+                duration: 220
+                easing.type: Easing.OutCubic
             }
+        }
+
+        Text {
+            id: bubbleLabel
+
+            anchors.centerIn: parent
+            text: root.bubbleText
+            color: "white"
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+            font.features: { "tnum": 1 }
+            renderType: Text.QtRendering
         }
     }
 
@@ -106,6 +137,7 @@ Item {
 
         enabled: root.interactive
         cursorShape: Qt.PointingHandCursor
+        onPointChanged: root.hoverValue = root.valueAt(point.position.x)
     }
 
     MouseArea {

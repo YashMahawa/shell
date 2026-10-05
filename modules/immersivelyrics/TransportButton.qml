@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Shapes
 
 // Apple Music style transport glyph: rounded vector triangles and bars drawn
@@ -14,16 +15,18 @@ Item {
     property bool disabled: false
     signal clicked
 
-    readonly property real glyph: primary ? 58 : 44
+    readonly property real glyph: primary ? 40 : 40
     readonly property real stroke: glyph * 0.13
 
-    implicitWidth: primary ? 96 : 76
+    implicitWidth: primary ? 92 : 72
     implicitHeight: implicitWidth
     opacity: disabled ? 0.3 : 1
     // Group opacity, so the glyph's overlapping fill and stroke stay solid.
     layer.enabled: opacity < 1
 
+    // Hover halo for the bare skip glyphs.
     Rectangle {
+        visible: !root.primary
         anchors.centerIn: parent
         width: parent.width
         height: width
@@ -42,6 +45,57 @@ Item {
             NumberAnimation {
                 duration: 260
                 easing.type: Easing.OutCubic
+            }
+        }
+    }
+
+    // Frosted glass disc behind play/pause: top-lit gradient, hairline rim and
+    // a soft drop shadow; it brightens on hover.
+    Item {
+        visible: root.primary
+        anchors.fill: parent
+        scale: mouse.pressed ? 0.92 : mouse.containsMouse ? 1.04 : 1
+
+        Behavior on scale {
+            NumberAnimation {
+                duration: 340
+                easing.type: Easing.OutBack
+                easing.overshoot: 2
+            }
+        }
+
+        Rectangle {
+            id: disc
+
+            anchors.fill: parent
+            radius: width / 2
+            gradient: Gradient {
+                GradientStop { position: 0; color: Qt.rgba(1, 1, 1, mouse.containsMouse ? 0.32 : 0.24) }
+                GradientStop { position: 1; color: Qt.rgba(1, 1, 1, mouse.containsMouse ? 0.16 : 0.1) }
+            }
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, mouse.containsMouse ? 0.42 : 0.3)
+
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: Qt.rgba(0, 0, 0, 0.35)
+                shadowBlur: 0.8
+                shadowVerticalOffset: 6
+                blurMax: 32
+            }
+        }
+
+        // Specular highlight along the top edge.
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height * 0.06
+            width: parent.width * 0.62
+            height: parent.height * 0.32
+            radius: height / 2
+            gradient: Gradient {
+                GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.22) }
+                GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
             }
         }
     }

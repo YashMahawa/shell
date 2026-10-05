@@ -9,6 +9,7 @@ import qs.components
 import qs.components.containers
 import qs.components.images
 import qs.services
+import qs.utils
 
 // Apple Music style full-screen player: flowing artwork backdrop, (animated)
 // cover with transport on one side and synced lyrics on the other.
@@ -19,10 +20,13 @@ FocusScope {
     signal exitRequested
 
     readonly property bool landscape: width >= height * 1.12
+    // Nothing playing: show a calm wallpaper-tinted scene with a clock.
+    readonly property bool idle: !Players.active || (!Players.active.trackTitle && !Players.active.trackArtist)
+    readonly property string wallpaperThumb: `file://${Paths.state}/wallpaper/thumbnail.jpg`
     readonly property string artSource: HighResArtwork.displaySource
     property real displayPosition: Players.active?.position ?? 0
     property string displayedTitle: Players.active?.trackTitle || qsTr("Nothing playing")
-    property string displayedArtist: Players.active?.trackArtist || qsTr("Choose a song to begin")
+    property string displayedArtist: Players.active?.trackArtist || qsTr("Play something and the words will follow")
     property bool seeking: false
     property real seekPreview: 0
     // Width for font sizing that ignores the zero width reported during
@@ -113,13 +117,18 @@ FocusScope {
     }
 
     function commitMetadata(): void {
+        if (root.idle) {
+            root.displayedTitle = qsTr("Nothing playing");
+            root.displayedArtist = qsTr("Play something and the words will follow");
+            return;
+        }
         const title = Players.active?.trackTitle || "";
         const artist = Players.active?.trackArtist || "";
         // Browsers briefly clear MPRIS metadata while changing tracks.
         if (!title && !artist)
             return;
         root.displayedTitle = title || qsTr("Nothing playing");
-        root.displayedArtist = artist || qsTr("Choose a song to begin");
+        root.displayedArtist = artist || qsTr("Play something and the words will follow");
     }
 
     focus: active
@@ -160,6 +169,16 @@ FocusScope {
         repeat: false
         onTriggered: metadataSwap.restart()
     }
+
+    Connections {
+        target: Players
+
+        function onActiveChanged(): void {
+            metadataDelay.restart();
+        }
+    }
+
+    onIdleChanged: metadataDelay.restart()
 
     Connections {
         target: Players.active
@@ -219,7 +238,7 @@ FocusScope {
     FluidBackdrop {
         anchors.fill: parent
         // Keep the previous colours until the final artwork is known.
-        source: HighResArtwork.settled ? root.artSource : ""
+        source: root.idle ? root.wallpaperThumb : HighResArtwork.settled ? root.artSource : ""
         running: root.active
         playing: Players.active?.isPlaying ?? false
         opacity: root.active ? 1 : 0
@@ -322,7 +341,7 @@ FocusScope {
                 // never flash.
                 Item {
                     anchors.fill: parent
-                    opacity: root.coverReady ? 0 : 1
+                    opacity: root.coverReady || root.idle ? 0 : 1
                     visible: opacity > 0
 
                     Behavior on opacity {
@@ -365,6 +384,12 @@ FocusScope {
 
                     anchors.fill: parent
                     source: root.coverMode === "static" ? root.artSource : ""
+                }
+
+                IdleCover {
+                    anchors.fill: parent
+                    shown: root.idle
+                    running: root.active && root.idle
                 }
 
                 MotionCover {
@@ -419,6 +444,15 @@ FocusScope {
 
         Item {
             id: progress
+            opacity: root.idle ? 0 : 1
+            visible: opacity > 0
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 360
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             readonly property real length: Math.max(1, Players.activeLength)
             readonly property real shownPosition: root.seeking ? root.seekPreview : root.displayPosition
@@ -436,6 +470,7 @@ FocusScope {
                 anchors.right: parent.right
                 interactive: Players.active?.canSeek ?? false
                 value: Math.max(0, Math.min(1, root.displayPosition / progress.length))
+                bubbleText: root.formatTime(previewValue * progress.length)
                 onMoved: v => {
                     root.seeking = true;
                     root.seekPreview = v * progress.length;
@@ -486,6 +521,15 @@ FocusScope {
 
         Row {
             id: transport
+            opacity: root.idle ? 0 : 1
+            visible: opacity > 0
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 360
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             anchors.top: progress.bottom
             anchors.topMargin: Math.max(14, parent.height * 0.028)
@@ -514,49 +558,6 @@ FocusScope {
                 onClicked: Players.active?.next()
             }
         }
-
-        RowLayout {
-            anchors.top: transport.bottom
-            anchors.topMargin: Math.max(12, parent.height * 0.022)
-            anchors.left: coverFrame.left
-            anchors.right: coverFrame.right
-            spacing: Tokens.spacing.medium
-
-            MaterialIcon {
-                text: "volume_mute"
-                color: Qt.rgba(1, 1, 1, 0.6)
-                fill: 1
-                fontStyle: Tokens.font.icon.medium
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: Audio.setVolume(Math.max(0, Audio.volume - 0.1))
-                }
-            }
-
-            GlassSlider {
-                Layout.fillWidth: true
-                thickness: 5
-                hoverThickness: 9
-                wheelEnabled: true
-                value: Audio.muted ? 0 : Math.min(1, Audio.volume)
-                onMoved: v => Audio.setVolume(v)
-            }
-
-            MaterialIcon {
-                text: "volume_up"
-                color: Qt.rgba(1, 1, 1, 0.6)
-                fill: 1
-                fontStyle: Tokens.font.icon.medium
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: Audio.setVolume(Math.min(1, Audio.volume + 0.1))
-                }
-            }
-        }
     }
 
     // ---- lyrics -----------------------------------------------------------------------
@@ -572,7 +573,21 @@ FocusScope {
 
         ImmersiveLyricList {
             anchors.fill: parent
-            active: root.active
+            active: root.active && !root.idle
+            opacity: root.idle ? 0 : 1
+            visible: opacity > 0
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 420
+                    easing.type: Easing.OutCubic
+                }
+            }
+        }
+
+        IdleClock {
+            anchors.fill: parent
+            shown: root.idle && root.active
         }
 
         Behavior on x {

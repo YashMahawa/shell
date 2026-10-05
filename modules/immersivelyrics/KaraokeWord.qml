@@ -29,7 +29,7 @@ Item {
     readonly property string glyphs: text.replace(/\s+$/, "")
     readonly property string trailing: text.substring(glyphs.length)
     readonly property bool stretched: !reduceMotion && duration >= 0.95 && glyphs.length > 0 && glyphs.length <= 14
-    readonly property real lift: font.pixelSize * 0.03
+    readonly property real lift: font.pixelSize * 0.037
     readonly property real eased: 1 - Math.pow(1 - progress, 3)
 
     implicitWidth: measure.advanceWidth
@@ -115,7 +115,13 @@ Item {
                         // Each letter owns one slice of the word's duration.
                         readonly property real slot: root.progress * root.glyphs.length - index
                         // Local 0..1 progress of this letter's rise.
-                        readonly property real local: root.started ? Math.max(0, Math.min(1, (slot + 0.15) / 1.5)) : 0
+                        // A wave travels through the word: the letter being sung crests
+                        // and its neighbours rise a little with it.
+                        readonly property real head: root.progress * root.glyphs.length
+                        readonly property real bump: root.started ? Math.exp(-Math.pow(index + 0.5 - head, 2) / 1.1) : 0
+                        readonly property real envelope: Math.min(1, head * 1.5) * Math.min(1, (root.glyphs.length - head) * 1.5)
+                        readonly property real wave: bump * envelope
+                        readonly property real settled: root.started ? Math.max(0, Math.min(1, slot)) : 0
                         readonly property real lit: root.started ? Math.max(0, Math.min(1, slot)) : 0
 
                         text: root.glyphs.charAt(index)
@@ -124,9 +130,9 @@ Item {
                         opacity: root.dim + (1 - root.dim) * lit
                         renderType: Text.QtRendering
                         transformOrigin: Item.Bottom
-                        // Rise with a gentle crest, settling at the same lift as plain words.
-                        y: -root.lift * (0.8 * Math.sin(Math.PI * local) + local)
-                        scale: 1 + 0.04 * Math.sin(Math.PI * local)
+                        // Settles at the same lift as plain words once sung.
+                        y: -root.lift * (0.5 * wave + settled)
+                        scale: 1 + 0.03 * wave
                     }
                 }
 
