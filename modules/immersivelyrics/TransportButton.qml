@@ -85,19 +85,6 @@ Item {
                 blurMax: 32
             }
         }
-
-        // Specular highlight along the top edge.
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: parent.height * 0.06
-            width: parent.width * 0.62
-            height: parent.height * 0.32
-            radius: height / 2
-            gradient: Gradient {
-                GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.22) }
-                GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
-            }
-        }
     }
 
     component Triangle: Shape {
