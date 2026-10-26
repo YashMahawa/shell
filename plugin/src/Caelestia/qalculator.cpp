@@ -45,6 +45,7 @@ QString Qalculator::eval(const QString& expr, bool printExpr) const {
 
     EvaluationOptions eo;
     PrintOptions po;
+    po.interval_display = INTERVAL_DISPLAY_SIGNIFICANT_DIGITS;
 
     std::string parsed;
     std::string result = CALCULATOR->calculateAndPrint(
@@ -128,6 +129,7 @@ void Qalculator::checkPending() {
 
         EvaluationOptions eo;
         PrintOptions po;
+        po.interval_display = INTERVAL_DISPLAY_SIGNIFICANT_DIGITS;
 
         std::string parsed;
         std::string result = CALCULATOR->calculateAndPrint(
